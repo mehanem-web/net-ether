@@ -1,0 +1,95 @@
+{
+  "name": "net-ether",
+  "version": "6.0.0",
+  "description": "NET//ETHER — always-on-top desktop network manager for field technicians",
+  "main": "main.js",
+  "author": {
+    "name": "Johan Broman",
+    "email": ""
+  },
+  "scripts": {
+    "start": "electron .",
+    "build-msi": "electron-builder --win msi",
+    "build-portable": "electron-builder --win portable",
+    "build-all": "electron-builder --win msi portable nsis"
+  },
+  "build": {
+    "appId": "com.bromanenterprises.net-ether",
+    "productName": "NET-ETHER",
+    "copyright": "© 2026 Broman Enterprises",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "msi",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "requestedExecutionLevel": "requireAdministrator",
+      "signtoolOptions": {
+        "publisherName": "Broman Enterprises"
+      }
+    },
+    "nsis": {
+      "artifactName": "NET-ETHER-Installer-${version}.exe",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "menuCategory": "Broman Enterprises",
+      "shortcutName": "NET-ETHER",
+      "runAfterFinish": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeader": "assets/installer-header.bmp",
+      "include": "assets/installer.nsh",
+      "deleteAppDataOnUninstall": false,
+      "useZip": false
+    },
+    "msi": {
+      "artifactName": "NET-ETHER-Setup-${version}.msi",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "perMachine": false,
+      "runAfterFinish": true
+    },
+    "portable": {
+      "artifactName": "NET-ETHER-portable-${version}.exe"
+    },
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "assets/**/*"
+    ],
+    "asarUnpack": [
+      "assets/NET-ETHER-Guide.docx"
+    ]
+  },
+  "devDependencies": {
+    "electron": "^41.0.0",
+    "electron-builder": "^26.8.1"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0"
+  }
+}
