@@ -1435,6 +1435,95 @@ html, body {
   color: var(--green);
   background: rgba(var(--ar), var(--ag), var(--ab), 0.1);
 }
+.scan-save-site-btn.update {
+  border-color: rgba(var(--ar), var(--ag), var(--ab), 0.5);
+  color: rgba(var(--ar), var(--ag), var(--ab), 0.8);
+}
+.scan-save-site-btn.update:hover {
+  border-color: var(--green);
+  color: var(--green);
+  background: rgba(var(--ar), var(--ag), var(--ab), 0.07);
+}
+
+/* ── SITE PICKER (SCAN tab) ── */
+.scan-site-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.scan-site-select {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: rgba(var(--ar), var(--ag), var(--ab), 0.55);
+  font-family: var(--font-mono);
+  font-size: var(--sz-secondary);
+  font-weight: 700;
+  padding: 5px 8px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.scan-site-select:hover  { border-color: var(--border-bright); color: rgba(var(--ar), var(--ag), var(--ab), 0.8); }
+.scan-site-select:focus  { border-color: var(--border-bright); color: var(--green); }
+.scan-site-select.loaded { border-color: var(--green-dim); color: var(--green); }
+.scan-site-select option { background: #0e1a18; color: rgba(var(--ar), var(--ag), var(--ab), 0.85); }
+
+/* ── INLINE NEW-SITE NAME PROMPT ── */
+.scan-name-wrap {
+  display: none;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+}
+.scan-name-wrap.visible { display: flex; }
+.scan-name-input {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--green-dim);
+  border-radius: var(--radius-sm);
+  color: var(--green);
+  font-family: var(--font-mono);
+  font-size: var(--sz-secondary);
+  font-weight: 700;
+  padding: 4px 8px;
+  outline: none;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.scan-name-input::placeholder { color: rgba(var(--ar), var(--ag), var(--ab), 0.3); text-transform: none; }
+.scan-name-input:focus { border-color: var(--green); }
+.scan-name-confirm {
+  font-size: var(--sz-chip);
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 4px 9px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border: 1px solid var(--green);
+  color: var(--green);
+  background: rgba(var(--ar), var(--ag), var(--ab), 0.1);
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.scan-name-confirm:hover { background: rgba(var(--ar), var(--ag), var(--ab), 0.18); }
+.scan-name-cancel {
+  font-size: var(--sz-chip);
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border: 1px solid var(--border);
+  color: var(--label-dim);
+  background: transparent;
+  transition: all 0.15s;
+}
+.scan-name-cancel:hover { border-color: var(--red); color: var(--red); }
 
 /* ── SITE LIBRARY ── */
 .site-library {
@@ -2386,6 +2475,12 @@ html, body {
 
     <div class="section-label">SUBNET SCANNER — /24</div>
 
+    <div class="scan-site-row">
+      <select class="scan-site-select" id="scan-site-select" onchange="scanPickSite(this)" title="Load a known site">
+        <option value="">— LOAD SITE —</option>
+      </select>
+    </div>
+
     <div class="scan-row">
       <div class="scan-field">
         <div class="field-label">BASE IP</div>
@@ -2416,6 +2511,12 @@ html, body {
         <span class="scan-save-site-btn" id="scan-save-site-btn" onclick="saveSite()" title="Save results to site library">SAVE SITE</span>
         <span class="scan-clear-btn" onclick="clearScanResults()">CLEAR</span>
       </div>
+    </div>
+    <div class="scan-name-wrap" id="scan-name-wrap">
+      <input class="scan-name-input" id="scan-name-input" type="text" placeholder="Site name..." maxlength="40"
+        onkeydown="if(event.key==='Enter')scanConfirmSave(); if(event.key==='Escape')scanCancelNamePrompt();">
+      <span class="scan-name-confirm" onclick="scanConfirmSave()">SAVE</span>
+      <span class="scan-name-cancel"  onclick="scanCancelNamePrompt()">✕</span>
     </div>
     <div class="scan-results" id="scan-results">
       <div class="scan-empty-state" id="scan-empty">// ENTER BASE IP AND START SCAN</div>
@@ -2923,7 +3024,7 @@ document.addEventListener('click', e => {
 });
 
 function escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 // ── AUTO RESIZE ────────────────────────────────────────────
@@ -2995,7 +3096,7 @@ function switchTab(tab) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('tab-' + tab).classList.add('active');
   document.getElementById('panel-' + tab).classList.add('active');
-  if (tab === 'scan')  scanAutoDetect(true);
+  if (tab === 'scan')  { scanAutoDetect(true); scanPopulateSitePicker(); }
   if (tab === 'tools') monRenderHostEditor();
   if (tab === 'intel') intelOnTabOpen();
   // Always fit on tab switch — tab content is completely different so
@@ -4718,6 +4819,56 @@ let scanFound       = 0;
 let activeSiteDB    = {};  // mac -> { label, ip, vendor } for current subnet session
 let allSites        = {};  // full on-disk site database, keyed by subnet
 let portProbeQueue  = [];  // IPs waiting for port probe after main scan completes
+let scanCurrentSiteId  = null;  // intelDB siteId matching current subnet, if any
+let intelReturnSiteId  = null;  // set by SCAN NOW — return to this site after scan
+
+function scanPopulateSitePicker() {
+  const sel = document.getElementById('scan-site-select');
+  if (!sel) return;
+  const currentVal = sel.value;
+  while (sel.options.length > 1) sel.remove(1);
+  const sites = Object.values(intelDB || {}).filter(s => s.subnet);
+  sites.sort((a, b) => (b.lastScan || 0) - (a.lastScan || 0));
+  sites.forEach(site => {
+    const opt = document.createElement('option');
+    opt.value = site.id;
+    const age = site.lastScan
+      ? (() => {
+          const days = Math.floor((Date.now() - site.lastScan) / 86400000);
+          if (days === 0) return 'today';
+          if (days === 1) return '1d ago';
+          return days + 'd ago';
+        })()
+      : 'never';
+    opt.textContent = `${site.name || site.subnet}  [${site.subnet}  ${age}]`;
+    if (site.id === currentVal) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  const base = (document.getElementById('scan-base') || {}).value || '';
+  const match = sites.find(s => s.subnet === base);
+  if (match) { sel.value = match.id; sel.classList.add('loaded'); }
+  else { if (!currentVal) sel.value = ''; sel.classList.remove('loaded'); }
+}
+
+function scanPickSite(sel) {
+  const siteId = sel.value;
+  sel.classList.remove('loaded');
+  if (!siteId) return;
+  const site = (intelDB || {})[siteId];
+  if (!site || !site.subnet) return;
+  const baseEl = document.getElementById('scan-base');
+  if (baseEl) baseEl.value = site.subnet;
+  sel.classList.add('loaded');
+  const age = site.lastScan
+    ? (() => {
+        const days = Math.floor((Date.now() - site.lastScan) / 86400000);
+        if (days === 0) return 'scanned today';
+        if (days === 1) return 'scanned 1d ago';
+        return `scanned ${days}d ago`;
+      })()
+    : 'never scanned';
+  setScanStatus(`SITE LOADED: ${site.name || site.subnet} — ${age}`, 'ok', 4000);
+}
 
 function scanAutoDetect(silent) {
   // Prefer the adapter currently selected on the ETHER tab
@@ -4800,8 +4951,21 @@ function startScan() {
     });
   }
 
+  // Detect known site for smart save button
+  scanCurrentSiteId = null;
+  const matchedSite = Object.values(intelDB || {}).find(s => s.subnet === base);
+  if (matchedSite) {
+    scanCurrentSiteId = matchedSite.id;
+    const sel = document.getElementById('scan-site-select');
+    if (sel) { sel.value = matchedSite.id; sel.classList.add('loaded'); }
+  }
   const saveBtn = document.getElementById('scan-save-site-btn');
-  if (saveBtn) { saveBtn.textContent = 'SAVE SITE'; saveBtn.classList.remove('saved'); }
+  if (saveBtn) {
+    saveBtn.classList.remove('saved', 'update');
+    saveBtn.textContent = matchedSite ? 'UPDATE SITE' : 'SAVE SITE';
+    if (matchedSite) saveBtn.classList.add('update');
+  }
+  scanCancelNamePrompt();
 
   document.getElementById('scan-results').querySelectorAll('.scan-result-row').forEach(r => r.remove());
   document.getElementById('scan-empty').style.display = 'none';
@@ -5089,10 +5253,47 @@ async function saveSite() {
   const devices = collectCurrentRows();
   if (!devices.length) { setScanStatus('NO RESULTS TO SAVE', 'warn', 3000); return; }
 
-  // ── Write into allSites (legacy, keeps loadSite/loadAndScanSite working) ──
-  if (!allSites[base]) {
-    allSites[base] = { name: 'SITE ' + base, subnet: base, devices: [], created: Date.now() };
+  // If this is a known site, update it directly — no name prompt needed
+  if (scanCurrentSiteId && intelDB[scanCurrentSiteId]) {
+    await doSaveSite(base, devices, intelDB[scanCurrentSiteId].name);
+    return;
   }
+
+  // Unknown subnet — show inline name prompt
+  const nameWrap = document.getElementById('scan-name-wrap');
+  const nameInput = document.getElementById('scan-name-input');
+  if (nameWrap && nameInput) {
+    nameWrap.classList.add('visible');
+    nameInput.value = '';
+    nameInput.placeholder = 'Site name  (e.g. CLIENT OFFICE)';
+    nameInput.focus();
+  }
+}
+
+function scanCancelNamePrompt() {
+  const nameWrap = document.getElementById('scan-name-wrap');
+  if (nameWrap) nameWrap.classList.remove('visible');
+}
+
+async function scanConfirmSave() {
+  const base = document.getElementById('scan-base').value.trim();
+  const nameInput = document.getElementById('scan-name-input');
+  const rawName = (nameInput ? nameInput.value.trim().toUpperCase() : '').replace(/[<>&"']/g, '');
+  const name = rawName || ('SITE ' + base);
+  const devices = collectCurrentRows();
+  if (!devices.length) { setScanStatus('NO RESULTS TO SAVE', 'warn', 3000); return; }
+  scanCancelNamePrompt();
+  await doSaveSite(base, devices, name);
+}
+
+async function doSaveSite(base, devices, name) {
+  const isUpdate = !!(scanCurrentSiteId && intelDB[scanCurrentSiteId]);
+
+  // ── Write into allSites (legacy) ──
+  if (!allSites[base]) {
+    allSites[base] = { name, subnet: base, devices: [], created: Date.now() };
+  }
+  allSites[base].name = name;
   const existing = allSites[base].devices;
   devices.forEach(d => {
     if (d.mac) {
@@ -5111,42 +5312,56 @@ async function saveSite() {
   allSites[base].updated = Date.now();
   await persistSites();
 
-  // ── Also write into intelDB so it shows in SITES tab ──
-  const intelId = 'site_' + base.replace(/\./g, '_');
+  // ── Write into intelDB ──
+  const intelId = scanCurrentSiteId || ('site_' + base.replace(/\./g, '_'));
   if (!intelDB[intelId]) {
     intelDB[intelId] = {
-      id: intelId, name: 'SITE ' + base, subnet: base,
+      id: intelId, name, subnet: base,
       customer: '', address: '', notes: '',
       tag: intelNextTag(),
       devices: [], created: Date.now(),
     };
   }
+  intelDB[intelId].name = name;
   const intelSite = intelDB[intelId];
   intelSite.lastScan = Date.now();
-  // Merge devices into intelDB entry
   if (!intelSite.devices) intelSite.devices = [];
+
+  // Count changes for the status message
+  let newCount = 0, updCount = 0;
   devices.forEach(d => {
     const devKey = d.mac
       ? d.mac.toUpperCase().replace(/[:\-]/g, '')
       : 'ip_' + d.ip.replace(/\./g, '_');
-    const existing = intelSite.devices.find(x => (x.mac || '').replace(/[:\-]/g,'').toUpperCase() === devKey || x.ip === d.ip);
-    if (existing) {
-      existing.ip = d.ip;
-      existing.lastSeen = d.lastSeen;
-      if (d.vendor && !existing.vendor) existing.vendor = d.vendor;
+    const exDev = intelSite.devices.find(x => (x.mac || '').replace(/[:\-]/g,'').toUpperCase() === devKey || x.ip === d.ip);
+    if (exDev) {
+      exDev.ip = d.ip; exDev.lastSeen = d.lastSeen;
+      if (d.vendor && !exDev.vendor) exDev.vendor = d.vendor;
+      updCount++;
     } else {
       intelSite.devices.push({
         mac: d.mac || '', ip: d.ip, vendor: d.vendor || '',
         hostname: '', type: 'unknown', notes: '', creds: [],
         lastSeen: d.lastSeen,
       });
+      newCount++;
     }
   });
+  scanCurrentSiteId = intelId;
   await intelPersist();
+  scanPopulateSitePicker();
 
   const btn = document.getElementById('scan-save-site-btn');
-  if (btn) { btn.textContent = '✓ SAVED'; btn.classList.add('saved'); }
-  setScanStatus(`SITE SAVED — ${devices.length} DEVICE${devices.length !== 1 ? 'S' : ''} — VIEW IN SITES TAB`, 'ok', 5000);
+  if (btn) { btn.textContent = '✓ SAVED'; btn.classList.remove('update'); btn.classList.add('saved'); }
+
+  if (isUpdate) {
+    const parts = [];
+    if (newCount) parts.push(`+${newCount} new`);
+    if (updCount) parts.push(`${updCount} updated`);
+    setScanStatus(`${name} — ${parts.length ? parts.join(', ') : 'no changes'} — ${devices.length} device${devices.length !== 1 ? 's' : ''} total`, 'ok', 6000);
+  } else {
+    setScanStatus(`SAVED: ${name} — ${devices.length} DEVICE${devices.length !== 1 ? 'S' : ''}`, 'ok', 5000);
+  }
 }
 
 function renderSiteLibrary() {
@@ -5197,9 +5412,10 @@ function loadSite(key) {
     return;
   }
 
-  // Reset save button
+  // Reset save button — this is a known site so always UPDATE
   const saveBtn = document.getElementById('scan-save-site-btn');
-  if (saveBtn) { saveBtn.textContent = 'SAVE SITE'; saveBtn.classList.remove('saved'); }
+  if (saveBtn) { saveBtn.textContent = 'UPDATE SITE'; saveBtn.classList.remove('saved'); saveBtn.classList.add('update'); }
+  scanCancelNamePrompt();
 
   scanFound = devices.length;
   document.getElementById('scan-results-header').style.display = 'flex';
@@ -5804,6 +6020,7 @@ async function intelOnTabOpen() {
     intelMigrateFromSites();
   }
   intelRenderSiteList();
+  scanPopulateSitePicker(); // keep SCAN tab picker in sync
   if (intelActiveSite && intelDB[intelActiveSite]) {
     intelOpenSite(intelActiveSite);
   }
@@ -5993,10 +6210,14 @@ function intelLinkScan() {
     intelSetDetailStatus('NO SUBNET SET — EDIT SITE FIRST', 'warn', 4000);
     return;
   }
+  intelReturnSiteId = intelActiveSite;
   switchTab('scan');
   const base = document.getElementById('scan-base');
   if (base) base.value = site.subnet;
-  setScanStatus('SUBNET LOADED FROM INTEL: ' + site.subnet + '.0/24', 'ok', 4000);
+  // Sync picker
+  const sel = document.getElementById('scan-site-select');
+  if (sel) { sel.value = intelActiveSite; sel.classList.add('loaded'); }
+  setScanStatus(`SITE LOADED: ${site.name || site.subnet} — HIT SCAN TO UPDATE`, 'ok', 5000);
 }
 
 // ── CHANGE DETECTION ───────────────────────────────────────
@@ -6104,9 +6325,18 @@ function intelProcessScanResults(baseIp, scanResults) {
   if (changes.missing.length) parts.push(`${changes.missing.length} missing`);
   if (changes.moved.length)   parts.push(`${changes.moved.length} moved`);
   if (parts.length) {
-    setScanStatus(`INTEL: ${site.name} — ${parts.join(' · ')}`, 'warn', 8000);
+    setScanStatus(`${site.name} — ${parts.join(' · ')}`, 'warn', 8000);
   } else {
-    setScanStatus(`INTEL: ${site.name} — no changes detected`, 'ok', 5000);
+    setScanStatus(`${site.name} — no changes detected`, 'ok', 5000);
+  }
+
+  // Return trip: if scan was triggered via SCAN NOW, switch back to SITES and reopen the site
+  if (intelReturnSiteId === site.id) {
+    intelReturnSiteId = null;
+    setTimeout(() => {
+      switchTab('intel');
+      intelOpenSite(site.id);
+    }, 800);
   }
 }
 

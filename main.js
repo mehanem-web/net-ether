@@ -41,8 +41,10 @@ function sanitizeAdapter(name) {
   if (!name || typeof name !== 'string') return null;
   const s = name.trim();
   if (!s || s.length > 256) return null;
-  // Reject anything that could break out of a quoted netsh argument or PowerShell string
-  if (/["';&|`$\\]/.test(s)) return null;
+  // Reject anything that could break out of a quoted netsh argument or PowerShell
+  // string, plus cmd.exe metacharacters (% env-expansion, ^ escape) that survive
+  // into the elevated cmd /c chain built by runElevated().
+  if (/["';&|`$\\%^]/.test(s)) return null;
   return s;
 }
 
@@ -331,14 +333,18 @@ app.on('window-all-closed', () => { /* stay in tray */ });
 app.on('before-quit', () => { app.isQuitting = true; flushVendorCache(); });
 
 // ── IPC: window controls (main window) ────────────────────
-ipcMain.on('win-close',    () => win.hide());
+// Guard: win is hidden (not destroyed) on close, but during quit it can be torn
+// down while a late IPC is still in flight. Bail rather than throw on a dead ref.
+const winAlive = () => win && !win.isDestroyed();
+
+ipcMain.on('win-close',    () => { if (winAlive()) win.hide(); });
 ipcMain.on('win-quit',     () => {
   app.isQuitting = true;
   flushVendorCache();
   try { tray.destroy(); } catch {}
   app.quit();
 });
-ipcMain.on('win-minimize', () => win.minimize());
+ipcMain.on('win-minimize', () => { if (winAlive()) win.minimize(); });
 // win-move removed — drag uses -webkit-app-region
 
 
@@ -360,13 +366,14 @@ ipcMain.handle('win-set-size', (e, height) => {
 // FIX v5.22: changed from ipcMain.on → ipcMain.handle so renderer's
 // await hud.setOpacity(...) actually waits for the change to apply.
 ipcMain.handle('win-set-opacity', (e, val) => {
+  if (!winAlive()) return;
   win.setOpacity(val);
   setTrayMode(val < 0.99 ? 'dim' : 'idle');
 });
-ipcMain.handle('win-get-opacity', () => win.getOpacity());
+ipcMain.handle('win-get-opacity', () => winAlive() ? win.getOpacity() : 1);
 
 // ── IPC: hide/show ─────────────────────────────────────────
-ipcMain.on('win-hide', () => win.hide());
+ipcMain.on('win-hide', () => { if (winAlive()) win.hide(); });
 
 
 // ── IPC: tray state from renderer ─────────────────────────
@@ -1733,9 +1740,10 @@ ipcMain.handle('alias-build-cmd', async (e, { action, adapter, ip, subnet, curre
   if (action === 'add' && isValidSubnet(subnet)) {
     // If caller passed current DHCP state, prepend the static conversion step
     if (currentIp && isValidIp(currentIp)) {
+      const sn = isValidSubnet(currentSn) ? currentSn : '255.255.255.0';
       const setStatic = currentGw && isValidIp(currentGw)
-        ? `netsh interface ip set address "${safeAdapter}" static ${currentIp} ${currentSn || '255.255.255.0'} ${currentGw}`
-        : `netsh interface ip set address "${safeAdapter}" static ${currentIp} ${currentSn || '255.255.255.0'}`;
+        ? `netsh interface ip set address "${safeAdapter}" static ${currentIp} ${sn} ${currentGw}`
+        : `netsh interface ip set address "${safeAdapter}" static ${currentIp} ${sn}`;
       return `${setStatic} & netsh interface ip add address "${safeAdapter}" ${ip} ${subnet}`;
     }
     return `netsh interface ip add address "${safeAdapter}" ${ip} ${subnet}`;

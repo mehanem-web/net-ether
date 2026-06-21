@@ -1,6 +1,6 @@
 {
   "name": "net-ether",
-  "version": "6.0.0",
+  "version": "6.1.0",
   "description": "NET//ETHER — always-on-top desktop network manager for field technicians",
   "main": "main.js",
   "author": {
