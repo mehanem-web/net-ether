@@ -1,7 +1,8 @@
 name: Build and attach release binaries
 
-# Fires when you push a tag like v6.1.1
-# Also runnable by hand from the Actions tab against an existing tag.
+# Two ways to run:
+#   1. Push a tag like v6.1.1  -> builds and attaches automatically
+#   2. Actions tab -> Run workflow -> type a tag  -> backfills that release
 on:
   push:
     tags:
@@ -9,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing tag to build and attach to (e.g. v6.1.0)'
+        description: 'Tag to build. The leading v is optional - 6.1.0 and v6.1.0 both work.'
         required: true
 
 permissions:
@@ -20,9 +21,49 @@ jobs:
     runs-on: windows-latest
 
     steps:
+      # Normalizes "6.1.0" -> "v6.1.0", strips stray whitespace, and confirms
+      # the tag actually exists before spending 10 minutes building.
+      # Fails in ~2 seconds with a list of real tags if you fat-finger it.
+      - name: Resolve and verify tag
+        id: resolve
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          RAW_TAG: ${{ github.event.inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+          REPO_URL: https://github.com/${{ github.repository }}.git
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            CLEAN="$(printf '%s' "$RAW_TAG" | tr -d '[:space:]')"
+            if [ -z "$CLEAN" ]; then
+              echo "::error::No tag was given."
+              exit 1
+            fi
+            case "$CLEAN" in
+              v*) TAG="$CLEAN" ;;
+              *)  TAG="v$CLEAN" ;;
+            esac
+          else
+            # Tag push: github.ref_name is already the bare tag, e.g. v6.1.1
+            TAG="$REF_NAME"
+          fi
+
+          if ! git ls-remote --exit-code --tags "$REPO_URL" "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag '$TAG' does not exist in this repository."
+            echo "Tags that do exist:"
+            git ls-remote --tags "$REPO_URL" \
+              | sed 's|.*refs/tags/||' \
+              | grep -v '\^{}' \
+              | sort
+            exit 1
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Building tag: $TAG"
+
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ steps.resolve.outputs.tag }}
 
       - uses: actions/setup-node@v4
         with:
@@ -32,9 +73,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build all Windows targets
-        run: npm run build-all
+      # Mirrors build.bat exactly: nsis + portable, no msi, no cert discovery.
+      # The msi target is declared in package.json but was deliberately dropped
+      # from build.bat, so don't reintroduce it here.
+      - name: Build Windows targets (nsis + portable)
+        run: npx electron-builder --win nsis portable
         env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
           # electron-builder tries to auto-publish when it sees a token.
           # Leave this off so the upload step below owns that job.
           GH_TOKEN: ''
@@ -46,10 +91,8 @@ jobs:
       - name: Attach binaries to the release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          tag_name: ${{ steps.resolve.outputs.tag }}
           # Only the shippable files - skips win-unpacked/, builder-debug.yml, etc.
-          # The msi target is declared in package.json but isn't currently
-          # producing output; uncomment the Setup line once that's fixed.
           files: |
             dist/NET-ETHER-Installer-*.exe
             dist/NET-ETHER-portable-*.exe
