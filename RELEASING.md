@@ -8,13 +8,17 @@ GitHub Release as an asset. `.gitignore` already blocks `dist/`, `*.exe`, and
 
 ## What actually ships
 
-Three files out of `dist/`, and nothing else:
+Two files out of `dist/`, and nothing else:
 
 | File | What it is |
 |---|---|
-| `NET-ETHER-Installer-<version>.exe` | NSIS installer |
-| `NET-ETHER-Setup-<version>.msi` | MSI installer |
-| `NET-ETHER-portable-<version>.exe` | Portable, no install |
+| `NET-ETHER-Installer-<version>.exe` | NSIS installer, ~100 MB |
+| `NET-ETHER-portable-<version>.exe` | Portable, no install, ~100 MB |
+
+**About the MSI.** `package.json` declares an `msi` target, but it hasn't
+produced output for 6.0.0 or 6.1.0 — neither release shipped one. The workflow
+therefore doesn't expect it. If you ever fix that target, uncomment the
+`dist/NET-ETHER-Setup-*.msi` line in `.github/workflows/release.yml`.
 
 **Do not attach:** `win-unpacked/` (that's the whole Electron runtime),
 `builder-debug.yml`, `*.blockmap` (only needed for electron-updater, which this

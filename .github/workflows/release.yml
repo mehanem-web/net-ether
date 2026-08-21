@@ -48,8 +48,10 @@ jobs:
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           # Only the shippable files - skips win-unpacked/, builder-debug.yml, etc.
+          # The msi target is declared in package.json but isn't currently
+          # producing output; uncomment the Setup line once that's fixed.
           files: |
             dist/NET-ETHER-Installer-*.exe
-            dist/NET-ETHER-Setup-*.msi
             dist/NET-ETHER-portable-*.exe
+          # dist/NET-ETHER-Setup-*.msi
           fail_on_unmatched_files: true
