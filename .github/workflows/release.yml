@@ -76,13 +76,15 @@ jobs:
       # Mirrors build.bat exactly: nsis + portable, no msi, no cert discovery.
       # The msi target is declared in package.json but was deliberately dropped
       # from build.bat, so don't reintroduce it here.
+      # --publish never is REQUIRED here. In CI, electron-builder auto-detects
+      # the environment and tries to publish to GitHub itself; with no token it
+      # exits 1 *after* building successfully, killing the job before the upload
+      # step runs. Setting GH_TOKEN empty does not prevent this - only the flag
+      # does. The upload step below owns publishing.
       - name: Build Windows targets (nsis + portable)
-        run: npx electron-builder --win nsis portable
+        run: npx electron-builder --win nsis portable --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
-          # electron-builder tries to auto-publish when it sees a token.
-          # Leave this off so the upload step below owns that job.
-          GH_TOKEN: ''
 
       - name: Show what got built
         run: dir dist
