@@ -1634,6 +1634,55 @@ html, body {
 .scan-status-bar.warn { color: var(--amber); border-color: rgba(255,204,0,0.3); }
 .scan-status-bar.err  { color: var(--red);   border-color: rgba(255,68,85,0.3); }
 
+/* Online vendor lookup toggle */
+.scan-opt-row { display: flex; justify-content: flex-end; margin: -2px 0 6px; }
+.scan-opt-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: var(--sz-micro); font-weight: 700; letter-spacing: 1px;
+  color: var(--label-dim); cursor: pointer; user-select: none;
+  padding: 2px 6px; border: 1px solid transparent; border-radius: var(--radius-sm);
+  transition: all 0.15s;
+}
+.scan-opt-toggle:hover { border-color: var(--border); color: var(--label); }
+.scan-opt-toggle .pill {
+  font-family: var(--font-hud); font-size: 8px; font-weight: 900; letter-spacing: 1.5px;
+  padding: 1px 6px; border-radius: 8px; border: 1px solid var(--border); color: var(--label-dim);
+}
+.scan-opt-toggle.on .pill { color: var(--green); border-color: var(--green-dim); background: var(--green-ghost); }
+.scan-opt-toggle.policy { cursor: not-allowed; opacity: 0.55; }
+.scan-opt-toggle.policy .pill { color: var(--amber); border-color: rgba(255,204,0,0.5); }
+
+/* Persistent post-scan change chip — replaces the old auto-jump to SITES */
+.scan-changes-chip {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border: 1px solid rgba(255,204,0,0.4);
+  background: rgba(255,204,0,0.06);
+  border-radius: var(--radius);
+  font-size: var(--sz-micro);
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--amber);
+}
+.scan-changes-chip.visible { display: flex; }
+.scan-changes-chip.clean { border-color: rgba(var(--ar), var(--ag), var(--ab), 0.3); background: var(--green-ghost); color: var(--green-dim); }
+.scan-changes-chip .chip-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scan-changes-chip .chip-view {
+  cursor: pointer;
+  padding: 2px 8px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.scan-changes-chip .chip-view:hover { background: rgba(255,204,0,0.15); }
+.scan-changes-chip.clean .chip-view:hover { background: var(--green-faint); }
+.scan-changes-chip .chip-dismiss { cursor: pointer; opacity: 0.6; flex-shrink: 0; padding: 0 2px; }
+.scan-changes-chip .chip-dismiss:hover { opacity: 1; }
+
 /* ── PALETTE DROPDOWN ─────────────────────────────────────── */
 .palette-dropdown {
   position: absolute;
@@ -1743,6 +1792,164 @@ html, body {
   margin-bottom: 2px;
   transition: all 0.15s;
 }
+/* ── TITLEBAR VERSION CHIP → DIAGNOSTICS ─────────────────── */
+.ver-chip {
+  -webkit-app-region: no-drag;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--label-dim);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1px 7px 0;
+  line-height: 15px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.ver-chip:hover { color: var(--green); border-color: var(--green-dim); }
+.ver-chip.warn  { color: var(--amber); border-color: rgba(255,204,0,0.6); }
+.ver-chip.warn:hover { background: rgba(255,204,0,0.08); }
+
+.diag-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(var(--bgr), var(--bgg), var(--bgb), 0.985);
+  z-index: 600;
+  display: none;
+  flex-direction: column;
+  padding: 10px 12px 12px;
+}
+.diag-overlay.visible { display: flex; }
+.diag-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+.diag-title {
+  font-family: var(--font-hud);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  color: var(--green);
+}
+.diag-title span { color: var(--label-dim); letter-spacing: 1px; font-family: var(--font-mono); font-size: 11px; margin-left: 8px; }
+.diag-close {
+  font-size: 13px;
+  color: var(--label-dim);
+  cursor: pointer;
+  padding: 0 4px;
+}
+.diag-close:hover { color: var(--red); }
+.diag-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  scrollbar-gutter: stable;
+}
+.diag-section-title {
+  font-family: var(--font-hud);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  color: var(--label-dim);
+  margin: 8px 0 5px;
+}
+.diag-section-title:first-child { margin-top: 0; }
+.diag-state {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 12px;
+  row-gap: 2px;
+  font-size: var(--sz-micro);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.diag-state .k { color: var(--label-faint); white-space: nowrap; }
+.diag-state .v { color: var(--label); word-break: break-all; }
+.diag-state .v.ok   { color: var(--green); }
+.diag-state .v.warn { color: var(--amber); }
+.diag-state .v.err  { color: var(--red); }
+.diag-log { display: flex; flex-direction: column; gap: 3px; }
+.diag-empty { color: var(--label-faint); font-size: var(--sz-micro); letter-spacing: 1px; padding: 6px 0; }
+.diag-row {
+  border: 1px solid rgba(var(--ar), var(--ag), var(--ab), 0.1);
+  border-radius: var(--radius-sm);
+  background: rgba(0,0,0,0.3);
+  padding: 4px 7px;
+  font-size: var(--sz-micro);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.diag-row.op { cursor: pointer; }
+.diag-row.op:hover { border-color: rgba(var(--ar), var(--ag), var(--ab), 0.3); }
+.diag-row-head { display: flex; gap: 8px; align-items: baseline; }
+.diag-ts   { color: var(--label-faint); flex-shrink: 0; }
+.diag-tag  { color: var(--label); flex-shrink: 0; min-width: 62px; }
+.diag-res  { flex-shrink: 0; min-width: 32px; }
+.diag-res.ok   { color: var(--green); }
+.diag-res.fail { color: var(--red); }
+.diag-res.info { color: var(--label-faint); }
+.diag-note { color: var(--label-dim); flex: 1; min-width: 0; word-break: break-word; }
+.diag-row.fail .diag-note { color: rgba(255,68,85,0.85); }
+.diag-steps { display: none; margin-top: 5px; border-top: 1px solid rgba(var(--ar), var(--ag), var(--ab), 0.12); padding-top: 5px; }
+.diag-row.open .diag-steps { display: block; }
+.diag-step { margin-bottom: 5px; }
+.diag-step-cmd  { color: var(--label); word-break: break-all; }
+.diag-step-code { color: var(--label-faint); }
+.diag-step-code.fail { color: var(--red); }
+.diag-step-out {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--label-dim);
+  background: rgba(0,0,0,0.4);
+  border-radius: var(--radius-sm);
+  padding: 4px 6px;
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-weight: 400;
+}
+.diag-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  flex-shrink: 0;
+}
+.diag-actions .modal-btn { flex: 1; }
+.diag-actions .modal-btn.wide { flex: 2; }
+
+/* ── QUICK GUIDE OVERLAY (titlebar ?) ── shares the diagnostics chrome */
+.help-tabs { display: flex; gap: 4px; margin-bottom: 8px; flex-shrink: 0; }
+.help-tab {
+  flex: 1;
+  text-align: center;
+  padding: 4px 0;
+  font-family: var(--font-hud);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  color: var(--label-dim);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.help-tab:hover { color: var(--label); }
+.help-tab.active { color: var(--green); border-color: var(--green-dim); background: var(--green-ghost); }
+.help-body { font-size: var(--sz-micro); font-weight: 700; letter-spacing: 0.4px; line-height: 1.55; color: var(--label); }
+.help-body p { margin: 0 0 8px; }
+.help-body .help-lead { color: var(--green-dim); }
+.help-body .help-row { display: flex; gap: 8px; margin-bottom: 5px; }
+.help-body .help-key { color: var(--green); flex-shrink: 0; min-width: 78px; }
+.help-body .help-val { color: var(--label); }
+.help-body .help-gotcha { margin-top: 8px; padding: 6px 8px; border-left: 2px solid var(--amber); color: var(--amber); background: rgba(255,204,0,0.05); }
+
 /* ── ADAPTER DROPDOWN ─────────────────────────────────────── */
 .adapter-refresh-btn {
   float: right;
@@ -2053,6 +2260,26 @@ html, body {
 .intel-drawer-value.dim { color: rgba(var(--ar),var(--ag),var(--ab),0.35); }
 .intel-drawer-full { grid-column: 1 / -1; }
 
+/* Action strip — inline confirm for import/export choices */
+.intel-action-strip {
+  border: 1px solid rgba(255,204,0,0.35);
+  background: rgba(255,204,0,0.05);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
+.intel-action-msg {
+  font-size: var(--sz-micro);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--amber);
+  white-space: pre-line;
+  line-height: 1.5;
+}
+.intel-action-strip .restore-banner-actions { margin-top: 8px; }
+.intel-cred-eye { font-size: 12px; color: var(--label-faint); cursor: pointer; padding: 2px 4px; flex-shrink: 0; user-select: none; }
+.intel-cred-eye:hover { color: var(--label); }
+
 /* Divider between info grid and notes/creds */
 .intel-drawer-divider {
   border: none; border-top: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.08);
@@ -2230,13 +2457,13 @@ html, body {
   <div class="titlebar" id="titlebar">
     <div class="titlebar-left">
       <span class="hud-logo">NET//ETHER</span>
+      <span class="ver-chip" id="ver-chip" onclick="openDiag(event)" title="Diagnostics">v—</span>
     </div>
     <div class="win-controls">
       <div class="win-btn amber" id="btn-opacity" onclick="toggleOpacity()" title="Toggle 50% transparency">◑</div>
       <div class="win-btn" id="btn-palette" onclick="togglePalette(event)" title="Change colour theme">▣</div>
-      <div class="win-btn" onclick="openGuide()" title="Open user guide">?</div>
-      <div class="win-btn" onclick="window.hud && hud.minimize()" title="Minimize">─</div>
-      <div class="win-btn" onclick="safeHide()" title="Hide to tray">◻</div>
+      <div class="win-btn" onclick="openHelp(event)" title="Quick guide for this tab">?</div>
+      <div class="win-btn" onclick="safeHide()" title="Hide to tray (click the tray icon to bring it back)">─</div>
       <div class="win-btn close" onclick="safeQuit()" title="Quit NET//ETHER">✕</div>
     </div>
   </div>
@@ -2494,6 +2721,11 @@ html, body {
     </div>
 
     <div class="scan-start-btn" id="scan-start-btn" onclick="toggleScan()">▶ SCAN SUBNET</div>
+    <div class="scan-opt-row">
+      <div class="scan-opt-toggle on" id="online-vendor-toggle" onclick="toggleOnlineVendor()" title="Look up unknown MAC vendors on macvendors.com when the offline table misses">
+        <span>ONLINE VENDOR LOOKUP</span><span class="pill" id="online-vendor-pill">ON</span>
+      </div>
+    </div>
 
     <div class="scan-progress-wrap" id="scan-progress-wrap">
       <div class="scan-progress-header">
@@ -2522,18 +2754,28 @@ html, body {
       <div class="scan-empty-state" id="scan-empty">// ENTER BASE IP AND START SCAN</div>
     </div>
 
+    <div class="scan-changes-chip" id="scan-changes-chip">
+      <span class="chip-text" id="scan-changes-text"></span>
+      <span class="chip-view" onclick="scanChangesView()">VIEW →</span>
+      <span class="chip-dismiss" onclick="scanChangesDismiss()" title="Dismiss">✕</span>
+    </div>
     <div class="scan-status-bar" id="scan-status">READY</div>
 
   </div><!-- /panel-scan -->
 
-    <!-- ════════════ PANEL: INTEL ════════════ -->
+    <!-- ════════════ PANEL: SITES (element ids keep the historical 'intel' prefix) ════════════ -->
   <div class="panel" id="panel-intel">
 
     <!-- SITE LIST VIEW -->
     <div id="intel-list-view">
       <div class="intel-toolbar">
         <div class="intel-toolbar-btn" onclick="exportSites()" title="Export sites to Excel (.xlsx)">EXCEL</div>
-        <div class="intel-toolbar-btn" onclick="importSites()" title="Import sites from JSON">IMPORT</div>
+        <div class="intel-toolbar-btn" onclick="exportSitesJson()" title="Export sites to a portable JSON file">JSON</div>
+        <div class="intel-toolbar-btn" onclick="importSites()" title="Import sites from a JSON export">IMPORT</div>
+      </div>
+      <div class="intel-action-strip" id="intel-action-strip" style="display:none">
+        <div class="intel-action-msg" id="intel-action-msg"></div>
+        <div class="restore-banner-actions" id="intel-action-btns"></div>
       </div>
 
       <div class="intel-site-list" id="intel-site-list">
@@ -2615,6 +2857,39 @@ html, body {
   </div>
 </div>
 
+<!-- ── DIAGNOSTICS OVERLAY ── opened from the titlebar version chip -->
+<div class="diag-overlay" id="diag-overlay">
+  <div class="diag-header">
+    <div class="diag-title">DIAGNOSTICS<span id="diag-title-ver"></span></div>
+    <div class="diag-close" onclick="closeDiag()" title="Close">✕</div>
+  </div>
+  <div class="diag-body" id="diag-body">
+    <div class="diag-section-title">STATE</div>
+    <div class="diag-state" id="diag-state"></div>
+    <div class="diag-section-title">LOG <span id="diag-log-count"></span></div>
+    <div class="diag-log" id="diag-log"></div>
+  </div>
+  <div class="diag-actions">
+    <div class="modal-btn ok wide" onclick="diagCopy()">COPY DIAGNOSTICS</div>
+    <div class="modal-btn cancel"  onclick="diagClearLog()">CLEAR LOG</div>
+    <div class="modal-btn cancel"  onclick="closeDiag()">CLOSE</div>
+  </div>
+</div>
+
+<!-- ── QUICK GUIDE OVERLAY ── opened from the titlebar ? button, follows the active tab -->
+<div class="diag-overlay" id="help-overlay">
+  <div class="diag-header">
+    <div class="diag-title">QUICK GUIDE<span id="help-title-tab"></span></div>
+    <div class="diag-close" onclick="closeHelp()" title="Close">✕</div>
+  </div>
+  <div class="help-tabs" id="help-tabs"></div>
+  <div class="diag-body help-body" id="help-body"></div>
+  <div class="diag-actions">
+    <div class="modal-btn ok wide" onclick="openGuide()">FULL MANUAL →</div>
+    <div class="modal-btn cancel"  onclick="closeHelp()">CLOSE</div>
+  </div>
+</div>
+
 
 <script>
 // ── CLIPBOARD HELPER ───────────────────────────────────────
@@ -2637,8 +2912,42 @@ const ONLINE_LOOKUP_DELAY = 300;        // ms between requests (respect rate lim
 let   onlineVendorTimer   = null;
 const onlineVendorQueue   = [];         // { mac, prefix, ip } pending lookup
 
+// User preference (localStorage) + HKLM policy (read from main). Policy wins.
+const ONLINE_VENDOR_KEY = 'net-ether-online-vendor';
+let onlineVendorEnabled = localStorage.getItem(ONLINE_VENDOR_KEY) !== 'off';
+let onlineVendorPolicyOff = false;
+
+async function initOnlineVendorToggle() {
+  if (window.hud && hud.getPolicy) {
+    try { const p = await hud.getPolicy(); onlineVendorPolicyOff = !!(p && p.onlineVendorDisabled); } catch {}
+  }
+  renderOnlineVendorToggle();
+}
+
+function renderOnlineVendorToggle() {
+  const t = document.getElementById('online-vendor-toggle');
+  const pill = document.getElementById('online-vendor-pill');
+  if (!t || !pill) return;
+  const on = onlineVendorEnabled && !onlineVendorPolicyOff;
+  t.classList.toggle('on', on);
+  t.classList.toggle('policy', onlineVendorPolicyOff);
+  pill.textContent = onlineVendorPolicyOff ? 'OFF · POLICY' : (on ? 'ON' : 'OFF');
+  t.title = onlineVendorPolicyOff
+    ? 'Online vendor lookup is disabled by your organisation (HKLM policy)'
+    : 'Look up unknown MAC vendors on macvendors.com when the offline table misses';
+}
+
+function toggleOnlineVendor() {
+  if (onlineVendorPolicyOff) { setScanStatus('ONLINE LOOKUP IS DISABLED BY POLICY', 'warn', 3000); return; }
+  onlineVendorEnabled = !onlineVendorEnabled;
+  localStorage.setItem(ONLINE_VENDOR_KEY, onlineVendorEnabled ? 'on' : 'off');
+  renderOnlineVendorToggle();
+  setScanStatus(onlineVendorEnabled ? 'ONLINE VENDOR LOOKUP ON' : 'ONLINE VENDOR LOOKUP OFF — OFFLINE OUI TABLE ONLY', '', 3000);
+}
+
 function queueOnlineVendorLookup(mac, ip) {
   if (!window.hud || !hud.macLookupOnline) return;
+  if (!onlineVendorEnabled || onlineVendorPolicyOff) return;
   if (!mac || mac === 'ff-ff-ff-ff-ff-ff') return;
   const clean  = mac.replace(/[:\-]/g, '').toUpperCase();
   const prefix = clean.slice(0, 6);
@@ -2759,6 +3068,8 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
   loadSavedTheme();
   renderPaletteSwatches();
+  initDiag();
+  initOnlineVendorToggle();
   // loadAdapters is async — it populates the live bar, gateway field, etc.
   // Wait for it to finish then do one final fit so everything is visible
   // on first paint with no scrolling needed.
@@ -3356,8 +3667,330 @@ async function openGuide() {
   }
 }
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closeModal(); }
+  if (e.key === 'Escape') { closeModal(); closeDiag(); closeHelp(); }
 });
+
+// ══════════════════════════════════════════════════════════════
+// QUICK GUIDE OVERLAY
+// One screen per tab. Opens on whichever tab is active; the strip at the top
+// switches between them. FULL MANUAL → opens the bundled PDF.
+// ══════════════════════════════════════════════════════════════
+const HELP_TABS = ['net', 'tools', 'scan', 'intel'];
+const HELP_LABEL = { net: 'ETHER', tools: 'PING', scan: 'SCAN', intel: 'SITES' };
+const HELP_CONTENT = {
+  net: {
+    lead: 'Adapter IP configuration. Everything you change here goes through netsh on the selected adapter.',
+    rows: [
+      ['PRESETS',    'LIVE always mirrors the adapter right now. Slots 2–4 are yours — fill the fields, SAVE TO PRESET.'],
+      ['DEFAULTS',   'Factory addresses for common device brands. A tile fills in the device\'s subnet and puts YOU one address above it.'],
+      ['APPLY',      'Writes IP / mask / gateway / DNS. The adapter\'s previous config is snapshotted first — REVERT undoes it.'],
+      ['DHCP',       'Hands the adapter back to DHCP in one click.'],
+      ['MTU',        'Resets MTU to 1500. Fixes "can ping, can\'t load web pages."'],
+      ['CMD',        'Shows the exact netsh lines without running them — copy into an admin prompt if the app can\'t.'],
+      ['MULTI-IP',   'Adds a second IP without touching the primary. On a DHCP adapter it converts to static first (you\'ll be asked twice). Remove aliases before you leave — they survive reboots.'],
+    ],
+    gotcha: 'Modern Axis cameras have no factory IP — they fall back to 169.254.x.x. Use the AXIS tile to join that /16, then find the camera\'s address in its label or the Axis tool.',
+  },
+  tools: {
+    lead: 'Continuous reachability monitor for up to 8 hosts.',
+    rows: [
+      ['METHOD',     'TCP port 80, not ICMP — works through switches and appliances that drop ping.'],
+      ['+ GATEWAY',  'Adds the adapter\'s gateway. + MY IP adds your own address as a sanity check.'],
+      ['DOT COLOUR', 'Green under 150 ms · amber 150 ms and up · red no response. Sparkline is the last 60 samples.'],
+      ['TRCRT',      'Traceroute to that host, hops stream live.'],
+      ['COPY',       'Full summary to clipboard for the service report.'],
+      ['PAUSE / STOP','PAUSE freezes the display and keeps data. STOP clears everything.'],
+    ],
+    gotcha: 'The tray icon flashes red while any host is failing, even with the HUD hidden.',
+  },
+  scan: {
+    lead: 'Sweeps a /24 with ICMP and ARP, then probes 10 common ports on every responder.',
+    rows: [
+      ['BASE / RANGE','Auto-filled from the adapter. Narrow the range (e.g. 1-60) to finish faster.'],
+      ['SITE PICKER', 'Load a saved site\'s subnet. Scanning a known subnet compares results against that site\'s device list.'],
+      ['VENDOR',      'From the bundled offline OUI table; online lookup only if that misses.'],
+      ['OPEN / RDP / SSH','Launches the device web UI, an RDP session, or copies the SSH command.'],
+      ['SAVE SITE',   'Stores the results as a site for next time.'],
+      ['CHANGES CHIP','After scanning a known subnet, an amber chip lists NEW / MISSING / MOVED. VIEW → jumps to the site.'],
+    ],
+    gotcha: 'ARP only sees hosts on your own subnet. If you\'re on the wrong subnet you\'ll get ping hits but no MACs.',
+  },
+  intel: {
+    lead: 'Site knowledge base. Devices are anchored by MAC address, so IP changes are tracked instead of duplicated.',
+    rows: [
+      ['SITE CARD',  'Name, tag, last scan, device count, and change badges since the previous scan.'],
+      ['DRAWER',     'Click a device for MAC, hostname, first/last seen, open ports, notes, and credentials.'],
+      ['TYPE CHIP',  'Click to cycle CAMERA · NVR/DVR · NETWORK · SERVER · WORKSTATION · ACCESS CTL · PRINTER · OTHER.'],
+      ['SCAN NOW',   'Loads this site\'s subnet into SCAN. Results come back as a change chip — nothing switches tabs on you.'],
+      ['EXCEL',      'Formatted workbook of every site and device.'],
+      ['JSON / IMPORT','Portable export for another machine. IMPORT backs up your current data first, then MERGE (by MAC) or REPLACE.'],
+    ],
+    gotcha: 'Credentials are encrypted on disk with Windows DPAPI — readable only by your account on this machine. JSON export leaves them out unless you choose WITH CREDS, which writes plaintext.',
+  },
+};
+let _helpOpen = false;
+let _helpTab  = 'net';
+
+function currentTabId() {
+  const active = document.querySelector('.tab.active');
+  return active ? active.id.replace('tab-', '') : 'net';
+}
+
+function openHelp(e) {
+  if (e) e.stopPropagation();
+  const ov = document.getElementById('help-overlay');
+  if (!ov) return;
+  closeDiag();
+  _helpOpen = true;
+  ov.classList.add('visible');
+  renderHelp(currentTabId());
+}
+
+function closeHelp() {
+  const ov = document.getElementById('help-overlay');
+  if (!ov || !_helpOpen) return;
+  _helpOpen = false;
+  ov.classList.remove('visible');
+}
+
+function renderHelp(tab) {
+  if (!HELP_CONTENT[tab]) tab = 'net';
+  _helpTab = tab;
+  const tabs = document.getElementById('help-tabs');
+  const body = document.getElementById('help-body');
+  const ttl  = document.getElementById('help-title-tab');
+  if (!tabs || !body) return;
+  tabs.innerHTML = HELP_TABS.map(t =>
+    `<div class="help-tab${t === tab ? ' active' : ''}" onclick="renderHelp('${t}')">${HELP_LABEL[t]}</div>`).join('');
+  const c = HELP_CONTENT[tab];
+  if (ttl) ttl.textContent = HELP_LABEL[tab];
+  body.innerHTML =
+    `<p class="help-lead">${escHtml(c.lead)}</p>` +
+    c.rows.map(([k, v]) => `<div class="help-row"><span class="help-key">${escHtml(k)}</span><span class="help-val">${escHtml(v)}</span></div>`).join('') +
+    (c.gotcha ? `<div class="help-gotcha">${escHtml(c.gotcha)}</div>` : '');
+  body.scrollTop = 0;
+}
+
+// ══════════════════════════════════════════════════════════════
+// DIAGNOSTICS OVERLAY
+// Silent until summoned from the titlebar version chip. Shows process/
+// elevation state and the persistent log of every privileged operation
+// with its captured output and verified result. COPY DIAGNOSTICS puts a
+// plain-text report on the clipboard for pasting into a bug report.
+// ══════════════════════════════════════════════════════════════
+let _diagState = null;
+let _diagLog   = [];
+let _diagOpen  = false;
+
+async function initDiag() {
+  if (!window.hud || !hud.diagGet) return;
+  try {
+    const r = await hud.diagGet();
+    _diagState = r.state;
+    _diagLog   = r.log || [];
+  } catch { return; }
+  updateVerChip();
+  if (hud.onDiagEntry) {
+    hud.onDiagEntry(entry => {
+      // Guard against the same entry arriving twice (push event racing a full refresh)
+      const last = _diagLog[_diagLog.length - 1];
+      if (last && last.ts === entry.ts && last.tag === entry.tag && last.kind === entry.kind) return;
+      _diagLog.push(entry);
+      if (_diagLog.length > 200) _diagLog.splice(0, _diagLog.length - 200);
+      if (_diagOpen) renderDiagLog();
+      // Elevation is resolved async after launch — re-read once it lands
+      if (entry.kind === 'app' && entry.tag === 'launch') refreshDiagState();
+    });
+  }
+}
+
+async function refreshDiagState() {
+  if (!window.hud || !hud.diagGet) return;
+  try {
+    const r = await hud.diagGet();
+    _diagState = r.state;
+    _diagLog   = r.log || [];
+  } catch {}
+  updateVerChip();
+  if (_diagOpen) { renderDiagState(); renderDiagLog(); }
+}
+
+function updateVerChip() {
+  const chip = document.getElementById('ver-chip');
+  if (!chip || !_diagState) return;
+  chip.textContent = 'v' + _diagState.version;
+  const notElevated = _diagState.elevated === false;
+  chip.classList.toggle('warn', notElevated);
+  chip.title = notElevated
+    ? 'NOT ELEVATED — netsh changes will prompt UAC. Click for diagnostics.'
+    : 'Diagnostics';
+}
+
+function openDiag(e) {
+  if (e) e.stopPropagation();
+  const ov = document.getElementById('diag-overlay');
+  if (!ov) return;
+  closeHelp();
+  _diagOpen = true;
+  ov.classList.add('visible');
+  refreshDiagState();
+  renderDiagState();
+  renderDiagLog();
+}
+
+function closeDiag() {
+  const ov = document.getElementById('diag-overlay');
+  if (!ov || !_diagOpen) return;
+  _diagOpen = false;
+  ov.classList.remove('visible');
+}
+
+function diagElevLabel(s) {
+  if (!s) return { text: '—', cls: '' };
+  if (s.elevated === true)  return { text: `YES (${s.integrity})`, cls: 'ok' };
+  if (s.elevated === false) return { text: `NO (${s.integrity}) — netsh will prompt UAC`, cls: 'warn' };
+  return { text: 'UNKNOWN' + (s.privErr ? ' — ' + s.privErr : ''), cls: 'err' };
+}
+
+function diagCredLabel(c) {
+  if (!c) return { text: '—', cls: '' };
+  if (c.format === 0) return { text: `none stored · safeStorage ${c.available ? 'available' : 'UNAVAILABLE'}`, cls: c.available ? '' : 'warn' };
+  if (c.mode === 'safeStorage') return { text: `${c.count} encrypted (safeStorage, format ${c.format})`, cls: 'ok' };
+  if (c.count === 0) return { text: `none stored · format ${c.format}`, cls: '' };
+  return { text: `${c.count} PLAINTEXT · safeStorage ${c.available ? 'available — will encrypt on next save' : 'UNAVAILABLE'}`, cls: 'warn' };
+}
+
+function diagFmtBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+  return (n / 1048576).toFixed(1) + ' MB';
+}
+
+function diagStateRows(s) {
+  const el = diagElevLabel(s);
+  const files = Object.entries(s.files || {}).map(([name, f]) =>
+    [name, f.exists ? diagFmtBytes(f.bytes) : 'missing', f.exists ? '' : 'warn']);
+  const up = s.uptimeSec >= 3600
+    ? `${Math.floor(s.uptimeSec / 3600)}h ${Math.floor((s.uptimeSec % 3600) / 60)}m`
+    : `${Math.floor(s.uptimeSec / 60)}m ${s.uptimeSec % 60}s`;
+  return [
+    ['version',   `${s.version} · ${s.packaged ? 'packaged' : 'dev'}${s.dev ? ' (--dev)' : ''}`, ''],
+    ['elevated',  el.text, el.cls],
+    ['user',      `${s.user || '?'} @ ${s.host || '?'}`, ''],
+    ['os',        s.os, ''],
+    ['runtime',   `electron ${s.electron} · node ${s.node} · chrome ${s.chrome}`, ''],
+    ['uptime',    up, ''],
+    ['exe',       s.exe, ''],
+    ['userData',  s.userData, ''],
+    ['oui table', s.ouiEntries ? `${s.ouiEntries.toLocaleString()} entries` : 'not loaded', s.ouiEntries ? '' : 'warn'],
+    ['credentials', diagCredLabel(s.creds).text, diagCredLabel(s.creds).cls],
+    ['policy',    s.policy && s.policy.onlineVendorDisabled ? 'DisableOnlineVendorLookup=1' : 'none set', ''],
+    ...files,
+  ];
+}
+
+function renderDiagState() {
+  const grid = document.getElementById('diag-state');
+  const ver  = document.getElementById('diag-title-ver');
+  if (!grid) return;
+  if (!_diagState) { grid.innerHTML = '<div class="k">state</div><div class="v warn">ELECTRON ONLY</div>'; return; }
+  if (ver) ver.textContent = 'v' + _diagState.version;
+  grid.innerHTML = diagStateRows(_diagState)
+    .map(([k, v, cls]) => `<div class="k">${escHtml(k)}</div><div class="v ${cls}">${escHtml(v)}</div>`)
+    .join('');
+}
+
+function diagFmtTime(ts) {
+  const d = new Date(ts);
+  const p = n => String(n).padStart(2, '0');
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+function diagFmtDate(ts) {
+  const d = new Date(ts);
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${diagFmtTime(ts)}`;
+}
+
+function diagResult(e) {
+  if (e.kind === 'app') return { text: '—', cls: 'info' };
+  return e.ok ? { text: 'OK', cls: 'ok' } : { text: 'FAIL', cls: 'fail' };
+}
+
+function renderDiagLog() {
+  const list  = document.getElementById('diag-log');
+  const count = document.getElementById('diag-log-count');
+  if (!list) return;
+  if (count) count.textContent = _diagLog.length ? `· ${_diagLog.length}` : '';
+  if (!_diagLog.length) {
+    list.innerHTML = '<div class="diag-empty">NO ENTRIES YET — PRIVILEGED OPERATIONS WILL APPEAR HERE</div>';
+    return;
+  }
+  const rows = _diagLog.slice().reverse().map((e, i) => {
+    const r = diagResult(e);
+    const kind = e.kind === 'op' ? 'OP' : e.kind === 'verify' ? 'VERIFY' : e.kind === 'error' ? 'ERROR' : 'APP';
+    const meta = e.kind === 'op' ? ` ${e.mode || ''} ${e.ms != null ? e.ms + 'ms' : ''}`.replace(/\s+$/, '') : '';
+    const note = e.note || '';
+    const steps = (e.steps || []).map(s => `
+      <div class="diag-step">
+        <div class="diag-step-cmd">› ${escHtml(s.cmd)}</div>
+        <div class="diag-step-code ${s.code === 0 ? '' : 'fail'}">exit ${escHtml(String(s.code))}</div>
+        ${s.out ? `<div class="diag-step-out">${escHtml(s.out)}</div>` : ''}
+      </div>`).join('');
+    const openable = e.kind === 'op' && (e.steps || []).length;
+    return `
+      <div class="diag-row ${e.kind}${e.ok === false ? ' fail' : ''}" ${openable ? `onclick="this.classList.toggle('open')"` : ''}>
+        <div class="diag-row-head">
+          <span class="diag-ts">${diagFmtTime(e.ts)}</span>
+          <span class="diag-tag">${escHtml(kind)} ${escHtml(e.tag || '')}</span>
+          <span class="diag-res ${r.cls}">${r.text}</span>
+          <span class="diag-note">${escHtml(note)}${escHtml(meta)}</span>
+        </div>
+        ${openable ? `<div class="diag-steps">${steps}</div>` : ''}
+      </div>`;
+  });
+  list.innerHTML = rows.join('');
+}
+
+function buildDiagReport() {
+  const lines = [];
+  const s = _diagState;
+  lines.push(`NET//ETHER DIAGNOSTICS — ${s ? 'v' + s.version : 'v?'} — ${diagFmtDate(Date.now())}`);
+  lines.push('');
+  lines.push('STATE');
+  if (s) diagStateRows(s).forEach(([k, v]) => lines.push(`  ${k.padEnd(20)} ${v}`));
+  else lines.push('  (unavailable)');
+  lines.push('');
+  lines.push(`LOG (newest first, ${_diagLog.length} entries)`);
+  _diagLog.slice().reverse().forEach(e => {
+    const r = diagResult(e);
+    const kind = e.kind === 'op' ? 'OP' : e.kind === 'verify' ? 'VERIFY' : e.kind === 'error' ? 'ERROR' : 'APP';
+    const meta = e.kind === 'op' ? ` [${e.mode || '?'} ${e.ms != null ? e.ms + 'ms' : ''}]` : '';
+    lines.push(`[${diagFmtDate(e.ts)}] ${kind.padEnd(6)} ${(e.tag || '').padEnd(10)} ${r.text.padEnd(4)} ${e.note || ''}${meta}`);
+    (e.steps || []).forEach(st => {
+      lines.push(`    > ${st.cmd}`);
+      lines.push(`      exit ${st.code}${st.out ? ': ' + st.out.replace(/\n/g, '\n      ') : ''}`);
+    });
+  });
+  return lines.join('\n');
+}
+
+async function diagCopy() {
+  try {
+    await hudCopy(buildDiagReport());
+    setNetStatus('DIAGNOSTICS COPIED TO CLIPBOARD', 'ok', 3000);
+    const btn = document.querySelector('#diag-overlay .modal-btn.ok');
+    if (btn) { const t = btn.textContent; btn.textContent = 'COPIED'; setTimeout(() => { btn.textContent = t; }, 1500); }
+  } catch {
+    setNetStatus('COPY FAILED', 'err', 3000);
+  }
+}
+
+async function diagClearLog() {
+  if (!window.hud || !hud.diagClear) return;
+  try { await hud.diagClear(); } catch {}
+  _diagLog = [];
+  refreshDiagState();
+}
 
 // ── APPLY / CMD ────────────────────────────────────────────
 function getFields() {
@@ -3475,12 +4108,17 @@ async function applyConfig() {
     return;
   }
 
-  // ── SAFEGUARD: APIPA / reserved range warning ──────────
+  // ── SAFEGUARD: reserved range ──────────────────────────
+  // 169.254.x.x (link-local) is deliberately ALLOWED: modern Axis cameras ship
+  // DHCP-only and fall back to a random 169.254 address, so putting the laptop on
+  // the same /16 is how you reach one without a DHCP server or the Axis tool.
   const ipParts = f.ip.split('.').map(Number);
   if (ipParts[0] === 169 && ipParts[1] === 254) {
-    setNetStatus('ERROR: 169.254.x.x IS AN APIPA ADDRESS — ENTER A VALID STATIC IP', 'err', 7000);
-    document.getElementById('ip').classList.add('changed');
-    return;
+    if (f.subnet !== '255.255.0.0') {
+      setNetStatus('NOTE: 169.254.x.x IS LINK-LOCAL — DEVICES PICK RANDOM ADDRESSES IN THE /16, SO 255.255.0.0 IS THE MASK YOU USUALLY WANT', 'warn', 8000);
+    } else {
+      setNetStatus('NOTE: LINK-LOCAL CONFIG — OK FOR DIRECT DEVICE ACCESS', 'warn', 4000);
+    }
   }
   if (ipParts[0] === 0) {
     setNetStatus('ERROR: IP CANNOT START WITH 0', 'err', 5000);
@@ -3616,7 +4254,7 @@ async function applyConfig() {
   }
 
   if (window.hud) {
-    setNetStatus('REQUESTING ADMIN PRIVILEGES...', '');
+    setNetStatus('APPLYING CONFIG...', '');
     try {
       const result = await hud.applyConfig({
         adapter: f.adapter || '',
@@ -3662,7 +4300,10 @@ async function applyConfig() {
 
 // ── KNOWN DEFAULTS ─────────────────────────────────────────
 const KNOWN_DEFAULTS = [
-  { name: 'AXIS',      ip: '192.168.0.90',  subnet: '255.255.255.0', gateway: '192.168.0.1',  dns: '' },
+  // Axis dropped the 192.168.0.90 factory default (DHCP-only, APIPA fallback) —
+  // the tile now puts YOU on the link-local /16 so any Axis unit is one browser
+  // hop away. devLabel overrides the computed DEV line since the camera's address is random.
+  { name: 'AXIS',      ip: '169.254.1.1',   subnet: '255.255.0.0',   gateway: '',             dns: '', devLabel: '169.254.x.x' },
   { name: 'HANWHA',    ip: '192.168.1.100', subnet: '255.255.255.0', gateway: '192.168.1.1',  dns: '' },
   { name: 'BOSCH',     ip: '192.168.0.1',   subnet: '255.255.255.0', gateway: '192.168.0.254',dns: '' },
   { name: 'MERCURY',   ip: '192.168.0.251', subnet: '255.255.255.0', gateway: '192.168.0.1',  dns: '' },
@@ -3691,12 +4332,14 @@ function buildDefaultsGrid() {
   KNOWN_DEFAULTS.forEach(d => {
     const parts = d.ip.split('.');
     const techLast = parts.length === 4 ? (parseInt(parts[3], 10) + 1) % 255 || 2 : '—';
-    const techIp = parts.length === 4 ? `${parts[0]}.${parts[1]}.${parts[2]}.${techLast}` : d.ip;
+    // Tiles with devLabel (link-local) put YOU on d.ip directly; others compute YOU = DEV + 1
+    const devIp  = d.devLabel || d.ip;
+    const techIp = d.devLabel ? d.ip : (parts.length === 4 ? `${parts[0]}.${parts[1]}.${parts[2]}.${techLast}` : d.ip);
     const chip = document.createElement('div');
     chip.className = 'default-chip';
     chip.innerHTML = `
       <div class="default-chip-name">${escHtml(d.name)}</div>
-      <div class="default-chip-ip">DEV ${escHtml(d.ip)}</div>
+      <div class="default-chip-ip">DEV ${escHtml(devIp)}</div>
       <div class="default-chip-ip">YOU ${escHtml(techIp)}</div>`;
     chip.onclick = () => applyDefaultConfig(d);
     grid.appendChild(chip);
@@ -3709,10 +4352,11 @@ function applyDefaultConfig(d) {
   const gatewayEl = document.getElementById('gateway');
   const dnsEl     = document.getElementById('dns');
 
-  // Increment last octet by 1 so the tech's IP doesn't conflict with the device
+  // Increment last octet by 1 so the tech's IP doesn't conflict with the device.
+  // Link-local tiles (devLabel set) use d.ip as-is — the device's address is random.
   let techIp = d.ip;
   const parts = d.ip.split('.');
-  if (parts.length === 4) {
+  if (!d.devLabel && parts.length === 4) {
     const last = (parseInt(parts[3], 10) + 1) % 255 || 2;
     techIp = parts[0] + '.' + parts[1] + '.' + parts[2] + '.' + last;
   }
@@ -3720,8 +4364,8 @@ function applyDefaultConfig(d) {
   if (ipEl)      { ipEl.value      = techIp;    markChanged(ipEl); }
   if (subnetEl)  { subnetEl.value  = d.subnet;  markChanged(subnetEl); }
   if (gatewayEl) { gatewayEl.value = d.gateway; markChanged(gatewayEl); }
-  if (dnsEl && d.dns) { dnsEl.value = d.dns;    markChanged(dnsEl); }
-  setNetStatus(`DEFAULTS LOADED: ${d.name} — DEVICE ${d.ip} / YOUR IP ${techIp}`, 'ok', 4000);
+  if (dnsEl)     { dnsEl.value     = d.dns || ''; if (d.dns) markChanged(dnsEl); }
+  setNetStatus(`DEFAULTS LOADED: ${d.name} — DEVICE ${d.devLabel || d.ip} / YOUR IP ${techIp}`, 'ok', 4000);
   autoResize();
 }
 
@@ -4603,7 +5247,7 @@ async function applyDhcp() {
     setNetStatus('DHCP COMMANDS READY — RUN AS ADMIN', 'ok');
     return;
   }
-  setNetStatus('REQUESTING ADMIN PRIVILEGES...', '');
+  setNetStatus('SWITCHING TO DHCP...', '');
   try {
     const result = await hud.applyDhcp(adapter);
     if (result.ok) {
@@ -4648,7 +5292,7 @@ async function fixMtu() {
   }
 
   const mtuStr = currentMtu ? ` (currently ${currentMtu})` : '';
-  setNetStatus(`RESETTING MTU TO 1500${mtuStr} — REQUESTING ELEVATION...`, '');
+  setNetStatus(`RESETTING MTU TO 1500${mtuStr}...`, '');
 
   try {
     const result = await hud.fixMtu(adapter, 1500);
@@ -4657,11 +5301,11 @@ async function fixMtu() {
     } else if (result.err === 'CANCELLED') {
       setNetStatus('CANCELLED — UAC PROMPT DISMISSED', 'warn', 4000);
     } else {
-      // Fall back to CMD
+      // Real failure with captured output — show it, offer the CMD fallback
       const cmd = `netsh interface ipv4 set subinterface "${adapter}" mtu=1500 store=persistent`;
       document.getElementById('cmd-text').textContent = cmd;
       showCmdBox();
-      setNetStatus('ELEVATION FAILED — CMD READY, RUN AS ADMIN', 'warn');
+      setNetStatus('ERROR: ' + (result.err || 'unknown').toUpperCase() + ' — CMD BELOW, DETAILS IN DIAGNOSTICS', 'err');
     }
   } catch (err) {
     setNetStatus('ERROR: ' + err.message, 'err');
@@ -4820,7 +5464,7 @@ let activeSiteDB    = {};  // mac -> { label, ip, vendor } for current subnet se
 let allSites        = {};  // full on-disk site database, keyed by subnet
 let portProbeQueue  = [];  // IPs waiting for port probe after main scan completes
 let scanCurrentSiteId  = null;  // intelDB siteId matching current subnet, if any
-let intelReturnSiteId  = null;  // set by SCAN NOW — return to this site after scan
+let scanChangesSiteId  = null;  // site behind the post-scan VIEW → chip
 
 function scanPopulateSitePicker() {
   const sel = document.getElementById('scan-site-select');
@@ -4943,6 +5587,7 @@ function startScan() {
 
   scanRunning = true;
   scanFound   = 0;
+  scanChangesDismiss(); // a fresh scan supersedes any earlier change chip
   portProbeQueue = [];
   activeSiteDB = {};
   if (allSites[base]) {
@@ -5036,7 +5681,8 @@ function onScanResult({ host, ok, ms, done, total, fromArp, mac, vendor }) {
 function onScanDone({ aborted }) {
   hud && hud.offScan();
   finishScan(aborted);
-  // Feed results to INTEL for change detection (after a short delay so port probes can enrich)
+  if (!aborted) scanResolveHostnames();
+  // Feed results to SITES for change detection (after a short delay so port probes can enrich)
   if (!aborted) {
     setTimeout(() => {
       const base = document.getElementById('scan-base').value.trim();
@@ -5047,19 +5693,79 @@ function onScanDone({ aborted }) {
         const ipEl     = row.querySelector('.scan-result-ip');
         const vendorEl = row.querySelector('.scan-result-vendor');
         const macEl    = row.querySelector('.scan-result-mac');
-        const ip     = ipEl     ? ipEl.textContent.trim()     : null;
-        const vendor = vendorEl ? vendorEl.textContent.trim() : '';
-        const mac    = macEl    ? macEl.textContent.trim()    : '';
+        const hostEl   = row.querySelector('.scan-result-host');
+        const ip       = ipEl     ? ipEl.textContent.trim()     : null;
+        const vendor   = vendorEl ? vendorEl.textContent.trim() : '';
+        const mac      = macEl    ? macEl.textContent.trim()    : '';
+        const hostname = hostEl   ? hostEl.textContent.trim()   : '';
         const ports  = [];
         row.querySelectorAll('.port-badge[title]').forEach(b => {
           const m = b.title.match(/Port (\d+)/);
           if (m) ports.push({ port: parseInt(m[1]), open: true });
         });
-        return ip ? { ip, vendor, mac, ports } : null;
+        return ip ? { ip, vendor, mac, hostname, ports } : null;
       }).filter(Boolean);
       if (results.length) intelProcessScanResults(base, results);
     }, 2500);
   }
+}
+
+// ── HOSTNAME RESOLUTION ────────────────────────────────────
+// Fires once the sweep is done: reverse DNS + NetBIOS for every found host,
+// SELF badge on this machine's own address. Results land in the meta row and
+// are picked up by the SITES change-detection pass.
+async function scanResolveHostnames() {
+  if (!window.hud || !hud.resolveHosts) return;
+  const rows = [...document.querySelectorAll('#scan-results .scan-result-row')];
+  const ips = rows.map(r => r.querySelector('.scan-result-ip')?.textContent.trim()).filter(Boolean);
+  if (!ips.length) return;
+  let res;
+  try { res = await hud.resolveHosts(ips); } catch { return; }
+  if (!res) return;
+  const selfIps = new Set(res.selfIps || []);
+  let named = 0;
+  ips.forEach(ip => {
+    const r = res.results && res.results[ip];
+    const isSelf = selfIps.has(ip) || (r && r.source === 'self');
+    if (r && r.hostname) { setScanRowHostname(ip, r.hostname, r.source); named++; }
+    if (isSelf) markScanRowSelf(ip);
+  });
+  if (named) setScanStatus(`${named} HOSTNAME${named !== 1 ? 'S' : ''} RESOLVED`, 'ok', 4000);
+}
+
+function setScanRowHostname(ip, name, source) {
+  const row = document.getElementById('sr-' + ip.replace(/\./g, '_'));
+  if (!row) return;
+  let meta = row.querySelector('.scan-result-meta');
+  if (!meta) {
+    meta = document.createElement('div');
+    meta.className = 'scan-result-meta';
+    row.appendChild(meta);
+  }
+  let el = meta.querySelector('.scan-result-host');
+  if (!el) {
+    el = document.createElement('span');
+    el.className = 'scan-result-host';
+    // After MAC if present, else first
+    const macEl = meta.querySelector('.scan-result-mac');
+    if (macEl) macEl.insertAdjacentElement('afterend', el); else meta.prepend(el);
+  }
+  el.textContent = name;
+  el.title = source === 'nbt' ? `NetBIOS name: ${name}` : source === 'self' ? 'This machine' : `DNS name: ${name}`;
+  el.classList.toggle('nbt', source === 'nbt');
+  autoResize();
+}
+
+function markScanRowSelf(ip) {
+  const row = document.getElementById('sr-' + ip.replace(/\./g, '_'));
+  if (!row || row.querySelector('.scan-result-self')) return;
+  row.classList.add('self');
+  const badge = document.createElement('span');
+  badge.className = 'scan-result-self';
+  badge.textContent = 'SELF';
+  badge.title = 'This machine';
+  const ipEl = row.querySelector('.scan-result-ip');
+  if (ipEl) ipEl.insertAdjacentElement('afterend', badge); else row.prepend(badge);
 }
 
 function finishScan(aborted) {
@@ -5503,29 +6209,170 @@ async function exportSites() {
   }
 }
 
-function importSites() {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = '.json';
-  input.onchange = async e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async ev => {
-      try {
-        const data = JSON.parse(ev.target.result);
-        if (typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid format');
-        // Merge into intelDB — imported sites win on conflict
-        intelDB = { ...intelDB, ...data };
-        await intelPersist();
-        intelRenderSiteList();
-        const count = Object.keys(data).length;
-        intelSetListStatus(`IMPORTED ${count} SITE${count !== 1 ? 'S' : ''}`, 'ok', 4000);
-      } catch { intelSetListStatus('IMPORT FAILED — INVALID FILE', 'err', 5000); }
-    };
-    reader.readAsText(file);
+// ── JSON EXPORT / IMPORT ───────────────────────────────────
+// Portable interchange between machines. Credentials are excluded by default
+// (encrypted-at-rest values are DPAPI-bound and wouldn't be readable elsewhere);
+// opting in writes them as plaintext, so it's an explicit choice every time.
+
+function intelShowActionStrip(msg, actions) {
+  const strip = document.getElementById('intel-action-strip');
+  const msgEl = document.getElementById('intel-action-msg');
+  const btns  = document.getElementById('intel-action-btns');
+  if (!strip) return;
+  msgEl.textContent = msg;
+  btns.innerHTML = '';
+  actions.forEach(a => {
+    const b = document.createElement('div');
+    b.className = 'rbtn ' + (a.cls || 'rbtn-cancel');
+    b.textContent = a.label;
+    b.onclick = () => { intelHideActionStrip(); a.onClick(); };
+    btns.appendChild(b);
+  });
+  strip.style.display = '';
+  autoResize();
+}
+function intelHideActionStrip() {
+  const strip = document.getElementById('intel-action-strip');
+  if (strip) strip.style.display = 'none';
+  autoResize();
+}
+
+function intelCountCreds(sites) {
+  let n = 0;
+  Object.values(sites || {}).forEach(s => (s.devices || []).forEach(d => (d.creds || []).forEach(c => { if (c && c.val) n++; })));
+  return n;
+}
+
+async function exportSitesJson() {
+  if (!window.hud || !hud.exportJson) { intelSetListStatus('EXPORT REQUIRES ELECTRON', 'warn', 3000); return; }
+  if (Object.keys(intelDB).length === 0 && Object.keys(allSites || {}).length === 0) {
+    intelSetListStatus('NO SITES TO EXPORT', 'warn', 3000);
+    return;
+  }
+  const credCount = intelCountCreds(intelDB);
+  const run = async (includeCreds) => {
+    intelSetListStatus('EXPORTING...', '');
+    try {
+      const r = await hud.exportJson({ sites: intelDB, scanLibrary: allSites || {}, includeCreds });
+      if (r.ok)                       intelSetListStatus(`EXPORTED ${r.sites} SITE${r.sites !== 1 ? 'S' : ''}${includeCreds ? ' WITH CREDENTIALS' : r.stripped ? ` (${r.stripped} CREDENTIAL${r.stripped !== 1 ? 'S' : ''} EXCLUDED)` : ''} — ${r.path}`, 'ok', 8000);
+      else if (r.err === 'CANCELLED') intelSetListStatus('EXPORT CANCELLED', '', 3000);
+      else                            intelSetListStatus('EXPORT FAILED: ' + (r.err || 'unknown'), 'err', 6000);
+    } catch (err) { intelSetListStatus('EXPORT ERROR: ' + err.message, 'err', 6000); }
   };
-  input.click();
+  if (credCount === 0) { run(false); return; }
+  intelShowActionStrip(
+    `${credCount} stored credential${credCount !== 1 ? 's' : ''}. Include them in the file?\nThey are written as PLAINTEXT — only do this for a file you will move and delete.`,
+    [
+      { label: 'WITHOUT CREDS', cls: 'rbtn-keep',    onClick: () => run(false) },
+      { label: 'WITH CREDS',    cls: 'rbtn-restore', onClick: () => run(true)  },
+      { label: '✕ CANCEL',      cls: 'rbtn-cancel',  onClick: () => intelSetListStatus('EXPORT CANCELLED', '', 3000) },
+    ]);
+}
+
+// MAC-anchored merge of an imported site DB into intelDB.
+// Sites match by id, then by subnet. Devices match by MAC, falling back to IP
+// when either side has no MAC. Existing values win; imports fill blanks, and
+// lastSeen/ports take whichever is newer. Credentials merge by label.
+function intelMergeSites(incomingSites) {
+  const stats = { sitesAdded: 0, sitesMerged: 0, devicesAdded: 0, devicesMerged: 0, credsAdded: 0 };
+  const bySubnet = {};
+  Object.values(intelDB).forEach(s => { if (s.subnet) bySubnet[s.subnet] = s; });
+
+  Object.entries(incomingSites).forEach(([id, inc]) => {
+    if (!inc || typeof inc !== 'object') return;
+    const target = intelDB[id] || (inc.subnet && bySubnet[inc.subnet]) || null;
+    if (!target) {
+      const copy = JSON.parse(JSON.stringify(inc));
+      copy.id = copy.id || id;
+      if (!copy.tag) copy.tag = intelNextTag();
+      intelDB[copy.id] = copy;
+      if (copy.subnet) bySubnet[copy.subnet] = copy;
+      stats.sitesAdded++;
+      stats.devicesAdded += (copy.devices || []).length;
+      return;
+    }
+    stats.sitesMerged++;
+    ['name', 'customer', 'address', 'contact', 'subnet', 'notes'].forEach(k => {
+      if (!target[k] && inc[k]) target[k] = inc[k];
+    });
+    if (inc.lastScan && (!target.lastScan || inc.lastScan > target.lastScan)) target.lastScan = inc.lastScan;
+    if (!Array.isArray(target.devices)) target.devices = [];
+    (inc.devices || []).forEach(d => {
+      if (!d || typeof d !== 'object') return;
+      const key = (d.mac || '').toLowerCase();
+      const existing = target.devices.find(t =>
+        (key && (t.mac || '').toLowerCase() === key) || (!key && !t.mac && t.ip && t.ip === d.ip));
+      if (!existing) {
+        target.devices.push(JSON.parse(JSON.stringify(d)));
+        stats.devicesAdded++;
+        return;
+      }
+      stats.devicesMerged++;
+      ['ip', 'hostname', 'vendor', 'notes'].forEach(k => { if (!existing[k] && d[k]) existing[k] = d[k]; });
+      if ((!existing.type || existing.type === 'unknown') && d.type) existing.type = d.type;
+      if (d.firstSeen && (!existing.firstSeen || d.firstSeen < existing.firstSeen)) existing.firstSeen = d.firstSeen;
+      if (d.lastSeen && (!existing.lastSeen || d.lastSeen > existing.lastSeen)) {
+        existing.lastSeen = d.lastSeen;
+        if (Array.isArray(d.ports) && d.ports.length) existing.ports = JSON.parse(JSON.stringify(d.ports));
+      }
+      if (!Array.isArray(existing.creds)) existing.creds = [];
+      (d.creds || []).forEach(c => {
+        if (!c || !c.val) return;
+        const have = existing.creds.find(x => (x.key || '') === (c.key || ''));
+        if (!have) { existing.creds.push({ key: c.key || '', val: c.val }); stats.credsAdded++; }
+        else if (!have.val) { have.val = c.val; stats.credsAdded++; }
+      });
+    });
+  });
+  return stats;
+}
+
+async function importSites() {
+  if (!window.hud || !hud.importJson) { intelSetListStatus('IMPORT REQUIRES ELECTRON', 'warn', 3000); return; }
+  intelSetListStatus('CHOOSE A FILE...', '');
+  let r;
+  try { r = await hud.importJson(); } catch (err) { intelSetListStatus('IMPORT ERROR: ' + err.message, 'err', 6000); return; }
+  if (!r.ok) {
+    intelSetListStatus(r.err === 'CANCELLED' ? 'IMPORT CANCELLED' : 'IMPORT FAILED — ' + (r.err || 'unknown').toUpperCase(), r.err === 'CANCELLED' ? '' : 'err', 6000);
+    return;
+  }
+  const siteCount = Object.keys(r.sites).length;
+  const credCount = intelCountCreds(r.sites);
+  const fileName  = (r.file || '').split(/[\\/]/).pop();
+  const lines = [
+    `${fileName}: ${siteCount} site${siteCount !== 1 ? 's' : ''}, ${r.deviceCount} device${r.deviceCount !== 1 ? 's' : ''}` +
+      (credCount ? `, ${credCount} credential${credCount !== 1 ? 's' : ''}` : '') +
+      (r.meta && r.meta.exportedAt ? ` · exported ${r.meta.exportedAt.slice(0, 10)}` : ''),
+    r.meta && r.meta.unreadableCreds ? `${r.meta.unreadableCreds} credential(s) in this file are unreadable (encrypted on another machine)` : null,
+    r.backupPath ? `Current intel.json backed up first.` : null,
+    `MERGE keeps your data and adds what's new (devices matched by MAC). REPLACE discards everything you have.`,
+  ].filter(Boolean);
+
+  const finish = async (stats, mode) => {
+    await intelPersist();
+    intelRenderSiteList();
+    scanPopulateSitePicker();
+    if (r.scanLibrary && typeof r.scanLibrary === 'object' && Object.keys(r.scanLibrary).length) {
+      let added = 0;
+      Object.entries(r.scanLibrary).forEach(([k, v]) => { if (!allSites[k] && v && typeof v === 'object') { allSites[k] = v; added++; } });
+      if (added) { await persistSites(); if (typeof renderSiteLibrary === 'function') renderSiteLibrary(); }
+    }
+    intelSetListStatus(mode === 'replace'
+      ? `REPLACED — ${siteCount} SITE${siteCount !== 1 ? 'S' : ''} LOADED`
+      : `MERGED — +${stats.sitesAdded} SITE${stats.sitesAdded !== 1 ? 'S' : ''}, +${stats.devicesAdded} DEVICE${stats.devicesAdded !== 1 ? 'S' : ''}, ${stats.sitesMerged} UPDATED${stats.credsAdded ? `, +${stats.credsAdded} CRED${stats.credsAdded !== 1 ? 'S' : ''}` : ''}`,
+      'ok', 8000);
+  };
+
+  intelShowActionStrip(lines.join('\n'), [
+    { label: '⤵ MERGE',   cls: 'rbtn-keep',    onClick: () => finish(intelMergeSites(r.sites), 'merge') },
+    { label: 'REPLACE',   cls: 'rbtn-restore', onClick: () => {
+        intelShowActionStrip(`Replace ALL ${Object.keys(intelDB).length} current site(s) with the file? A backup was saved${r.backupPath ? ' to backups/' : ''}.`, [
+          { label: 'YES, REPLACE', cls: 'rbtn-restore', onClick: () => { intelDB = JSON.parse(JSON.stringify(r.sites)); intelActiveSite = null; intelPendingChanges = {}; finish(null, 'replace'); } },
+          { label: '✕ CANCEL',     cls: 'rbtn-cancel',  onClick: () => intelSetListStatus('IMPORT CANCELLED — NOTHING CHANGED', '', 4000) },
+        ]);
+      } },
+    { label: '✕ CANCEL',  cls: 'rbtn-cancel',  onClick: () => intelSetListStatus('IMPORT CANCELLED — NOTHING CHANGED', '', 4000) },
+  ]);
 }
 
 // Port service map — port number → { label, badgeCls, actionCls, actionLabel, handler }
@@ -5774,11 +6621,15 @@ async function performAliasRemove(ip, statusFn, adapter) {
   statusFn('REMOVING ' + ip + '...', '');
   const res = await hud.aliasRemove({ adapter, ip });
   if (res.ok) {
-    statusFn('REMOVING — WAITING FOR WINDOWS...', '');
-    await pollAliasUntil(adapter, ip, false);
+    let gone = res.verified === true;
+    if (!gone) {
+      statusFn('REMOVING — WAITING FOR WINDOWS...', '');
+      gone = await pollAliasUntil(adapter, ip, false, 4000);
+    }
     await loadAliasTab();
     updateMultiIpBadge();
-    statusFn('MULTI-IP REMOVED', 'ok', 4000);
+    if (gone) statusFn('MULTI-IP REMOVED', 'ok', 4000);
+    else      statusFn('COMMAND RAN — IP STILL PRESENT. SEE DIAGNOSTICS (VERSION CHIP)', 'warn', 8000);
   } else {
     return res; // caller handles fallback
   }
@@ -5786,7 +6637,7 @@ async function performAliasRemove(ip, statusFn, adapter) {
 
 async function aliasRemoveQuick(ip) {
   const res = await performAliasRemove(ip, setNetStatus);
-  if (res) setNetStatus('ERROR: ' + (res.err || 'unknown'), 'err');
+  if (res) setNetStatus(res.err === 'CANCELLED' ? 'CANCELLED — UAC PROMPT DISMISSED' : 'ERROR: ' + (res.err || 'unknown').toUpperCase(), res.err === 'CANCELLED' ? 'warn' : 'err', 6000);
 }
 
 async function aliasRemoveFromTab(ip) {
@@ -5796,10 +6647,11 @@ async function aliasRemoveFromTab(ip) {
   if (!adapter) { setAliasStatus('NO ADAPTER SELECTED', 'err', 4000); return; }
   const res = await performAliasRemove(ip, setAliasStatus, adapter);
   if (res) {
+    if (res.err === 'CANCELLED') { setAliasStatus('CANCELLED — UAC PROMPT DISMISSED', 'warn', 4000); return; }
     const cmd = await hud.aliasBuildCmd({ action: 'remove', adapter, ip });
     document.getElementById('alias-cmd-text').textContent = cmd;
     document.getElementById('alias-cmd-box').style.display = 'block';
-    setAliasStatus('ELEVATION FAILED — USE CMD BELOW', 'warn');
+    setAliasStatus('ERROR: ' + (res.err || 'unknown').toUpperCase() + ' — CMD BELOW, DETAILS IN DIAGNOSTICS', 'err');
     autoResize();
   }
 }
@@ -5911,31 +6763,51 @@ async function aliasAdd() {
     return;
   }
 
-  // Check if adapter is DHCP — main.js handles the static conversion automatically,
-  // but we show a heads-up so the user knows why there are two UAC prompts.
+  // ── PRE-FLIGHT: DHCP adapter ────────────────────────────
+  // Adding a multi-IP to a DHCP adapter converts it to static (keeping its current
+  // lease values) — that's a real config change to the primary, not just an extra
+  // IP. Require a second click to confirm, armed for 12s.
   const adapterEntry = adapterList.find(a => a.name === adapter);
-  const isDhcp = adapterEntry?.isDhcp;
-  setAliasStatus(isDhcp ? 'DHCP — SWITCHING TO STATIC THEN ADDING...' : 'REQUESTING ELEVATION...', '');
+  const isDhcp = adapterEntry?.isDhcp === true;
+  if (isDhcp && _aliasDhcpArmed !== adapter) {
+    _aliasDhcpArmed = adapter;
+    clearTimeout(_aliasDhcpArmTimer);
+    _aliasDhcpArmTimer = setTimeout(() => { _aliasDhcpArmed = null; }, 12000);
+    setAliasStatus(`${adapter.toUpperCase()} IS DHCP — ADDING WILL SET IT STATIC (KEEPS ${adapterEntry.ip || 'CURRENT IP'}). CLICK ADD AGAIN TO CONFIRM`, 'warn', 12000);
+    return;
+  }
+  _aliasDhcpArmed = null;
+  clearTimeout(_aliasDhcpArmTimer);
+
+  setAliasStatus(isDhcp ? 'CONVERTING TO STATIC, THEN ADDING...' : 'ADDING MULTI-IP...', '');
   const res = await hud.aliasAdd({ adapter, ip, subnet });
   if (res.ok) {
-    setAliasStatus('WAITING FOR WINDOWS...', 'ok');
     document.getElementById('alias-new-ip').value = '';
     document.getElementById('alias-cmd-box').style.display = 'none';
-    const confirmed = await pollAliasUntil(adapter, ip, true);
+    // main.js already polled for the IP; only keep polling here if it hadn't shown up yet
+    let confirmed = res.verified === true;
+    if (!confirmed) {
+      setAliasStatus('WAITING FOR WINDOWS...', 'ok');
+      confirmed = await pollAliasUntil(adapter, ip, true, 4000);
+    }
     await loadAliasTab();
     updateMultiIpBadge();
     if (confirmed) {
-      setAliasStatus('MULTI-IP ADDED: ' + ip, 'ok', 4000);
+      setAliasStatus('MULTI-IP ADDED: ' + ip + (res.converted ? ' — ADAPTER NOW STATIC' : ''), 'ok', 5000);
     } else {
-      // UAC fired but netsh may have silently failed (wrong adapter type, IP conflict, etc.)
-      setAliasStatus('COMMAND SENT — IP NOT DETECTED. RUN CMD TO VERIFY', 'warn', 6000);
+      // netsh exited 0 but the IP never appeared — output is in DIAGNOSTICS
+      setAliasStatus('COMMAND RAN — IP NOT DETECTED. SEE DIAGNOSTICS (VERSION CHIP)', 'warn', 8000);
     }
+  } else if (res.err === 'CANCELLED') {
+    setAliasStatus('CANCELLED — UAC PROMPT DISMISSED', 'warn', 4000);
   } else {
-    // Fall back to CMD
+    // Real failure with captured netsh output — show it, and offer the CMD fallback
     aliasCopyCmd('add');
-    setAliasStatus('ELEVATION FAILED — USE CMD BELOW', 'warn');
+    setAliasStatus('ERROR: ' + (res.err || 'unknown').toUpperCase() + ' — CMD BELOW, DETAILS IN DIAGNOSTICS', 'err');
   }
 }
+let _aliasDhcpArmed = null;
+let _aliasDhcpArmTimer = null;
 
 async function aliasCopyCmd(action) {
   const adapter = getAliasAdapter();
@@ -5978,7 +6850,7 @@ function aliasCopyIp(ip) {
 function setAliasStatus(msg, type, ms) { setStatus('net-status', 'status-bar', msg, type, ms); }
 
 // ══════════════════════════════════════════════════════════════
-// INTEL — SITE KNOWLEDGE BASE
+// SITES — SITE KNOWLEDGE BASE (identifiers keep the historical intel* prefix)
 // Data shape:
 //   intelDB = {
 //     [siteId]: {
@@ -6210,7 +7082,6 @@ function intelLinkScan() {
     intelSetDetailStatus('NO SUBNET SET — EDIT SITE FIRST', 'warn', 4000);
     return;
   }
-  intelReturnSiteId = intelActiveSite;
   switchTab('scan');
   const base = document.getElementById('scan-base');
   if (base) base.value = site.subnet;
@@ -6276,6 +7147,7 @@ function intelProcessScanResults(baseIp, scanResults) {
         // Update existing device
         existing.ip       = r.ip;
         existing.vendor   = r.vendor || existing.vendor;
+        existing.hostname = r.hostname || existing.hostname || '';
         existing.lastSeen = now;
         if (r.ports) existing.ports = r.ports;
       } else {
@@ -6319,25 +7191,42 @@ function intelProcessScanResults(baseIp, scanResults) {
     intelOpenSite(site.id);
   }
 
-  // Surface a change summary as a scan status message
+  // Surface the change summary as a persistent chip with a VIEW → jump.
+  // (Replaces the old auto-switch to SITES, which yanked the user off the scan
+  // results mid-read and — via a stale arming flag — could fire on a later,
+  // unrelated scan.)
   const parts = [];
-  if (changes.new.length)     parts.push(`+${changes.new.length} new`);
-  if (changes.missing.length) parts.push(`${changes.missing.length} missing`);
-  if (changes.moved.length)   parts.push(`${changes.moved.length} moved`);
-  if (parts.length) {
-    setScanStatus(`${site.name} — ${parts.join(' · ')}`, 'warn', 8000);
-  } else {
-    setScanStatus(`${site.name} — no changes detected`, 'ok', 5000);
-  }
+  if (changes.new.length)     parts.push(`+${changes.new.length} NEW`);
+  if (changes.missing.length) parts.push(`${changes.missing.length} MISSING`);
+  if (changes.moved.length)   parts.push(`${changes.moved.length} MOVED`);
+  scanShowChangesChip(site, parts);
+}
 
-  // Return trip: if scan was triggered via SCAN NOW, switch back to SITES and reopen the site
-  if (intelReturnSiteId === site.id) {
-    intelReturnSiteId = null;
-    setTimeout(() => {
-      switchTab('intel');
-      intelOpenSite(site.id);
-    }, 800);
-  }
+function scanShowChangesChip(site, parts) {
+  const chip = document.getElementById('scan-changes-chip');
+  const text = document.getElementById('scan-changes-text');
+  if (!chip || !text) return;
+  scanChangesSiteId = site.id;
+  const name = (site.name || site.subnet || 'SITE').toUpperCase();
+  text.textContent = parts.length ? `${name} — ${parts.join(' · ')}` : `${name} — NO CHANGES`;
+  chip.classList.toggle('clean', !parts.length);
+  chip.classList.add('visible');
+  autoResize();
+}
+
+function scanChangesView() {
+  const id = scanChangesSiteId;
+  scanChangesDismiss();
+  if (!id || !intelDB[id]) return;
+  switchTab('intel');
+  intelOpenSite(id);
+}
+
+function scanChangesDismiss() {
+  const chip = document.getElementById('scan-changes-chip');
+  if (chip) chip.classList.remove('visible');
+  scanChangesSiteId = null;
+  autoResize();
 }
 
 function intelGuessType(vendor, ports) {
@@ -6497,12 +7386,7 @@ function intelBuildDrawer(device, siteId) {
   const portStr   = (device.ports||[]).filter(p=>p.open).map(p=>p.port).join(', ') || '—';
   const deviceKey = escHtml(device.mac || device.ip);
 
-  let credsHtml = (device.creds||[]).map((c,i) => `
-    <div class="intel-cred-row">
-      <input class="intel-cred-key" value="${escHtml(c.key)}" placeholder="label" oninput="intelUpdateCred('${deviceKey}','${siteId}',${i},'key',this.value)">
-      <input class="intel-cred-val" value="${escHtml(c.val)}" placeholder="value" oninput="intelUpdateCred('${deviceKey}','${siteId}',${i},'val',this.value)">
-      <div class="intel-cred-del" onclick="intelRemoveCred('${deviceKey}','${siteId}',${i})">✕</div>
-    </div>`).join('');
+  let credsHtml = intelCredRowsHtml(device, deviceKey, siteId);
 
   return `
     <div class="intel-drawer-grid">
@@ -6558,7 +7442,7 @@ function intelToggleDrawer(rowId) {
 }
 
 // ── DEVICE TYPE CYCLING ────────────────────────────────────
-const INTEL_TYPES = ['', 'CAMERA', 'NVR/DVR', 'NETWORK', 'SERVER', 'WORKSTATION', 'ACCESS CTL', 'PRINTER', 'OTHER'];
+const SITE_TYPES = ['', 'CAMERA', 'NVR/DVR', 'NETWORK', 'SERVER', 'WORKSTATION', 'ACCESS CTL', 'PRINTER', 'OTHER'];
 
 function intelTypeClass(type) {
   switch ((type||'').toUpperCase()) {
@@ -6579,8 +7463,8 @@ function intelCycleType(deviceKey) {
   if (!site) return;
   const device = intelFindDevice(site, deviceKey);
   if (!device) return;
-  const idx = INTEL_TYPES.indexOf(device.type || '');
-  device.type = INTEL_TYPES[(idx + 1) % INTEL_TYPES.length];
+  const idx = SITE_TYPES.indexOf(device.type || '');
+  device.type = SITE_TYPES[(idx + 1) % SITE_TYPES.length];
   intelPersist();
   intelRenderDeviceList(site);
 }
@@ -6595,6 +7479,27 @@ function intelUpdateNote(deviceKey, siteId, value) {
   if (!site) return;
   const device = intelFindDevice(site, deviceKey);
   if (device) device.notes = value;
+}
+
+// Shared credential row template. Values are masked (type=password) with a per-row
+// reveal toggle so a job-site shoulder-surf doesn't read every camera password.
+// deviceKey must already be escHtml'd by the caller.
+function intelCredRowsHtml(device, deviceKey, siteId) {
+  return (device.creds || []).map((c, i) => `
+    <div class="intel-cred-row">
+      <input class="intel-cred-key" value="${escHtml(c.key)}" placeholder="label" spellcheck="false" oninput="intelUpdateCred('${deviceKey}','${siteId}',${i},'key',this.value)">
+      <input class="intel-cred-val" type="password" value="${escHtml(c.val)}" placeholder="value" spellcheck="false" autocomplete="off" oninput="intelUpdateCred('${deviceKey}','${siteId}',${i},'val',this.value)">
+      <div class="intel-cred-eye" onclick="intelToggleCredReveal(this)" title="Show / hide">◉</div>
+      <div class="intel-cred-del" onclick="intelRemoveCred('${deviceKey}','${siteId}',${i})">✕</div>
+    </div>`).join('');
+}
+
+function intelToggleCredReveal(eye) {
+  const input = eye.parentElement && eye.parentElement.querySelector('.intel-cred-val');
+  if (!input) return;
+  const show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  eye.textContent = show ? '◎' : '◉';
 }
 
 function intelUpdateCred(deviceKey, siteId, idx, field, value) {
@@ -6616,12 +7521,7 @@ function intelAddCred(deviceKey, siteId) {
   const safe = deviceKey.replace(/[^a-zA-Z0-9]/g,'_');
   const credsEl = document.getElementById('intel-creds-' + safe);
   if (credsEl) {
-    credsEl.innerHTML = device.creds.map((c,i) => `
-      <div class="intel-cred-row">
-        <input class="intel-cred-key" value="${escHtml(c.key)}" placeholder="label" oninput="intelUpdateCred('${escHtml(deviceKey)}','${siteId}',${i},'key',this.value)">
-        <input class="intel-cred-val" value="${escHtml(c.val)}" placeholder="value" oninput="intelUpdateCred('${escHtml(deviceKey)}','${siteId}',${i},'val',this.value)">
-        <div class="intel-cred-del" onclick="intelRemoveCred('${escHtml(deviceKey)}','${siteId}',${i})">✕</div>
-      </div>`).join('');
+    credsEl.innerHTML = intelCredRowsHtml(device, escHtml(deviceKey), siteId);
   }
   autoResize();
 }
@@ -6636,12 +7536,7 @@ function intelRemoveCred(deviceKey, siteId, idx) {
   const safe = deviceKey.replace(/[^a-zA-Z0-9]/g,'_');
   const credsEl = document.getElementById('intel-creds-' + safe);
   if (credsEl) {
-    credsEl.innerHTML = device.creds.map((c,i) => `
-      <div class="intel-cred-row">
-        <input class="intel-cred-key" value="${escHtml(c.key)}" placeholder="label" oninput="intelUpdateCred('${escHtml(deviceKey)}','${siteId}',${i},'key',this.value)">
-        <input class="intel-cred-val" value="${escHtml(c.val)}" placeholder="value" oninput="intelUpdateCred('${escHtml(deviceKey)}','${siteId}',${i},'val',this.value)">
-        <div class="intel-cred-del" onclick="intelRemoveCred('${escHtml(deviceKey)}','${siteId}',${i})">✕</div>
-      </div>`).join('');
+    credsEl.innerHTML = intelCredRowsHtml(device, escHtml(deviceKey), siteId);
   }
   autoResize();
 }

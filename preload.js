@@ -4,7 +4,6 @@ contextBridge.exposeInMainWorld('hud', {
   // ── Window controls ──────────────────────────────────────
   close:        ()   => ipcRenderer.send('win-close'),
   quit:         ()   => ipcRenderer.send('win-quit'),
-  minimize:     ()   => ipcRenderer.send('win-minimize'),
   hide:         ()   => ipcRenderer.send('win-hide'),
   // setSize now only sets height — width is user-controlled
   setSize:      (h)  => ipcRenderer.invoke('win-set-size', h),
@@ -44,6 +43,7 @@ contextBridge.exposeInMainWorld('hud', {
   scanStart:    (opts)    => ipcRenderer.send('scan-start', opts),
   scanStop:     ()        => ipcRenderer.send('scan-stop'),
   arpSweep:     (opts)    => ipcRenderer.invoke('arp-sweep', opts),
+  resolveHosts: (ips)     => ipcRenderer.invoke('resolve-hosts', ips),
   onScanResult:   (cb)    => ipcRenderer.on('scan-result',   (_, d) => cb(d)),
   onScanDone:     (cb)    => ipcRenderer.on('scan-done',     (_, d) => cb(d)),
   onScanEnrich:   (cb)    => ipcRenderer.on('scan-enrich',   (_, d) => cb(d)),
@@ -62,6 +62,7 @@ contextBridge.exposeInMainWorld('hud', {
 
   // ── MAC vendor lookup ────────────────────────────────────
   macLookupOnline: (mac) => ipcRenderer.invoke('mac-lookup-online', mac),
+  getPolicy:       ()    => ipcRenderer.invoke('get-policy'),
 
   // ── Traceroute — streaming ───────────────────────────────
   tracertStart:  (host) => ipcRenderer.send('tracert-start', { host }),
@@ -80,12 +81,15 @@ contextBridge.exposeInMainWorld('hud', {
   aliasBuildCmd: (opts)    => ipcRenderer.invoke('alias-build-cmd', opts),
   checkActiveAliases: ()   => ipcRenderer.invoke('check-active-aliases'),
 
-  // ── Site / Intel database ────────────────────────────────
+  // ── SCAN library + SITES knowledge base ─────────────────
   sitesLoad:   ()        => ipcRenderer.invoke('sites-load'),
   sitesSave:   (sites)   => ipcRenderer.invoke('sites-save', sites),
-  intelLoad:   ()        => ipcRenderer.invoke('intel-load'),
-  intelSave:   (intel)   => ipcRenderer.invoke('intel-save', intel),
+  intelLoad:   ()        => ipcRenderer.invoke('sitekb-load'),
+  intelSave:   (intel)   => ipcRenderer.invoke('sitekb-save', intel),
+  intelBackup: (label)   => ipcRenderer.invoke('sitekb-backup', label),
   exportExcel: (data)    => ipcRenderer.invoke('export-excel', data),
+  exportJson:  (data)    => ipcRenderer.invoke('export-json', data),
+  importJson:  ()        => ipcRenderer.invoke('import-json'),
 
   // ── External / clipboard ─────────────────────────────────
   openExternal:  (url) => ipcRenderer.send('open-external', url),
@@ -97,5 +101,10 @@ contextBridge.exposeInMainWorld('hud', {
   getLaunchSnapshot:  ()            => ipcRenderer.invoke('get-launch-snapshot'),
   getLaunchDeltas:    ()            => ipcRenderer.invoke('get-launch-deltas'),
   restoreLaunchState: (adapters)    => ipcRenderer.invoke('restore-launch-state', adapters),
+
+  // ── Diagnostics overlay ───────────────────────────────────
+  diagGet:     ()   => ipcRenderer.invoke('diag-get'),
+  diagClear:   ()   => ipcRenderer.invoke('diag-clear'),
+  onDiagEntry: (cb) => ipcRenderer.on('diag-entry', (_, d) => cb(d)),
 
 });

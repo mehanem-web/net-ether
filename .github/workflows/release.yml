@@ -73,9 +73,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Mirrors build.bat exactly: nsis + portable, no msi, no cert discovery.
-      # The msi target is declared in package.json but was deliberately dropped
-      # from build.bat, so don't reintroduce it here.
+      # Mirrors build.bat exactly: nsis + portable, no cert discovery.
+      # (The msi target was removed from package.json in v6.2.0 — no release
+      # ever shipped one. Don't reintroduce it here or in build.bat.)
       # --publish never is REQUIRED here. In CI, electron-builder auto-detects
       # the environment and tries to publish to GitHub itself; with no token it
       # exits 1 *after* building successfully, killing the job before the upload

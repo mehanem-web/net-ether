@@ -6,6 +6,15 @@ const net = require('net');
 const https = require('https');
 const { execFile, exec } = require('child_process');
 
+// ── USERDATA PIN ───────────────────────────────────────────
+// Pin the data directory to %APPDATA%\net-ether explicitly, before any
+// module-level path constant reads it. Electron derives the default from the
+// app name, which differs between dev (package.json "name") and packaged
+// (productName) builds and can also shift under elevation. Pinning keeps
+// presets/sites/intel in one place regardless of how the exe was launched.
+// The chosen path equals the historical default, so existing installs are unaffected.
+app.setPath('userData', path.join(app.getPath('appData'), 'net-ether'));
+
 // ── INPUT SANITIZATION ─────────────────────────────────────
 // Main process validates all IPC inputs independently.
 // The renderer already validates, but we never trust it alone.
@@ -54,30 +63,6 @@ function clampMtu(val) {
   return Math.min(Math.max(n, 576), 9000); // 576 min (RFC), 9000 max (jumbo)
 }
 
-// ── ELEVATED COMMAND RUNNER ────────────────────────────────
-// Writes a temp VBScript that ShellExecute-runas launches cmd.exe
-// to run one or more netsh commands (semicolon-separated → & chained).
-// Used by apply-network-config, apply-dhcp, fix-mtu, alias-add, alias-remove.
-function runElevated(cmdString, { tag = 'run', timeoutMs = 30000 } = {}) {
-  return new Promise((resolve) => {
-    // Convert semicolon-separated netsh lines into cmd-chained form: a & b & c
-    const chained = cmdString.split(';').map(s => s.trim()).filter(Boolean).join(' & ');
-    // Escape any double-quotes inside the command for VBS string embedding
-    const escaped = chained.replace(/"/g, '""');
-    const vbs =
-      'Set objShell = CreateObject("Shell.Application") : ' +
-      'objShell.ShellExecute "cmd.exe", ' +
-      '"/c ' + escaped + '", ' +
-      '"", "runas", 0';
-    const vbsPath = path.join(os.tmpdir(), `netether_${tag}_${Date.now()}.vbs`);
-    fs.writeFileSync(vbsPath, vbs, 'utf8');
-    execFile('cscript.exe', ['//NoLogo', vbsPath], { timeout: timeoutMs }, (err) => {
-      try { fs.unlinkSync(vbsPath); } catch {}
-      resolve(err ? { ok: false, err: err.message } : { ok: true });
-    });
-  });
-}
-
 // Promisified exec — replaces repeated inline new Promise(exec(...)) wrappers
 function execAsync(cmd, opts = {}) {
   return new Promise((resolve, reject) => {
@@ -85,6 +70,235 @@ function execAsync(cmd, opts = {}) {
       if (err) reject(err); else resolve(stdout);
     });
   });
+}
+
+// ── DIAGNOSTICS LOG ────────────────────────────────────────
+// Silent, structured, persistent record of every privileged operation and its
+// verified outcome, plus app lifecycle events. Surfaced only when the user opens
+// the diagnostics overlay (titlebar version chip). This is the field-debug
+// channel for managed laptops where nothing else is observable.
+// Stored at %APPDATA%\net-ether\diag-log.json, capped at DIAG_MAX entries.
+const DIAG_LOG_PATH = path.join(app.getPath('userData'), 'diag-log.json');
+const DIAG_MAX      = 200;
+const DIAG_OUT_MAX  = 600;   // chars of captured command output kept per step
+let   diagLog        = [];    // oldest first
+let   diagFlushTimer = null;
+
+function diagLoad() {
+  try {
+    const raw = fs.readFileSync(DIAG_LOG_PATH, 'utf8');
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr)) diagLog = arr.slice(-DIAG_MAX);
+  } catch { diagLog = []; }
+}
+
+function diagFlush() {
+  diagFlushTimer = null;
+  try { fs.writeFileSync(DIAG_LOG_PATH, JSON.stringify(diagLog), 'utf8'); } catch {}
+}
+
+function diagScheduleFlush() {
+  if (diagFlushTimer) return;
+  diagFlushTimer = setTimeout(diagFlush, 800);
+}
+
+// entry: { kind: 'app'|'op'|'verify'|'error', tag, ok, note, ms, mode, steps }
+function diagAdd(entry) {
+  const e = { ts: Date.now(), ...entry };
+  diagLog.push(e);
+  if (diagLog.length > DIAG_MAX) diagLog.splice(0, diagLog.length - DIAG_MAX);
+  diagScheduleFlush();
+  try {
+    if (winAlive() && win.webContents) win.webContents.send('diag-entry', e);
+  } catch {}
+  return e;
+}
+
+function diagVerify(tag, ok, note) {
+  return diagAdd({ kind: 'verify', tag, ok, note });
+}
+
+// ── ELEVATION STATE ────────────────────────────────────────
+// The packaged exe is manifested requireAdministrator, so in production the
+// process is ALREADY elevated when it starts — via UAC on an unmanaged box, or
+// via EPM auto-elevation on a managed one. Detect it once, from the process
+// token's mandatory integrity label:
+//   S-1-16-12288 = High   (elevated admin)
+//   S-1-16-16384 = System
+//   S-1-16-8192  = Medium (standard user — dev mode via npx electron)
+const PRIV = { elevated: null, integrity: 'unknown', checked: false, err: null };
+let privReady = null;
+
+function detectElevation() {
+  if (privReady) return privReady;
+  privReady = (async () => {
+    try {
+      const out = await execAsync('whoami /groups', { timeout: 5000, windowsHide: true });
+      if (/S-1-16-16384/.test(out))      { PRIV.elevated = true;  PRIV.integrity = 'System'; }
+      else if (/S-1-16-12288/.test(out)) { PRIV.elevated = true;  PRIV.integrity = 'High'; }
+      else if (/S-1-16-8192/.test(out))  { PRIV.elevated = false; PRIV.integrity = 'Medium'; }
+      else if (/S-1-16-4096/.test(out))  { PRIV.elevated = false; PRIV.integrity = 'Low'; }
+      else                               { PRIV.elevated = false; PRIV.integrity = 'unknown'; }
+    } catch (err) {
+      PRIV.elevated = null;
+      PRIV.err = err.message;
+    }
+    PRIV.checked = true;
+    return PRIV;
+  })();
+  return privReady;
+}
+
+// ── PRIVILEGED COMMAND RUNNER ──────────────────────────────
+// Runs one or more netsh commands (semicolon-separated string, same call
+// convention as before) and returns a structured, verified result:
+//   { ok, err, mode, ms, steps: [{ cmd, code, out }] }
+//
+// mode 'direct': process is already elevated (the normal case for the packaged
+//   exe). Each command runs straight through execFile('netsh.exe', argv) — no
+//   cmd.exe, no script trampoline, stdout+stderr captured, exit code checked.
+//   Execution stops at the first failing command (&& semantics), so a failed
+//   DHCP→static conversion never lets a following "add address" clobber a lease.
+//
+// mode 'uac': process is NOT elevated (dev mode only in practice). Commands are
+//   written to a temp .cmd that logs its own output, launched via PowerShell
+//   Start-Process -Verb RunAs -Wait, and the log is read back. Exit code and
+//   output are captured; a dismissed UAC prompt returns err 'CANCELLED'.
+//
+// Every call is written to the diagnostics log with its outcome.
+function splitCmdChain(cmdString) {
+  return String(cmdString).split(';').map(s => s.trim()).filter(Boolean);
+}
+
+// Minimal argv tokenizer. Safe because every quoted value that reaches here has
+// already passed sanitizeAdapter() (no quotes, no metacharacters inside).
+function tokenize(cmd) {
+  const argv = [];
+  const re = /"([^"]*)"|(\S+)/g;
+  let m;
+  while ((m = re.exec(cmd)) !== null) argv.push(m[1] !== undefined ? m[1] : m[2]);
+  return argv;
+}
+
+function trimOut(s) {
+  const t = String(s || '').replace(/\r/g, '').trim();
+  return t.length > DIAG_OUT_MAX ? t.slice(0, DIAG_OUT_MAX) + '…' : t;
+}
+
+async function runDirect(cmds, timeoutMs) {
+  const steps = [];
+  for (const cmd of cmds) {
+    const argv = tokenize(cmd);
+    const exe  = argv.shift();
+    const step = await new Promise((resolve) => {
+      execFile(exe, argv, { timeout: timeoutMs, windowsHide: true }, (err, stdout, stderr) => {
+        const out = trimOut([stdout, stderr].filter(Boolean).join('\n'));
+        if (err) {
+          const code = typeof err.code === 'number' ? err.code : (err.killed ? 'TIMEOUT' : (err.code || 'ERR'));
+          resolve({ cmd, code, out: out || err.message });
+        } else {
+          resolve({ cmd, code: 0, out });
+        }
+      });
+    });
+    steps.push(step);
+    if (step.code !== 0) break;
+  }
+  return steps;
+}
+
+async function runViaUac(cmds, tag, timeoutMs) {
+  const stamp   = `${tag}_${Date.now()}`;
+  const cmdPath = path.join(os.tmpdir(), `netether_${stamp}.cmd`);
+  const logPath = path.join(os.tmpdir(), `netether_${stamp}.log`);
+  // Batch: echo a marker, run the command, append everything to the log,
+  // stop at first failure with a distinct exit code per step.
+  const lines = ['@echo off'];
+  cmds.forEach((cmd, i) => {
+    lines.push(`echo ##STEP ${i} ${cmd}>>"${logPath}"`);
+    lines.push(`${cmd}>>"${logPath}" 2>&1`);
+    lines.push(`if errorlevel 1 exit /b ${i + 1}`);
+  });
+  lines.push('exit /b 0');
+  fs.writeFileSync(cmdPath, lines.join('\r\n') + '\r\n', 'utf8');
+
+  const psPath = cmdPath.replace(/'/g, "''");
+  // A declined UAC prompt makes Start-Process throw, leaving $p null — and
+  // `exit $null.ExitCode` silently becomes `exit 0`, which looked like success.
+  // Wrap in try/catch and use sentinel exit codes instead: 223 = the RunAs
+  // launch threw (declined prompt in practice), 224 = $p never materialised.
+  // Codes are outside the 1..cmds.length range used for per-step failures.
+  const script =
+    `$ErrorActionPreference = 'Stop'; ` +
+    `try { $p = Start-Process -FilePath '${psPath}' -Verb RunAs -Wait -PassThru -WindowStyle Hidden; ` +
+    `if ($p -eq $null) { exit 224 }; exit $p.ExitCode } catch { exit 223 }`;
+
+  const result = await new Promise((resolve) => {
+    execFile('powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+      { timeout: timeoutMs + 60000, windowsHide: true },
+      (err, stdout, stderr) => resolve({ err, stdout, stderr }));
+  });
+
+  let log = '';
+  try { log = fs.readFileSync(logPath, 'utf8'); } catch {}
+  try { fs.unlinkSync(cmdPath); } catch {}
+  try { fs.unlinkSync(logPath); } catch {}
+
+  // Rebuild per-step output from the ##STEP markers
+  const steps = [];
+  const chunks = log.replace(/\r/g, '').split(/^##STEP (\d+) .*$/m);
+  // chunks: [pre, idx, out, idx, out, ...]
+  for (let i = 1; i < chunks.length; i += 2) {
+    const idx = parseInt(chunks[i], 10);
+    steps.push({ cmd: cmds[idx], code: 0, out: trimOut(chunks[i + 1]) });
+  }
+
+  if (result.err) {
+    const code = typeof result.err.code === 'number' ? result.err.code : 'ERR';
+    const msg  = String(result.stderr || result.err.message || '');
+    if (code === 223 || /cancel/i.test(msg)) return { steps, cancelled: true };
+    if (code === 224) { steps.push({ cmd: '(launch)', code, out: 'Elevation launch produced no process' }); return { steps, cancelled: false }; }
+    // Non-zero exit = 1-based index of the failing step
+    if (typeof code === 'number' && code >= 1 && code <= cmds.length) {
+      if (steps[code - 1]) steps[code - 1].code = code;
+      else steps.push({ cmd: cmds[code - 1], code, out: trimOut(msg) });
+    } else {
+      steps.push({ cmd: '(launch)', code, out: trimOut(msg) || 'Elevation launch failed' });
+    }
+  }
+  return { steps, cancelled: false };
+}
+
+async function runElevated(cmdString, { tag = 'run', timeoutMs = 30000 } = {}) {
+  const cmds  = splitCmdChain(cmdString);
+  const start = Date.now();
+  if (!cmds.length) return { ok: false, err: 'No command', mode: 'none', ms: 0, steps: [] };
+
+  await detectElevation();
+  const mode = PRIV.elevated ? 'direct' : 'uac';
+  let steps = [], cancelled = false;
+
+  try {
+    if (mode === 'direct') {
+      steps = await runDirect(cmds, timeoutMs);
+    } else {
+      ({ steps, cancelled } = await runViaUac(cmds, tag, timeoutMs));
+    }
+  } catch (err) {
+    steps.push({ cmd: '(runner)', code: 'ERR', out: err.message });
+  }
+
+  const ms     = Date.now() - start;
+  const failed = steps.find(s => s.code !== 0);
+  let ok = !cancelled && !failed && steps.length === cmds.length;
+  let errMsg = null;
+  if (cancelled)     errMsg = 'CANCELLED';
+  else if (failed)   errMsg = failed.out ? failed.out.split('\n').filter(Boolean).pop() : `netsh exited ${failed.code}`;
+  else if (!ok)      errMsg = 'Command chain did not complete';
+
+  diagAdd({ kind: 'op', tag, ok, mode, ms, steps, note: errMsg });
+  return { ok, err: errMsg, mode, ms, steps };
 }
 
 // ── POWERSHELL HELPERS (replace deprecated wmic) ─────────
@@ -248,6 +462,11 @@ function createTray() {
 }
 
 function toggleWindow() {
+  if (!winAlive()) return;
+  // A minimized window still reports isVisible() === true — without this guard a
+  // tray click on a Win+D / Show-Desktop-minimized HUD would hide it instead of
+  // bringing it back, stranding it with no taskbar button to recover from.
+  if (win.isMinimized()) { win.restore(); win.show(); win.focus(); return; }
   if (win.isVisible()) { win.hide(); } else { win.show(); win.focus(); }
 }
 
@@ -322,11 +541,22 @@ app.whenReady().then(async () => {
     const { session } = require('electron');
     await session.defaultSession.clearCache();
   } catch { /* non-fatal */ }
+  diagLoad();
   createWindow();
   createTray();
   // Snapshot all connected adapters immediately at launch — this is the
   // "restore to launch state" baseline. Runs async, doesn't block UI.
   takeLaunchSnapshot();
+  readPolicy();
+  // Elevation check runs in parallel with window load; runElevated() awaits it.
+  detectElevation().then(() => {
+    diagAdd({
+      kind: 'app', tag: 'launch', ok: PRIV.elevated === true,
+      note: `v${app.getVersion()} ${app.isPackaged ? 'packaged' : 'dev'} · ` +
+            `${PRIV.elevated === true ? 'elevated' : PRIV.elevated === false ? 'NOT elevated' : 'elevation unknown'} ` +
+            `(${PRIV.integrity})${PRIV.err ? ' · ' + PRIV.err : ''} · userData=${app.getPath('userData')}`,
+    });
+  });
 });
 
 app.on('window-all-closed', () => { /* stay in tray */ });
@@ -344,7 +574,7 @@ ipcMain.on('win-quit',     () => {
   try { tray.destroy(); } catch {}
   app.quit();
 });
-ipcMain.on('win-minimize', () => { if (winAlive()) win.minimize(); });
+// win-minimize removed — skipTaskbar:true makes minimize a dead end; the button hides to tray.
 // win-move removed — drag uses -webkit-app-region
 
 
@@ -387,13 +617,18 @@ ipcMain.on('open-external', (e, url) => {
 
 // ── IPC: open user guide ───────────────────────────────────
 ipcMain.handle('open-guide', async () => {
-  // In packaged builds, asarUnpack puts the file in app.asar.unpacked/assets/
-  // In dev, it's just __dirname/assets/
-  const guideName = 'NET-ETHER-Guide.docx';
-  const devPath    = path.join(__dirname, 'assets', guideName);
-  const packedPath = path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), 'assets', guideName);
-  const guidePath  = fs.existsSync(packedPath) ? packedPath : devPath;
+  // PDF first — opens in the default viewer on any Windows box. The .docx is a
+  // fallback only (shell.openPath on it fails for users without Word installed).
+  // In packaged builds, asarUnpack puts these in app.asar.unpacked/assets/.
+  const unpacked = __dirname.replace('app.asar', 'app.asar.unpacked');
+  const candidates = ['NET-ETHER-Guide.pdf', 'NET-ETHER-Guide.docx'].flatMap(name => [
+    path.join(unpacked, 'assets', name),
+    path.join(__dirname, 'assets', name),
+  ]);
+  const guidePath = candidates.find(p => fs.existsSync(p));
+  if (!guidePath) return { ok: false, err: 'Guide file not found' };
   const result = await shell.openPath(guidePath);
+  diagAdd({ kind: 'app', tag: 'guide', ok: !result, note: result ? `${path.basename(guidePath)}: ${result}` : `Opened ${path.basename(guidePath)}` });
   return result ? { ok: false, err: result } : { ok: true };
 });
 
@@ -1121,6 +1356,133 @@ ipcMain.handle('arp-sweep', async (e, { baseIp }) => {
   } catch { return {}; }
 });
 
+// ── IPC: hostname resolution ───────────────────────────────
+// Runs after a scan on the hosts it found. Two sources, in this order:
+//   1. Reverse DNS (PTR) via the system resolver — 1.5s cap per host.
+//   2. NetBIOS node-status query (NBSTAT, UDP 137) built and parsed here in
+//      pure JS — no nbtstat.exe spawn. Returns the unique workstation name
+//      (type 0x00), which is what Windows PCs, NAS boxes, printers and most
+//      NVRs answer with. 1.2s cap per host.
+// Concurrency-limited; a host that answers neither just stays blank.
+// The machine's own IPv4s come back as selfIps so the renderer can badge SELF.
+const dns   = require('dns');
+const dgram = require('dgram');
+const NBT_PORT = 137;
+
+function withTimeout(promise, ms, fallback) {
+  let t;
+  const timer = new Promise(res => { t = setTimeout(() => res(fallback), ms); });
+  return Promise.race([promise, timer]).finally(() => clearTimeout(t));
+}
+
+async function reverseDns(ip) {
+  try {
+    const names = await withTimeout(dns.promises.reverse(ip), 1500, null);
+    if (Array.isArray(names) && names.length) return names[0].replace(/\.$/, '');
+  } catch {}
+  return null;
+}
+
+// NBSTAT request: 12-byte header + encoded wildcard name '*' + QTYPE NBSTAT (0x21) + QCLASS IN
+function buildNbstatQuery(txid) {
+  const buf = Buffer.alloc(50);
+  buf.writeUInt16BE(txid, 0);      // transaction id
+  buf.writeUInt16BE(0x0000, 2);    // flags: standard query, not broadcast
+  buf.writeUInt16BE(1, 4);         // QDCOUNT
+  buf[12] = 0x20;                  // name length 32
+  // First-level encoded '*' padded with NULs: 'A' + ... ('*' = 0x2A → 'C','K'; NUL → 'A','A')
+  buf.write('CKAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 13, 'ascii');
+  buf[45] = 0x00;                  // name terminator
+  buf.writeUInt16BE(0x0021, 46);   // QTYPE NBSTAT
+  buf.writeUInt16BE(0x0001, 48);   // QCLASS IN
+  return buf;
+}
+
+// Parse an NBSTAT reply: skip header + question echo, read the name table.
+// Each entry: 15-byte padded name, 1 suffix byte, 2 flag bytes (bit 15 = group).
+function parseNbstatReply(msg) {
+  try {
+    if (msg.length < 57) return null;
+    const answers = msg.readUInt16BE(6);
+    if (!answers) return null;
+    // Question echo is 34 bytes (name) then 4 (type/class) — but the reply's RR name may be
+    // a pointer; locate the RDLENGTH by walking from offset 12.
+    let off = 12;
+    if (msg[off] === 0xC0) off += 2; else { while (off < msg.length && msg[off] !== 0) off += msg[off] + 1; off += 1; }
+    off += 2 + 2 + 4;               // TYPE, CLASS, TTL
+    const rdlen = msg.readUInt16BE(off); off += 2;
+    if (off + rdlen > msg.length) return null;
+    const count = msg[off]; off += 1;
+    let workstation = null, group = null, first = null;
+    for (let i = 0; i < count && off + 18 <= msg.length; i++, off += 18) {
+      const raw    = msg.toString('latin1', off, off + 15).replace(/[\x00\s]+$/, '');
+      const suffix = msg[off + 15];
+      const flags  = msg.readUInt16BE(off + 16);
+      const isGroup = (flags & 0x8000) !== 0;
+      if (!raw || raw.startsWith('\x01\x02')) continue; // skip __MSBROWSE__
+      const name = raw.replace(/[^\x20-\x7E]/g, '').trim();
+      if (!name) continue;
+      if (!first && !isGroup) first = name;
+      if (suffix === 0x00 && !isGroup && !workstation) workstation = name;
+      if (suffix === 0x00 && isGroup && !group) group = name;
+    }
+    const host = workstation || first;
+    return host ? { host, group } : null;
+  } catch { return null; }
+}
+
+function netbiosName(ip) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v) => { if (done) return; done = true; try { sock.close(); } catch {} resolve(v); };
+    const sock = dgram.createSocket('udp4');
+    const txid = Math.floor(Math.random() * 0xFFFF);
+    const timer = setTimeout(() => finish(null), 1200);
+    sock.on('error', () => { clearTimeout(timer); finish(null); });
+    sock.on('message', (msg) => {
+      if (msg.length < 2 || msg.readUInt16BE(0) !== txid) return;
+      clearTimeout(timer);
+      finish(parseNbstatReply(msg));
+    });
+    try { sock.send(buildNbstatQuery(txid), NBT_PORT, ip, (err) => { if (err) { clearTimeout(timer); finish(null); } }); }
+    catch { clearTimeout(timer); finish(null); }
+  });
+}
+
+function localIpv4s() {
+  const out = new Set();
+  try {
+    Object.values(os.networkInterfaces()).forEach(addrs =>
+      addrs.forEach(a => { if (a.family === 'IPv4' && !a.internal) out.add(a.address); }));
+  } catch {}
+  return [...out];
+}
+
+ipcMain.handle('resolve-hosts', async (e, ips) => {
+  if (!Array.isArray(ips)) return { results: {}, selfIps: localIpv4s() };
+  const targets = [...new Set(ips.filter(ip => typeof ip === 'string' && isValidIp(ip)))].slice(0, 254);
+  const selfIps = localIpv4s();
+  const results = {};
+  const CONC = 16;
+  let idx = 0;
+  const start = Date.now();
+  let dnsHits = 0, nbtHits = 0;
+
+  async function worker() {
+    while (idx < targets.length) {
+      const ip = targets[idx++];
+      if (selfIps.includes(ip)) { results[ip] = { hostname: os.hostname(), source: 'self' }; continue; }
+      // DNS and NetBIOS in parallel — DNS wins if it answers
+      const [ptr, nbt] = await Promise.all([reverseDns(ip), netbiosName(ip)]);
+      if (ptr)      { results[ip] = { hostname: ptr, source: 'dns', nbt: nbt ? nbt.host : null }; dnsHits++; }
+      else if (nbt) { results[ip] = { hostname: nbt.host, source: 'nbt', group: nbt.group || null }; nbtHits++; }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(CONC, targets.length) }, worker));
+  diagAdd({ kind: 'app', tag: 'resolve', ok: true, note: `${targets.length} host(s): ${dnsHits} via DNS, ${nbtHits} via NetBIOS, ${Date.now() - start}ms` });
+  return { results, selfIps };
+});
+
 // ── IPC: per-host port probe ───────────────────────────────
 // Fired after a host is found — checks a fixed set of service ports
 // and streams results back so the UI can update incrementally.
@@ -1203,8 +1565,35 @@ function isLocallyAdministered(mac) {
   return (firstByte & 0x02) !== 0;
 }
 
+// ── POLICY (HKLM, set by Intune / GPO) ─────────────────────
+// HKLM\SOFTWARE\Policies\Broman Enterprises\NET-ETHER
+//   DisableOnlineVendorLookup  REG_DWORD  1 = never contact macvendors.com
+// Read once at startup; enforced here in main regardless of renderer state.
+const POLICY_KEY = 'HKLM\\SOFTWARE\\Policies\\Broman Enterprises\\NET-ETHER';
+const POLICY = { onlineVendorDisabled: false, read: false };
+let policyReady = null;
+
+function readPolicy() {
+  if (policyReady) return policyReady;
+  policyReady = (async () => {
+    try {
+      const out = (await execAsync(`reg query "${POLICY_KEY}" /v DisableOnlineVendorLookup`, { timeout: 3000, windowsHide: true }).catch(() => '')).replace(/\r/g, '');
+      const m = out.match(/DisableOnlineVendorLookup\s+REG_DWORD\s+(0x\w+)/i);
+      POLICY.onlineVendorDisabled = !!(m && parseInt(m[1], 16) !== 0);
+    } catch { POLICY.onlineVendorDisabled = false; }
+    POLICY.read = true;
+    if (POLICY.onlineVendorDisabled) diagAdd({ kind: 'app', tag: 'policy', ok: true, note: 'DisableOnlineVendorLookup=1 — macvendors.com lookups disabled by policy' });
+    return POLICY;
+  })();
+  return policyReady;
+}
+
+ipcMain.handle('get-policy', async () => { await readPolicy(); return { ...POLICY }; });
+
 ipcMain.handle('mac-lookup-online', async (e, mac) => {
   if (!mac) return { mac, vendor: null, source: 'none' };
+  await readPolicy();
+  if (POLICY.onlineVendorDisabled) return { mac, vendor: null, source: 'policy', note: 'Online lookup disabled by policy' };
 
   const clean = mac.replace(/[:\-]/g, '').toUpperCase();
   if (clean.length < 6) return { mac, vendor: null, source: 'none' };
@@ -1277,28 +1666,248 @@ loadVendorCache();
 // ── IPC: site database ─────────────────────────────────────
 const SITES_PATH = path.join(app.getPath('userData'), 'sites.json');
 
+// Atomic JSON write: temp file + rename, so a crash mid-write never leaves a
+// truncated presets/sites/intel file behind.
+async function writeJsonAtomic(filePath, obj) {
+  const tmp = filePath + '.tmp';
+  await fs.promises.writeFile(tmp, JSON.stringify(obj, null, 2), 'utf8');
+  await fs.promises.rename(tmp, filePath);
+}
+
 ipcMain.handle('sites-load', () => loadJsonFile(SITES_PATH, {}));
 
 ipcMain.handle('sites-save', async (e, sites) => {
   try {
-    await fs.promises.writeFile(SITES_PATH, JSON.stringify(sites, null, 2), 'utf8');
+    await writeJsonAtomic(SITES_PATH, sites);
     return { ok: true };
   } catch (err) {
     return { ok: false, err: err.message };
   }
 });
 
-// ── IPC: INTEL site knowledge base ────────────────────────
-const INTEL_PATH = path.join(app.getPath('userData'), 'intel.json');
+// ── IPC: SITES knowledge base ──────────────────────────────
+// (File stays named intel.json — the tab was renamed INTEL → SITES in v6.x; the
+//  data file kept its name so existing installs carry over untouched.)
+// On-disk format 2 envelope: { format: 2, creds: 'safeStorage'|'plain', sites: {...} }
+// Legacy format (v6.1 and earlier): the bare sites object.
+// Credential values are encrypted at rest with Electron safeStorage (DPAPI on
+// Windows — bound to the user account + machine). The renderer only ever sees
+// plaintext in memory; encryption/decryption happens here on save/load.
+// Encrypted value shape inside a cred: val = { $enc: '<base64>' }
+const SITEKB_PATH        = path.join(app.getPath('userData'), 'intel.json');
+const SITEKB_BACKUP_DIR  = path.join(app.getPath('userData'), 'backups');
+const SITEKB_BACKUP_KEEP = 5;
+const CRED_UNREADABLE   = '[UNREADABLE — encrypted by another user or machine]';
 
-ipcMain.handle('intel-load', () => loadJsonFile(INTEL_PATH, {}));
+function credCryptoAvailable() {
+  try { const { safeStorage } = require('electron'); return safeStorage.isEncryptionAvailable(); }
+  catch { return false; }
+}
 
-ipcMain.handle('intel-save', async (e, intel) => {
+function walkCreds(sites, fn) {
+  // Calls fn(cred) for every credential object in the DB; mutates in place.
+  for (const site of Object.values(sites || {})) {
+    for (const dev of (site && Array.isArray(site.devices)) ? site.devices : []) {
+      for (const c of (dev && Array.isArray(dev.creds)) ? dev.creds : []) {
+        if (c && typeof c === 'object') fn(c);
+      }
+    }
+  }
+}
+
+function encryptSites(sites) {
+  const { safeStorage } = require('electron');
+  const out = JSON.parse(JSON.stringify(sites));
+  let n = 0;
+  walkCreds(out, c => {
+    if (typeof c.val === 'string' && c.val.length) {
+      c.val = { $enc: safeStorage.encryptString(c.val).toString('base64') };
+      n++;
+    }
+  });
+  return { sites: out, count: n };
+}
+
+function decryptSites(sites) {
+  const { safeStorage } = require('electron');
+  const out = JSON.parse(JSON.stringify(sites));
+  let n = 0, failed = 0;
+  walkCreds(out, c => {
+    if (c.val && typeof c.val === 'object' && typeof c.val.$enc === 'string') {
+      try { c.val = safeStorage.decryptString(Buffer.from(c.val.$enc, 'base64')); n++; }
+      catch { c.val = CRED_UNREADABLE; failed++; }
+    }
+  });
+  return { sites: out, count: n, failed };
+}
+
+function countCreds(sites) {
+  let n = 0;
+  walkCreds(sites, c => { if (c.val && (typeof c.val === 'string' ? c.val.length : true)) n++; });
+  return n;
+}
+
+async function intelBackup(label = 'pre-import') {
   try {
-    await fs.promises.writeFile(INTEL_PATH, JSON.stringify(intel, null, 2), 'utf8');
+    if (!fs.existsSync(SITEKB_PATH)) return null;
+    await fs.promises.mkdir(SITEKB_BACKUP_DIR, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const dest  = path.join(SITEKB_BACKUP_DIR, `intel-${label}-${stamp}.json`);
+    await fs.promises.copyFile(SITEKB_PATH, dest);
+    // Prune: keep the newest SITEKB_BACKUP_KEEP
+    const files = (await fs.promises.readdir(SITEKB_BACKUP_DIR))
+      .filter(f => /^intel-.*\.json$/.test(f)).sort();
+    for (const f of files.slice(0, Math.max(0, files.length - SITEKB_BACKUP_KEEP))) {
+      try { await fs.promises.unlink(path.join(SITEKB_BACKUP_DIR, f)); } catch {}
+    }
+    diagAdd({ kind: 'app', tag: 'backup', ok: true, note: `intel.json → backups/${path.basename(dest)}` });
+    return dest;
+  } catch (err) {
+    diagAdd({ kind: 'error', tag: 'backup', ok: false, note: 'intel.json backup failed: ' + err.message });
+    return null;
+  }
+}
+
+async function intelWrite(sites) {
+  if (credCryptoAvailable()) {
+    const { sites: enc } = encryptSites(sites);
+    await writeJsonAtomic(SITEKB_PATH, { format: 2, creds: 'safeStorage', sites: enc });
+  } else {
+    await writeJsonAtomic(SITEKB_PATH, { format: 2, creds: 'plain', sites });
+  }
+}
+
+ipcMain.handle('sitekb-load', async () => {
+  const raw = await loadJsonFile(SITEKB_PATH, {});
+  if (!raw || typeof raw !== 'object') return {};
+
+  // Format 2 envelope
+  if (raw.format === 2 && raw.sites && typeof raw.sites === 'object') {
+    if (raw.creds === 'safeStorage') {
+      const { sites, failed } = decryptSites(raw.sites);
+      if (failed) diagAdd({ kind: 'error', tag: 'creds', ok: false, note: `${failed} credential(s) could not be decrypted (DPAPI is per user + machine)` });
+      return sites;
+    }
+    return raw.sites;
+  }
+
+  // Legacy plaintext (bare sites object) → migrate once, verified, atomic.
+  const sites = raw;
+  const plainCount = countCreds(sites);
+  if (plainCount === 0 || !credCryptoAvailable()) {
+    if (plainCount > 0) diagAdd({ kind: 'error', tag: 'creds', ok: false, note: `safeStorage unavailable — ${plainCount} credential(s) remain plaintext in intel.json` });
+    return sites;
+  }
+  try {
+    const { sites: enc, count } = encryptSites(sites);
+    // Verify the round trip in memory before touching disk
+    const { sites: back, failed } = decryptSites(enc);
+    if (failed || JSON.stringify(back) !== JSON.stringify(sites)) throw new Error('round-trip mismatch');
+    await writeJsonAtomic(SITEKB_PATH, { format: 2, creds: 'safeStorage', sites: enc });
+    diagAdd({ kind: 'app', tag: 'creds', ok: true, note: `Migrated intel.json to format 2 — ${count} credential(s) now encrypted with safeStorage` });
+  } catch (err) {
+    diagAdd({ kind: 'error', tag: 'creds', ok: false, note: 'Credential migration aborted, file left as-is: ' + err.message });
+  }
+  return sites;
+});
+
+ipcMain.handle('sitekb-save', async (e, intel) => {
+  try {
+    if (!intel || typeof intel !== 'object' || Array.isArray(intel)) return { ok: false, err: 'Invalid data' };
+    await intelWrite(intel);
     return { ok: true };
   } catch (err) {
+    diagAdd({ kind: 'error', tag: 'sitekb-save', ok: false, note: err.message });
     return { ok: false, err: err.message };
+  }
+});
+
+ipcMain.handle('sitekb-backup', (e, label) => intelBackup(/^[a-z-]{1,24}$/.test(String(label)) ? label : 'manual'));
+
+// ── IPC: JSON export / import ─────────────────────────────
+// Portable interchange file for moving site data between machines.
+// Credentials are EXCLUDED unless includeCreds is set — DPAPI blobs are not
+// portable, so opting in writes plaintext (the renderer warns before this).
+const EXPORT_FORMAT = 1;
+
+ipcMain.handle('export-json', async (e, { sites, scanLibrary, includeCreds }) => {
+  try {
+    const { dialog } = require('electron');
+    if (!sites || typeof sites !== 'object') return { ok: false, err: 'Nothing to export' };
+    const result = await dialog.showSaveDialog(win, {
+      title: 'Export site data (JSON)',
+      defaultPath: path.join(app.getPath('documents'), `netether-sites-${new Date().toISOString().slice(0, 10)}.json`),
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: false, err: 'CANCELLED' };
+
+    const out = JSON.parse(JSON.stringify(sites));
+    let stripped = 0;
+    if (!includeCreds) walkCreds(out, c => { if (c.val) { c.val = ''; stripped++; } });
+    const payload = {
+      app: 'NET-ETHER',
+      format: EXPORT_FORMAT,
+      version: app.getVersion(),
+      exportedAt: new Date().toISOString(),
+      includeCreds: !!includeCreds,
+      sites: out,
+      scanLibrary: scanLibrary && typeof scanLibrary === 'object' ? scanLibrary : {},
+    };
+    await fs.promises.writeFile(result.filePath, JSON.stringify(payload, null, 2), 'utf8');
+    const siteCount = Object.keys(out).length;
+    diagAdd({ kind: 'app', tag: 'export', ok: true, note: `${siteCount} site(s) → ${result.filePath}${includeCreds ? ' (WITH plaintext credentials)' : stripped ? ` (${stripped} credential(s) stripped)` : ''}` });
+    return { ok: true, path: result.filePath, sites: siteCount, stripped };
+  } catch (err) {
+    return { ok: false, err: err.message };
+  }
+});
+
+// Opens the picker, parses + validates the file, backs up the current intel.json,
+// and hands the payload to the renderer — which owns the merge logic.
+ipcMain.handle('import-json', async () => {
+  try {
+    const { dialog } = require('electron');
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Import site data (JSON)',
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+      properties: ['openFile'],
+    });
+    if (result.canceled || !result.filePaths.length) return { ok: false, err: 'CANCELLED' };
+    const file = result.filePaths[0];
+    const stat = await fs.promises.stat(file);
+    if (stat.size > 25 * 1024 * 1024) return { ok: false, err: 'File too large (>25 MB)' };
+    const data = JSON.parse(await fs.promises.readFile(file, 'utf8'));
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return { ok: false, err: 'Not a site export' };
+
+    let sites, scanLibrary = {}, meta = {};
+    if (data.app === 'NET-ETHER' && data.format >= 1 && data.sites && typeof data.sites === 'object') {
+      sites = data.sites; scanLibrary = data.scanLibrary || {};
+      meta = { version: data.version, exportedAt: data.exportedAt, includeCreds: !!data.includeCreds };
+    } else if (data.format === 2 && data.sites && typeof data.sites === 'object') {
+      // Someone pointed the picker at a raw intel.json — encrypted creds can't be read
+      sites = data.sites;
+      if (data.creds === 'safeStorage') {
+        const { sites: dec, failed } = decryptSites(sites);
+        sites = dec;
+        meta.unreadableCreds = failed;
+      }
+      meta.raw = true;
+    } else {
+      // Legacy: bare sites object (pre-v6.2 export/import)
+      sites = data; meta.legacy = true;
+    }
+    // Shape check: every entry must look like a site
+    const bad = Object.entries(sites).find(([id, s]) => !s || typeof s !== 'object' || typeof s.name !== 'string');
+    if (bad) return { ok: false, err: `Not a site export (entry "${bad[0]}" is not a site)` };
+    // Neutralise anything that isn't a plain string in cred values
+    walkCreds(sites, c => { if (typeof c.val !== 'string') c.val = ''; if (typeof c.key !== 'string') c.key = ''; });
+
+    const backupPath = await intelBackup('pre-import');
+    const deviceCount = Object.values(sites).reduce((n, s) => n + (Array.isArray(s.devices) ? s.devices.length : 0), 0);
+    diagAdd({ kind: 'app', tag: 'import', ok: true, note: `Picked ${path.basename(file)} — ${Object.keys(sites).length} site(s), ${deviceCount} device(s)${backupPath ? '' : ' (no backup — intel.json absent)'}` });
+    return { ok: true, file, sites, scanLibrary, meta, backupPath, deviceCount };
+  } catch (err) {
+    return { ok: false, err: /JSON/i.test(err.message) ? 'Invalid JSON' : err.message };
   }
 });
 
@@ -1499,20 +2108,26 @@ ipcMain.handle('export-excel', async (e, { intelDB, sitesDB }) => {
 });
 
 // ── IPC: MTU read & fix ────────────────────────────────────
+// Shared: read one adapter's MTU from netsh subinterfaces. Returns number or null.
+async function readAdapterMtu(safeAdapter) {
+  const stdout = await execAsync('netsh interface ipv4 show subinterfaces', { timeout: 4000 });
+  // Output lines look like:
+  //      1500  4294967295  4294967295            0  Ethernet
+  for (const line of stdout.split('\n')) {
+    const m = line.match(/^\s*(\d+)\s+\d+\s+\d+\s+\d+\s+(.+?)\s*$/);
+    if (m && m[2].trim().toLowerCase() === safeAdapter.toLowerCase()) {
+      return parseInt(m[1], 10);
+    }
+  }
+  return null;
+}
+
 ipcMain.handle('get-adapter-mtu', async (e, adapter) => {
   const safeAdapter = sanitizeAdapter(adapter);
   if (!safeAdapter) return { ok: false, err: 'Invalid adapter name' };
   try {
-    const stdout = await execAsync('netsh interface ipv4 show subinterfaces', { timeout: 4000 });
-    // Output lines look like:
-    //      1500  4294967295  4294967295            0  Ethernet
-    for (const line of stdout.split('\n')) {
-      const m = line.match(/^\s*(\d+)\s+\d+\s+\d+\s+\d+\s+(.+?)\s*$/);
-      if (m && m[2].trim().toLowerCase() === safeAdapter.toLowerCase()) {
-        return { ok: true, mtu: parseInt(m[1], 10) };
-      }
-    }
-    return { ok: false, err: 'Adapter not found in subinterfaces' };
+    const mtu = await readAdapterMtu(safeAdapter);
+    return mtu === null ? { ok: false, err: 'Adapter not found in subinterfaces' } : { ok: true, mtu };
   } catch (err) {
     return { ok: false, err: err.message };
   }
@@ -1524,7 +2139,24 @@ ipcMain.handle('fix-mtu', async (e, { adapter, mtu }) => {
   const targetMtu = clampMtu(mtu);
   const cmd = `netsh interface ipv4 set subinterface "${safeAdapter}" mtu=${targetMtu} store=persistent`;
   const result = await runElevated(cmd, { tag: 'mtu', timeoutMs: 15000 });
-  return result.ok ? { ok: true, mtu: targetMtu } : result;
+  if (!result.ok) return result;
+
+  // Verify: re-read the subinterface table (poll briefly — the change is near-instant
+  // but the adapter may bounce). netsh exit 0 alone is not proof the value took.
+  let seen = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    await new Promise(r => setTimeout(r, 700));
+    try { seen = await readAdapterMtu(safeAdapter); } catch {}
+    if (seen === targetMtu) break;
+  }
+  const verified = seen === targetMtu;
+  diagVerify('mtu', verified, verified
+    ? `${safeAdapter} MTU now ${targetMtu}`
+    : `${safeAdapter} MTU expected ${targetMtu}, read ${seen === null ? 'nothing' : seen}`);
+  if (!verified) {
+    return { ...result, ok: false, err: `MTU command ran but adapter still reports ${seen === null ? 'no MTU' : seen}`, verified: false };
+  }
+  return { ...result, ok: true, mtu: targetMtu, verified: true };
 });
 
 // ── IPC: presets ───────────────────────────────────────────
@@ -1537,7 +2169,7 @@ ipcMain.handle('presets-reset', async () => {
 
 ipcMain.handle('presets-save', async (e, presets) => {
   try {
-    await fs.promises.writeFile(PRESETS_PATH, JSON.stringify(presets, null, 2), 'utf8');
+    await writeJsonAtomic(PRESETS_PATH, presets);
     return { ok: true };
   } catch (err) {
     return { ok: false, err: err.message };
@@ -1600,7 +2232,7 @@ ipcMain.handle('apply-network-config', async (e, { adapter, ip, subnet, gateway,
     dns && dns.trim() ? `netsh interface ip set dns "${safeAdapter}" static ${dns.trim()}` : null,
   ].filter(Boolean).join('; ');
 
-  const result = await runElevated(cmdLines, { tag: 'run', timeoutMs: 30000 });
+  const result = await runElevated(cmdLines, { tag: 'apply', timeoutMs: 30000 });
   if (!result.ok) return result;
 
   // Verify the change took — poll netsh up to 3x, but also check registry
@@ -1612,7 +2244,10 @@ ipcMain.handle('apply-network-config', async (e, { adapter, ip, subnet, gateway,
       const cfg = await execAsync('netsh interface ip show config', { timeout: 5000 });
       const blocks = cfg.split(/\r?\n(?=Configuration for interface)/i);
       const block = blocks.find(b => b.toLowerCase().includes(safeAdapter.toLowerCase()));
-      if (block && block.includes(ip)) return { ok: true };
+      if (block && block.includes(ip)) {
+        diagVerify('apply', true, `${safeAdapter} now ${ip}/${subnet}${gateway && gateway.trim() ? ' gw ' + gateway.trim() : ''} (netsh)`);
+        return { ...result, ok: true, verified: true };
+      }
       // Fallback: registry (works for disconnected static adapters)
       const guid = await getAdapterGuid(safeAdapter);
       if (guid) {
@@ -1620,11 +2255,15 @@ ipcMain.handle('apply-network-config', async (e, { adapter, ip, subnet, gateway,
           `reg query "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\${guid}" /v IPAddress`,
           { timeout: 3000 }
         ).catch(() => '')).replace(/\r/g, '');
-        if (regOut.includes(ip)) return { ok: true };
+        if (regOut.includes(ip)) {
+          diagVerify('apply', true, `${safeAdapter} now ${ip}/${subnet} (registry — netsh view not updated yet, or adapter disconnected)`);
+          return { ...result, ok: true, verified: true };
+        }
       }
     } catch {}
   }
-  return { ok: false, err: 'Command ran but IP did not change — check adapter name or admin rights' };
+  diagVerify('apply', false, `${safeAdapter} expected ${ip} — not seen in netsh or registry after 4.5s`);
+  return { ...result, ok: false, verified: false, err: 'Command ran but IP did not change — check adapter name or admin rights' };
 });
 
 // ── IPC: apply DHCP (elevated) ────────────────────────────
@@ -1646,7 +2285,8 @@ ipcMain.handle('apply-dhcp', async (e, { adapter }) => {
       const blocks = cfg.split(/\r?\n(?=Configuration for interface)/i);
       const block = blocks.find(b => b.toLowerCase().includes(safeAdapter.toLowerCase()));
       if (block && /DHCP enabled:\s+Yes/i.test(block)) {
-        return { ok: true };
+        diagVerify('dhcp', true, `${safeAdapter} DHCP enabled (netsh)`);
+        return { ...result, ok: true, verified: true };
       }
     } catch {}
   }
@@ -1660,35 +2300,60 @@ ipcMain.handle('apply-dhcp', async (e, { adapter }) => {
         { timeout: 3000 }
       ).catch(() => '')).replace(/\r/g, '');
       const enableMatch = regOut.match(/EnableDHCP\s+REG_DWORD\s+(0x\w+)/i);
-      if (enableMatch && parseInt(enableMatch[1], 16) !== 0) return { ok: true };
+      if (enableMatch && parseInt(enableMatch[1], 16) !== 0) {
+        diagVerify('dhcp', true, `${safeAdapter} EnableDHCP=1 (registry — netsh view not updated yet, or adapter disconnected)`);
+        return { ...result, ok: true, verified: true };
+      }
     }
   } catch {}
-  // runElevated succeeded but DHCP didn't take — likely UAC was auto-approved
-  // but netsh failed silently (e.g. adapter name mismatch or policy block)
-  return { ok: false, err: 'DHCP command ran but adapter is still static — check adapter name and run as admin' };
+  // netsh exited 0 but DHCP didn't take — adapter name mismatch, policy block, or
+  // a netsh message that came back on stdout with a zero exit code. The captured
+  // output is in the diagnostics log either way.
+  diagVerify('dhcp', false, `${safeAdapter} still static after 4.5s`);
+  return { ...result, ok: false, verified: false, err: 'DHCP command ran but adapter is still static — check adapter name and run as admin' };
 });
 
 // ── IPC: IP alias management ───────────────────────────────
+
+// Shared: all IPv4 addresses on an adapter, from netsh show addresses.
+async function readAliases(safeAdapter) {
+  const stdout = await execAsync(`netsh interface ip show addresses "${safeAdapter}"`, { timeout: 4000 });
+  // Parse lines like:
+  //    IP Address:               192.168.1.100
+  //    Subnet Prefix:            192.168.1.0/24 (mask 255.255.255.0)
+  const results = [];
+  const ipMatches = [...stdout.matchAll(/IP Address:\s+([\d.]+)/gi)];
+  const maskMatches = [...stdout.matchAll(/mask\s+([\d.]+)/gi)];
+  ipMatches.forEach((m, i) => {
+    results.push({
+      ip:     m[1],
+      subnet: maskMatches[i] ? maskMatches[i][1] : '255.255.255.0',
+    });
+  });
+  return results;
+}
+
+// Poll until an IP is present/absent on the adapter. Returns true if the expected
+// state was observed within maxMs.
+async function pollAliasState(safeAdapter, ip, expectPresent, maxMs = 5000) {
+  const interval = 600;
+  const deadline = Date.now() + maxMs;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, interval));
+    try {
+      const found = (await readAliases(safeAdapter)).some(a => a.ip === ip);
+      if (expectPresent === found) return true;
+    } catch {}
+  }
+  return false;
+}
 
 // Get all IPs assigned to an adapter
 ipcMain.handle('get-aliases', async (e, adapter) => {
   const safeAdapter = sanitizeAdapter(adapter);
   if (!safeAdapter) return { ok: false, err: 'Invalid adapter name', aliases: [] };
   try {
-    const stdout = await execAsync(`netsh interface ip show addresses "${safeAdapter}"`, { timeout: 4000 });
-    // Parse lines like:
-    //    IP Address:               192.168.1.100
-    //    Subnet Prefix:            192.168.1.0/24 (mask 255.255.255.0)
-    const results = [];
-    const ipMatches = [...stdout.matchAll(/IP Address:\s+([\d.]+)/gi)];
-    const maskMatches = [...stdout.matchAll(/mask\s+([\d.]+)/gi)];
-    ipMatches.forEach((m, i) => {
-      results.push({
-        ip:     m[1],
-        subnet: maskMatches[i] ? maskMatches[i][1] : '255.255.255.0',
-      });
-    });
-    return { ok: true, aliases: results };
+    return { ok: true, aliases: await readAliases(safeAdapter) };
   } catch (err) {
     return { ok: false, err: err.message, aliases: [] };
   }
@@ -1702,7 +2367,10 @@ ipcMain.handle('alias-add', async (e, { adapter, ip, subnet }) => {
 
   // If the adapter is on DHCP, netsh "add address" silently replaces the DHCP
   // lease instead of adding a second IP. Fix: switch to static first (preserving
-  // the current IP/subnet/gateway), then add the alias — all in one elevated chain.
+  // the current IP/subnet/gateway), then add the alias — as one chain that stops
+  // if the conversion fails. The renderer shows a pre-flight confirm before this.
+  let cmd = `netsh interface ip add address "${safeAdapter}" ${ip} ${subnet}`;
+  let converted = false;
   try {
     const cfg = await execAsync('netsh interface ip show config', { timeout: 5000 }).catch(() => '');
     const blocks = cfg.split(/\r?\n(?=Configuration for interface)/i);
@@ -1715,13 +2383,19 @@ ipcMain.handle('alias-add', async (e, { adapter, ip, subnet }) => {
       const setStatic = currentGw
         ? `netsh interface ip set address "${safeAdapter}" static ${currentIp} ${currentSn} ${currentGw}`
         : `netsh interface ip set address "${safeAdapter}" static ${currentIp} ${currentSn}`;
-      const addAlias  = `netsh interface ip add address "${safeAdapter}" ${ip} ${subnet}`;
-      return runElevated(`${setStatic}; ${addAlias}`, { tag: 'alias_add', timeoutMs: 25000 });
+      cmd = `${setStatic}; ${cmd}`;
+      converted = true;
     }
-  } catch { /* fall through to normal path */ }
+  } catch { /* fall through to plain add */ }
 
-  const cmd = `netsh interface ip add address "${safeAdapter}" ${ip} ${subnet}`;
-  return runElevated(cmd, { tag: 'alias_add', timeoutMs: 20000 });
+  const result = await runElevated(cmd, { tag: 'alias_add', timeoutMs: 25000 });
+  if (!result.ok) return { ...result, converted };
+
+  const verified = await pollAliasState(safeAdapter, ip, true, 5000);
+  diagVerify('alias_add', verified, verified
+    ? `${ip}/${subnet} present on ${safeAdapter}${converted ? ' (adapter converted DHCP→static)' : ''}`
+    : `${ip} not seen on ${safeAdapter} after 5s${converted ? ' (conversion chain ran)' : ''}`);
+  return { ...result, verified, converted };
 });
 
 // Remove a secondary IP from an adapter (elevated)
@@ -1730,7 +2404,14 @@ ipcMain.handle('alias-remove', async (e, { adapter, ip }) => {
   if (!safeAdapter)   return { ok: false, err: 'Invalid adapter name' };
   if (!isValidIp(ip)) return { ok: false, err: 'Invalid IP address' };
   const cmd = `netsh interface ip delete address "${safeAdapter}" ${ip}`;
-  return runElevated(cmd, { tag: 'alias_del', timeoutMs: 20000 });
+  const result = await runElevated(cmd, { tag: 'alias_del', timeoutMs: 20000 });
+  if (!result.ok) return result;
+
+  const verified = await pollAliasState(safeAdapter, ip, false, 5000);
+  diagVerify('alias_del', verified, verified
+    ? `${ip} removed from ${safeAdapter}`
+    : `${ip} still present on ${safeAdapter} after 5s`);
+  return { ...result, verified };
 });
 
 // Build netsh commands for aliases without elevating (CMD fallback)
@@ -1744,7 +2425,7 @@ ipcMain.handle('alias-build-cmd', async (e, { action, adapter, ip, subnet, curre
       const setStatic = currentGw && isValidIp(currentGw)
         ? `netsh interface ip set address "${safeAdapter}" static ${currentIp} ${sn} ${currentGw}`
         : `netsh interface ip set address "${safeAdapter}" static ${currentIp} ${sn}`;
-      return `${setStatic} & netsh interface ip add address "${safeAdapter}" ${ip} ${subnet}`;
+      return `${setStatic} && netsh interface ip add address "${safeAdapter}" ${ip} ${subnet}`;
     }
     return `netsh interface ip add address "${safeAdapter}" ${ip} ${subnet}`;
   }
@@ -1752,7 +2433,71 @@ ipcMain.handle('alias-build-cmd', async (e, { action, adapter, ip, subnet, curre
   return '';
 });
 
-// Session log feature removed — handlers deleted.
+// ── IPC: diagnostics overlay ──────────────────────────────
+// (The old v3.x session log was removed as too intrusive; this is a different
+// instrument — silent until summoned from the titlebar version chip.)
+function fileStat(p) {
+  try { const s = fs.statSync(p); return { exists: true, bytes: s.size, mtime: s.mtimeMs }; }
+  catch { return { exists: false, bytes: 0, mtime: null }; }
+}
+
+// Credential storage status for the STATE grid — reads only the intel.json header.
+function credStatus() {
+  const available = credCryptoAvailable();
+  try {
+    const raw = JSON.parse(fs.readFileSync(SITEKB_PATH, 'utf8'));
+    if (raw && raw.format === 2) {
+      const n = countCreds(raw.sites || {});
+      return { available, format: 2, mode: raw.creds, count: n };
+    }
+    return { available, format: 1, mode: 'plain', count: countCreds(raw || {}) };
+  } catch { return { available, format: 0, mode: 'none', count: 0 }; }
+}
+
+async function buildDiagState() {
+  await detectElevation();
+  const ud = app.getPath('userData');
+  let user = '';
+  try { user = os.userInfo().username; } catch {}
+  return {
+    version:    app.getVersion(),
+    packaged:   app.isPackaged,
+    dev:        IS_DEV,
+    exe:        process.execPath,
+    userData:   ud,
+    elevated:   PRIV.elevated,
+    integrity:  PRIV.integrity,
+    privErr:    PRIV.err,
+    user,
+    host:       os.hostname(),
+    os:         `${os.type()} ${os.release()} ${os.arch()}`,
+    electron:   process.versions.electron,
+    node:       process.versions.node,
+    chrome:     process.versions.chrome,
+    uptimeSec:  Math.round(process.uptime()),
+    ouiEntries: Object.keys(OUI).length,
+    creds:      credStatus(),
+    policy:     { ...POLICY },
+    files: {
+      'presets.json':         fileStat(path.join(ud, 'presets.json')),
+      'sites.json':           fileStat(path.join(ud, 'sites.json')),
+      'intel.json':           fileStat(path.join(ud, 'intel.json')),
+      'vendor-cache.json':    fileStat(path.join(ud, 'vendor-cache.json')),
+      'last-snapshot.json':   fileStat(path.join(ud, 'last-snapshot.json')),
+      'launch-snapshot.json': fileStat(path.join(ud, 'launch-snapshot.json')),
+      'diag-log.json':        fileStat(DIAG_LOG_PATH),
+    },
+    logEntries: diagLog.length,
+  };
+}
+
+ipcMain.handle('diag-get', async () => ({ state: await buildDiagState(), log: diagLog.slice() }));
+ipcMain.handle('diag-clear', () => {
+  diagLog = [];
+  diagFlush();
+  diagAdd({ kind: 'app', tag: 'log-cleared', ok: true, note: 'Diagnostics log cleared by user' });
+  return { ok: true };
+});
 
 // ── FULL ADAPTER SNAPSHOT ─────────────────────────────────
 // Reads complete config (IP mode, IP, subnet, gateway, DNS, MTU) for an adapter.
@@ -1994,8 +2739,10 @@ ipcMain.handle('restore-launch-state', async (e, adapterNames) => {
     }
 
     const allOk = results.every(r => r.ok);
+    diagVerify('restore', allOk, results.map(r => `${r.adapter}: ${r.ok ? 'ok' : (r.err || 'failed')}`).join(' · ') || 'nothing to restore');
     return { ok: allOk, results };
   } catch (err) {
+    diagAdd({ kind: 'error', tag: 'restore', ok: false, note: err.message });
     return { ok: false, err: err.message, results: [] };
   }
 });

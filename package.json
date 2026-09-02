@@ -1,6 +1,6 @@
 {
   "name": "net-ether",
-  "version": "6.1.0",
+  "version": "6.2.0",
   "description": "NET//ETHER — always-on-top desktop network manager for field technicians",
   "main": "main.js",
   "author": {
@@ -9,9 +9,8 @@
   },
   "scripts": {
     "start": "electron .",
-    "build-msi": "electron-builder --win msi",
-    "build-portable": "electron-builder --win portable",
-    "build-all": "electron-builder --win msi portable nsis"
+    "build": "electron-builder --win nsis portable",
+    "build-portable": "electron-builder --win portable"
   },
   "build": {
     "appId": "com.bromanenterprises.net-ether",
@@ -21,12 +20,6 @@
       "target": [
         {
           "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "msi",
           "arch": [
             "x64"
           ]
@@ -47,6 +40,7 @@
     "nsis": {
       "artifactName": "NET-ETHER-Installer-${version}.exe",
       "oneClick": false,
+      "perMachine": true,
       "allowToChangeInstallationDirectory": true,
       "allowElevation": true,
       "createDesktopShortcut": true,
@@ -60,13 +54,6 @@
       "include": "assets/installer.nsh",
       "deleteAppDataOnUninstall": false,
       "useZip": false
-    },
-    "msi": {
-      "artifactName": "NET-ETHER-Setup-${version}.msi",
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "perMachine": false,
-      "runAfterFinish": true
     },
     "portable": {
       "artifactName": "NET-ETHER-portable-${version}.exe"
@@ -82,6 +69,7 @@
       "assets/**/*"
     ],
     "asarUnpack": [
+      "assets/NET-ETHER-Guide.pdf",
       "assets/NET-ETHER-Guide.docx"
     ]
   },
