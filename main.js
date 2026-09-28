@@ -601,7 +601,7 @@ function createWindow() {
     hasShadow: false,
     alwaysOnTop: true,
     resizable: true,
-    minWidth: 320,
+    minWidth: 340,   // below this the titlebar can't hold logo + controls
     minHeight: 300,
     skipTaskbar: true,
     show: false,
@@ -857,6 +857,7 @@ async function getAdaptersFull() {
     // even when a static config is stored. We cross-check against the registry
     // (ground truth) for any disconnected adapter that show config claims is DHCP.
     const dhcpMap = {};
+    const gwMap = {}, dnsMap = {};   // v7.0.0: gateway + DNS per adapter, DHCP-assigned or static
     try {
       const ipCfg = await execAsync('netsh interface ip show config', { timeout: 5000 }).catch(() => '');
       const blocks = ipCfg.split(/\r?\n(?=Configuration for interface)/i);
@@ -866,6 +867,11 @@ async function getAdaptersFull() {
         const name = nameMatch[1].trim().toLowerCase();
         const isDhcp = /DHCP enabled:\s+Yes/i.test(block);
         dhcpMap[name] = isDhcp;
+        const gw = block.match(/Default Gateway:\s+(\d{1,3}(?:\.\d{1,3}){3})/i);
+        gwMap[name] = gw ? gw[1] : null;
+        // "Statically Configured DNS Servers:" or "DNS servers configured through DHCP:" — first IPv4 after either
+        const dns = block.match(/DNS servers configured through DHCP:\s+(\d{1,3}(?:\.\d{1,3}){3})|Statically Configured DNS Servers:\s+(\d{1,3}(?:\.\d{1,3}){3})/i);
+        dnsMap[name] = dns ? (dns[1] || dns[2]) : null;
       });
 
       // Cross-check registry for adapters that show config reports as DHCP.
@@ -919,6 +925,8 @@ async function getAdaptersFull() {
         admin:     status.admin,
         connected: status.state === 'Connected',
         isDhcp:    dhcpMap[name.toLowerCase()] ?? null,
+        gateway:   gwMap[name.toLowerCase()] || null,
+        dns:       dnsMap[name.toLowerCase()] || null,
       };
     });
 
@@ -931,6 +939,8 @@ async function getAdaptersFull() {
           name, ip: ip.ip, subnet: ip.subnet, mac: ip.mac,
           state: hasIp ? 'Connected' : 'Disconnected', admin: 'Enabled', connected: hasIp,
           isDhcp: dhcpMap[name.toLowerCase()] ?? null,
+          gateway: gwMap[name.toLowerCase()] || null,
+          dns:     dnsMap[name.toLowerCase()] || null,
         });
       }
     });
@@ -1317,6 +1327,9 @@ function lookupVendor(mac) {
   // Normalize: strip separators, uppercase
   const clean = mac.replace(/[:\-]/g, '').toUpperCase();
   if (clean.length < 6) return null;
+  // Locally-administered bit set (2nd hex digit 2/6/A/E) = randomised MAC — phones and
+  // laptops with privacy on. No OUI will ever match; say why instead of "Unknown".
+  if (/^[0-9A-F][26AE]/.test(clean) && !OUI[clean.slice(0, 6)] && !OUI_SHORT[clean.slice(0, 6)]) return 'Private MAC (randomised)';
   // Curated short name first, then 6-char (MA-L), 7-char, 9-char (MA-S) prefix
   return OUI_SHORT[clean.slice(0, 6)] || OUI[clean.slice(0, 6)] || OUI[clean.slice(0, 7)] || OUI[clean.slice(0, 9)] || null;
 }
@@ -2113,6 +2126,13 @@ ipcMain.handle('import-json', async () => {
     if (bad) return { ok: false, err: `Not a site export (entry "${bad[0]}" is not a site)` };
     // Neutralise anything that isn't a plain string in cred values
     walkCreds(sites, c => { if (typeof c.val !== 'string') c.val = ''; if (typeof c.key !== 'string') c.key = ''; });
+    // v7.0.0: imported identifiers are untrusted. Site IDs and device MAC/IP end up inside the
+    // renderer's inline handlers, where HTML escaping is no protection (the browser decodes
+    // &#39; before the JS runs). Force every identifier into its exact shape; anything that
+    // doesn't fit is regenerated or dropped, and the import reports what it cleaned.
+    const cleaned = sanitizeImportedSites(sites);
+    sites = cleaned.sites;
+    if (cleaned.notes.length) diagAdd({ kind: 'app', tag: 'import', ok: true, note: 'Import sanitised: ' + cleaned.notes.join('; ') });
 
     const backupPath = await intelBackup('pre-import');
     const deviceCount = Object.values(sites).reduce((n, s) => n + (Array.isArray(s.devices) ? s.devices.length : 0), 0);
@@ -2122,6 +2142,49 @@ ipcMain.handle('import-json', async () => {
     return { ok: false, err: /JSON/i.test(err.message) ? 'Invalid JSON' : err.message };
   }
 });
+
+// Exact shapes for anything that becomes an identifier in the renderer.
+const RE_SITE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const RE_MAC     = /^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$/;
+const str = (v, max) => (typeof v === 'string' ? v.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').slice(0, max) : '');
+function sanitizeImportedSites(input) {
+  const notes = [];
+  const out = {};
+  let regen = 0, macDrop = 0, ipDrop = 0;
+  for (const [rawId, site] of Object.entries(input)) {
+    let id = RE_SITE_ID.test(rawId) ? rawId : null;
+    if (!id) { id = 'site_' + require('crypto').randomBytes(6).toString('hex'); regen++; }
+    const s = {
+      ...site,
+      id,
+      name:     str(site.name, 80),
+      customer: str(site.customer, 80),
+      address:  str(site.address, 160),
+      contact:  str(site.contact, 120),
+      notes:    str(site.notes, 4000),
+      subnet:   (typeof site.subnet === 'string' && /^\d{1,3}(\.\d{1,3}){2}$/.test(site.subnet)) ? site.subnet : '',
+      tag:      str(site.tag, 12),
+    };
+    s.devices = (Array.isArray(site.devices) ? site.devices : []).map(d => {
+      if (!d || typeof d !== 'object') return null;
+      const mac = (typeof d.mac === 'string' && RE_MAC.test(d.mac)) ? d.mac.toLowerCase() : '';
+      if (d.mac && !mac) macDrop++;
+      const ip  = (typeof d.ip === 'string' && isValidIp(d.ip)) ? d.ip : '';
+      if (d.ip && !ip) ipDrop++;
+      if (!mac && !ip) return null;                      // nothing to anchor the device on
+      return {
+        ...d, mac, ip,
+        hostname: str(d.hostname, 120), vendor: str(d.vendor, 120), notes: str(d.notes, 4000), type: str(d.type, 24),
+        creds: Array.isArray(d.creds) ? d.creds.filter(c => c && typeof c === 'object').map(c => ({ key: str(c.key, 60), val: typeof c.val === 'string' ? c.val.slice(0, 500) : '' })) : [],
+      };
+    }).filter(Boolean);
+    out[id] = s;
+  }
+  if (regen)   notes.push(`${regen} site id(s) regenerated`);
+  if (macDrop) notes.push(`${macDrop} malformed MAC(s) cleared`);
+  if (ipDrop)  notes.push(`${ipDrop} invalid IP(s) cleared`);
+  return { sites: out, notes };
+}
 
 // ── IPC: Excel export ──────────────────────────────────────
 ipcMain.handle('export-excel', async (e, { intelDB, sitesDB }) => {
@@ -2394,7 +2457,7 @@ ipcMain.handle('presets-save', async (e, presets) => {
 ipcMain.handle('ping-host', async (e, host) => {
   if (!host || typeof host !== 'string') return { ok: false, err: 'INVALID_HOST' };
   const safeHost = host.trim().replace(/[^a-zA-Z0-9.\-:]/g, '');
-  if (!safeHost) return { ok: false, err: 'INVALID_HOST' };
+  if (!safeHost || safeHost.startsWith('-')) return { ok: false, err: 'INVALID_HOST' };   // "-t" would become a ping flag
 
   const start = Date.now();
   try {
@@ -2427,6 +2490,15 @@ ipcMain.handle('ping-host', async (e, host) => {
 });
 
 // ── IPC: apply network config (elevated) ──────────────────
+// The block for exactly this adapter — "Ethernet" must not match "Ethernet 2".
+function findAdapterBlock(blocks, adapterName) {
+  const want = String(adapterName || '').trim().toLowerCase();
+  return blocks.find(b => {
+    const m = b.match(/Configuration for interface "(.+?)"/i);
+    return m && m[1].trim().toLowerCase() === want;
+  }) || null;
+}
+
 async function applyNetworkConfig({ adapter, ip, subnet, gateway, dns }) {
   const safeAdapter = sanitizeAdapter(adapter);
   if (!safeAdapter)           return { ok: false, err: 'Invalid adapter name' };
@@ -2445,7 +2517,7 @@ async function applyNetworkConfig({ adapter, ip, subnet, gateway, dns }) {
   ].filter(Boolean).join('; ');
 
   const result = await runElevated(cmdLines, { tag: 'apply', timeoutMs: 30000 });
-  if (!result.ok) return result;
+  if (!result.ok) return { ...result, err: explainNetshError(result.err, ip) };
 
   // Verify the change took — poll netsh up to 3x, but also check registry
   // as netsh drops the IP line for disconnected adapters even after a successful apply.
@@ -2455,7 +2527,7 @@ async function applyNetworkConfig({ adapter, ip, subnet, gateway, dns }) {
       // Primary: netsh (works for connected adapters)
       const cfg = await execAsync('netsh interface ip show config', { timeout: 5000 });
       const blocks = cfg.split(/\r?\n(?=Configuration for interface)/i);
-      const block = blocks.find(b => b.toLowerCase().includes(safeAdapter.toLowerCase()));
+      const block = findAdapterBlock(blocks, safeAdapter);
       if (block && block.includes(ip)) {
         diagVerify('apply', true, `${safeAdapter} now ${ip}/${subnet}${gateway && gateway.trim() ? ' gw ' + gateway.trim() : ''} (netsh)`);
         return { ...result, ok: true, verified: true };
@@ -2477,6 +2549,12 @@ async function applyNetworkConfig({ adapter, ip, subnet, gateway, dns }) {
   diagVerify('apply', false, `${safeAdapter} expected ${ip} — not seen in netsh or registry after 4.5s`);
   return { ...result, ok: false, verified: false, err: 'Command ran but IP did not change — check adapter name or admin rights' };
 }
+// netsh's "The object already exists." means the address is already on the adapter (a DHCP
+// lease or an alias) — say that instead of parroting netsh.
+function explainNetshError(err, ip) {
+  if (err && /object already exists/i.test(err)) return `${ip} is already on this adapter (DHCP lease or alias) — switch to DHCP first, or use a different address`;
+  return err;
+}
 ipcMain.handle('apply-network-config', async (e, args) => applyNetworkConfig(args || {}));
 
 // ── IPC: apply DHCP (elevated) ────────────────────────────
@@ -2496,7 +2574,7 @@ async function applyDhcpConfig({ adapter }) {
     try {
       const cfg = await execAsync('netsh interface ip show config', { timeout: 5000 });
       const blocks = cfg.split(/\r?\n(?=Configuration for interface)/i);
-      const block = blocks.find(b => b.toLowerCase().includes(safeAdapter.toLowerCase()));
+      const block = findAdapterBlock(blocks, safeAdapter);
       if (block && /DHCP enabled:\s+Yes/i.test(block)) {
         diagVerify('dhcp', true, `${safeAdapter} DHCP enabled (netsh)`);
         return { ...result, ok: true, verified: true };
@@ -2588,7 +2666,7 @@ ipcMain.handle('alias-add', async (e, { adapter, ip, subnet }) => {
   try {
     const cfg = await execAsync('netsh interface ip show config', { timeout: 5000 }).catch(() => '');
     const blocks = cfg.split(/\r?\n(?=Configuration for interface)/i);
-    const block  = blocks.find(b => b.toLowerCase().includes(safeAdapter.toLowerCase()));
+    const block  = findAdapterBlock(blocks, safeAdapter);
     if (block && /DHCP enabled:\s+Yes/i.test(block)) {
       const currentIp  = (block.match(/IP Address:\s+([\d.]+)/i)         || [])[1];
       const currentSn  = (block.match(/Subnet Prefix[^(]+\(mask\s+([\d.]+)\)/i) || [])[1] || '255.255.255.0';
@@ -2760,7 +2838,7 @@ async function snapshotAdapterConfig(name) {
   // Shared helper — reads one adapter's full config from netsh + registry + subinterfaces
   const cfg = await execAsync('netsh interface ip show config', { timeout: 5000 }).catch(() => '');
   const blocks = cfg.split(/\r?\n(?=Configuration for interface)/i);
-  const block = blocks.find(b => b.toLowerCase().includes(name.toLowerCase()));
+  const block = findAdapterBlock(blocks, name);
   if (!block) return null;
 
   const isDhcp  = /DHCP enabled:\s+Yes/i.test(block);

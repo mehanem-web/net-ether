@@ -1,6 +1,6 @@
 {
   "name": "net-ether",
-  "version": "7.0.0",
+  "version": "7.0.0-rc.2",
   "description": "NET//ETHER — always-on-top desktop network manager and DHCP server for field technicians",
   "main": "main.js",
   "author": {
@@ -75,7 +75,7 @@
     ]
   },
   "devDependencies": {
-    "electron": "^41.0.0",
+    "electron": "^41.10.7",
     "electron-builder": "^26.8.1"
   },
   "dependencies": {

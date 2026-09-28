@@ -33,6 +33,9 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 - [ ] `dev.bat` only: APPLY → UAC → **No** → status "CANCELLED — UAC PROMPT DISMISSED", OP row mode `uac`. Then APPLY → **Yes** → OP row mode `uac`, exit 0, VERIFY OK.
 - [ ] FACTORY DEFAULTS (beside SAVE TO PRESET) opens a 3-column grid with the explainer line. AXIS tile fills 169.254.1.1 / 255.255.0.0, no gateway. APPLY succeeds (mask hint only, no error).
 - [ ] `?` → CIDR tab → click /16 → subnet field reads 255.255.0.0.
+- [ ] LIVE on a DHCP adapter shows gateway and DNS, not blanks.
+- [ ] Two adapters named "Ethernet" and "Ethernet 2": apply / alias / verify on "Ethernet" never reports the other one's address.
+- [ ] SITES → IMPORT a JSON where you've hand-edited a site id to `x');alert(1);//` → import succeeds, LOG has "Import sanitised: 1 site id(s) regenerated", nothing pops.
 - [ ] Type 169.254.5.5 with 255.255.255.0 → amber note about /16, still applies.
 
 ### MULTI-IP
@@ -65,7 +68,11 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 - [ ] ADVANCED → AUTO-STOP 1 → serve a device → wait a minute with nothing renewing → status "AUTO-STOPPED", badge back to LISTENING.
 - [ ] QUICK START on an adapter with no address (bench switch, no server) → modal offers a static IP → SET STATIC IP → LOG has OP apply + VERIFY (static assist), ETHER tab shows the adapter STATIC at 192.168.100.1 → serving starts. Quit → LOG shows the revert apply/dhcp; adapter back to DHCP.
 - [ ] Kill the app from Task Manager while a static assist is active → relaunch, open DHCP → "LEFTOVER STATIC IP" modal → REVERT ADAPTER works.
-- [ ] ENGINE OFF → badge OFFLINE, netstat shows :67 released, firewall rule gone. ENGINE ON → back to LISTENING.
+- [ ] Tick two ASKING rows → SERVE SELECTED (2) appears beside CSV → click → both go LEASED, badge says 2 TARGETS, live bar "DHCP: 2 TARGETS".
+- [ ] Let a lease expire → device re-asks → preview shows its OLD address (1 h memory), not the next pool slot.
+- [ ] With the home router live, plug a laptop already leased from the router into the same switch while ETHER is in SERVE ALL → activity log shows "not ours, staying silent" for its REQUEST; the laptop keeps its router lease.
+- [ ] Drag the bar between the device table and the log → ratio changes and survives relaunch.
+- [ ] Click the LISTENING badge → OFFLINE, netstat shows :67 released, firewall rule gone. Click again → back to LISTENING.
 - [ ] Quit while serving → app exits within a few seconds; :67 released; firewall rule gone; LOG (next launch) shows "DHCP engine off".
 - [ ] Diagnostics STATE shows a "dhcp engine" line and `dhcp-config.json` in the file list.
 - [ ] If you had NET//DHCP installed: first open of the tab imports its profiles/reservations (LOG "Imported NET//DHCP settings").
@@ -89,8 +96,8 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 
 ### Installer (home PC, run as admin)
 - [ ] Uninstall any per-user v6.1 copy first (Settings → Apps).
-- [ ] Run `NET-ETHER-Installer-7.0.0.exe` → directory page defaults to `C:\Program Files\Broman Enterprises\NET-ETHER\`. Install completes, shortcut works, app launches elevated.
-- [ ] Silent: `NET-ETHER-Installer-7.0.0.exe /S` from an admin prompt → same result, no UI.
+- [ ] Run `NET-ETHER-Installer-7.0.0-rc.2.exe` → directory page defaults to `C:\Program Files\Broman Enterprises\NET-ETHER\`. Install completes, shortcut works, app launches elevated.
+- [ ] Silent: `NET-ETHER-Installer-7.0.0-rc.2.exe /S` from an admin prompt → same result, no UI.
 - [ ] Data from before the install (presets, sites) is still there — `%APPDATA%` is unaffected by install mode.
 - [ ] Uninstall from Programs & Features → exe gone, `%APPDATA%\net-ether` kept.
 

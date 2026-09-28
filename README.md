@@ -237,6 +237,14 @@ Two apps become one. NET//DHCP is absorbed as the DHCP tab, the window sizing mo
 - Button row simplified: **DHCP** → `→ DHCP` in the adapter row (two clicks, only on a static adapter); **MTU** → DIAGNOSTICS → TOOLS; **CIDR** → `?` guide (CIDR tab, rows still fill the subnet field); **CMD** → **COPY COMMANDS**.
 - Section labels carry the `//` mark; primary buttons carry the icon family's corner brackets.
 
+**From the bench (rc2)**
+- DHCP: tick several devices → **SERVE SELECTED**; header checkbox grabs every asker. Devices/log divider is draggable and remembered. Returning devices get their previous address back (1 h memory). Target count on the badge/live bar updates on every add/remove. The serve gate logs its reasoning and flags a server that's off the serve subnet (reachable via another adapter — Wi-Fi, usually).
+- DHCP engine only NAKs a client it offered/leased itself or a request for an address off its subnet; anything else gets silence (RFC 2131 §4.3.2) — it can no longer knock a customer device off a lease from the real router. Replies padded to 300 bytes for old BOOTP-era clients.
+- ETHER: LIVE mirrors the adapter's gateway and DNS (DHCP-served or static). A netsh "object already exists" apply failure now says the address is already on the adapter. Command box wraps.
+- SCAN: rows stay sorted by IP as they arrive. Randomised (private) MACs are labelled as such instead of Unknown.
+- Titlebar yields on the left (chip, then logo) so ─ ✕ never clip; minimum width 340. Vector tab icons — crisp at any DPI and theme-coloured.
+- Security: imported site JSON is sanitised at import (site IDs, MACs, IPs forced to shape; strings bounded) — imported identifiers reach inline handlers where HTML escaping isn't protection. CSP meta tag (`connect-src 'none'`). Adapter lookups match the exact netsh interface name ("Ethernet" no longer matches "Ethernet 2"). Ping host can't start with `-`. Electron lock bumped to 41.10.x.
+
 **Docs**
 - README, quick guide, TESTING.md (new DHCP checklist and IT notes for UDP 67 + the firewall rule).
 

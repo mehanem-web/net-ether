@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+  <!-- v7.0.0: the renderer never talks to the network or loads remote anything; the one inline script is the app. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; frame-src 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NET//ETHER</title>
 <style>
@@ -130,7 +132,14 @@ html, body {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;        /* the left side yields; the window controls never do */
+  overflow: hidden;
+  flex-shrink: 1;
 }
+.titlebar-left .hud-logo { white-space: nowrap; overflow: hidden; text-overflow: clip; min-width: 0; }
+.titlebar-left .ver-chip { flex-shrink: 0; }
+/* Narrow HUD: drop the version chip first, then let the logo clip — ─ ✕ always stay */
+@media (max-width: 379px) { .titlebar-left .ver-chip { display: none; } }
 
 .hud-logo {
   font-family: var(--font-hud);
@@ -228,8 +237,11 @@ html, body {
   height: 20px;
   opacity: 0.45;
   transition: opacity 0.15s;
-  image-rendering: pixelated;
+  display: inline-flex;
+  color: var(--green);
 }
+.tab-icon svg { width: 100%; height: 100%; display: block; }
+.tab.active .tab-icon { filter: drop-shadow(0 0 3px rgba(var(--ar), var(--ag), var(--ab), 0.7)); }
 .tab-label {
   line-height: 1;
 }
@@ -690,12 +702,10 @@ html, body {
   font-size: 11px;
   font-weight: 700;
   color: rgba(var(--ar), var(--ag), var(--ab), 0.85);
-  white-space: pre-wrap;
+  white-space: pre-wrap;   /* one command per line, long lines wrap inside the box */
   word-break: break-all;
   display: block;
-  line-height: 1.5;
-  white-space: pre;
-  line-height: 1.7;
+  line-height: 1.6;
   letter-spacing: 0.5px;
 }
 
@@ -2700,6 +2710,11 @@ html, body {
 .dhcp-row.declined { border-left-color: var(--red); }
 .dhcp-row.quiet    { border-left-color: rgba(var(--lr),var(--lg),var(--lb),0.3); opacity: 0.55; }
 .dhcp-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dhcp-check { appearance: none; width: 11px; height: 11px; border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.45); border-radius: 2px; background: transparent; cursor: pointer; vertical-align: middle; margin: 0 5px 0 0; flex-shrink: 0; position: relative; }
+.dhcp-check:checked { background: var(--amber); border-color: var(--amber); box-shadow: 0 0 5px rgba(255,204,0,0.5); }
+.dhcp-check:hover { border-color: var(--green); }
+.dhcp-row > span.st { display: flex; align-items: center; overflow: visible; }
+.cmd-btn.dhcp-mini.serve { color: var(--amber); border-color: rgba(255,204,0,0.5); background: rgba(255,204,0,0.08); }
 .dhcp-pill { font-family: var(--font-hud); font-size: 8px; font-weight: 900; letter-spacing: 1px; padding: 2px 5px; border-radius: 3px; border: 1px solid; white-space: nowrap; }
 .dhcp-pill.asking   { color: var(--green); border-color: rgba(var(--ar),var(--ag),var(--ab),0.4); }
 .dhcp-pill.offered  { color: var(--label); border-color: var(--border); }
@@ -2721,7 +2736,12 @@ html, body {
 .dhcp-row .actions .cmd-btn.pin.on { color: var(--amber); }
 .dhcp-row .actions .cmd-btn.x { color: var(--red); border-color: rgba(255,68,85,0.35); }
 .dhcp-resv-input { width: 108px; background: var(--surface); border: 1px solid var(--amber); border-radius: 3px; color: var(--amber); font-family: var(--font-mono); font-size: 11px; font-weight: 700; padding: 2px 5px; outline: none; }
-.dhcp-logrow { display: flex; gap: 6px; align-items: stretch; margin-top: 10px; flex: 1 1 0; min-height: 72px; }
+.dhcp-logrow { display: flex; gap: 6px; align-items: stretch; flex: 1 1 0; min-height: 72px; }
+/* Draggable divider between the device table and the log — ratio is remembered */
+.dhcp-splitter { height: 10px; margin: 2px 0; cursor: row-resize; display: flex; align-items: center; justify-content: center; flex-shrink: 0; user-select: none; }
+.dhcp-splitter span { width: 48px; height: 3px; border-radius: 2px; background: rgba(var(--ar),var(--ag),var(--ab),0.25); transition: background 0.15s, width 0.15s; }
+.dhcp-splitter:hover span, .dhcp-splitter.dragging span { background: var(--green); width: 72px; box-shadow: 0 0 6px var(--green); }
+body.dhcp-resizing { cursor: row-resize; user-select: none; }
 .dhcp-log { flex: 1; min-height: 0; overflow-y: auto; background: rgba(0,0,0,0.35); border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.1); border-radius: var(--radius); padding: 5px 8px; font-family: var(--font-mono); font-size: 10px; line-height: 1.5; color: var(--label-dim); }
 .dhcp-log .ok { color: var(--green); } .dhcp-log .warn { color: var(--amber); } .dhcp-log .err { color: var(--red); } .dhcp-log .info { opacity: 0.7; }
 .dhcp-log::-webkit-scrollbar { width: 4px; } .dhcp-log::-webkit-scrollbar-thumb { background: rgba(var(--ar),var(--ag),var(--ab),0.2); }
@@ -2987,18 +3007,20 @@ html, body {
     <div class="dhcp-devices-head">
       <div class="section-label">DEVICES ON THE WIRE<span class="cnt" id="dhcp-dev-count">0</span></div>
       <div class="dhcp-tools">
+        <span class="cmd-btn dhcp-mini serve" id="dhcp-serve-sel-btn" onclick="dhcpServeSelected()" style="display:none" title="Answer only the ticked devices">▶ SERVE SELECTED</span>
         <span class="cmd-btn dhcp-mini disabled" id="dhcp-csv-btn" onclick="dhcpExportCsv()" title="Copy lease table as CSV">⎘ CSV</span>
         <span class="cmd-btn dhcp-mini disabled" id="dhcp-release-btn" onclick="dhcpReleaseAll()" title="Clear every lease and offer">✕ RELEASE ALL</span>
       </div>
     </div>
     <div class="dhcp-table">
       <div class="dhcp-thead">
-        <span>STATUS</span><span>IP ADDRESS</span><span>MAC ADDRESS</span><span>VENDOR</span><span>HOSTNAME</span><span>ACTIVITY</span><span style="text-align:right">ACTIONS</span>
+        <span><input type="checkbox" class="dhcp-check" id="dhcp-check-all" onchange="dhcpCheckAll(this.checked)" title="Tick every device that's asking"> STATUS</span><span>IP ADDRESS</span><span>MAC ADDRESS</span><span>VENDOR</span><span>HOSTNAME</span><span>ACTIVITY</span><span style="text-align:right">ACTIONS</span>
       </div>
       <div class="dhcp-dev-list" id="dhcp-dev-list"></div>
     </div>
 
-    <div class="dhcp-logrow">
+    <div class="dhcp-splitter" id="dhcp-splitter" title="Drag to resize devices / log"><span></span></div>
+    <div class="dhcp-logrow" id="dhcp-logrow">
       <div class="dhcp-log" id="dhcp-log"></div>
       <span class="cmd-btn dhcp-mini dhcp-logbtn" onclick="dhcpCopyLog()" title="Copy the activity log">⎘ LOG</span>
     </div>
@@ -3538,6 +3560,9 @@ function populateLivePreset(fromApply) {
   live.ip      = connected.ip;
   live.subnet  = connected.subnet  || live.subnet;
   live.adapter = connected.name    || live.adapter;
+  // v7.0.0: LIVE mirrors the whole config — a DHCP-served gateway/DNS is still what the adapter has
+  live.gateway = connected.gateway || '';
+  live.dns     = connected.dns     || '';
   // Only update fields if LIVE is active AND user hasn't made manual edits
   if (activePreset === 0 && !isDirty) {
     if (fromApply === true) {
@@ -3553,6 +3578,9 @@ function populateLivePreset(fromApply) {
       const displayEl = document.getElementById('adapter-name-display');
       if (ipEl)      { ipEl.value = live.ip;         }
       if (subnetEl && live.subnet)  { subnetEl.value = live.subnet; }
+      const gwEl = document.getElementById('gateway'), dnsEl = document.getElementById('dns');
+      if (gwEl)  gwEl.value  = live.gateway || '';
+      if (dnsEl) dnsEl.value = live.dns     || '';
       if (adapterEl && live.adapter) {
         adapterEl.value = live.adapter;
         if (displayEl) displayEl.textContent = live.adapter;
@@ -6362,7 +6390,15 @@ function appendScanResult(ip, ms, fromArp, mac, vendor) {
     ${metaBlock}`;
 
   if (hasMeta && !vendor) queueOnlineVendorLookup(mac, ip);
-  container.appendChild(row);
+  // v7.0.0: rows stay sorted by IP as they arrive, whichever order the sweep finds them
+  const ipNum = a => a.split('.').reduce((n, o) => (n << 8) + (+o), 0) >>> 0;
+  const mine = ipNum(ip);
+  let before = null;
+  for (const r of container.querySelectorAll('.scan-result-row')) {
+    const el = r.querySelector('.scan-result-ip');
+    if (el && ipNum(el.textContent.trim()) > mine) { before = r; break; }
+  }
+  container.insertBefore(row, before);
   autoResize();
 }
 
@@ -8115,8 +8151,33 @@ document.addEventListener('DOMContentLoaded', () => {
 // ══════════════════════════════════════════════════════════════
 const D = {
   mode: 'off', targets: [], devices: [], foreign: [], policyDisabled: false,
-  started: false, listenersOn: false, resvEdits: new Map(), adapters: [],
+  started: false, listenersOn: false, resvEdits: new Map(), adapters: [], selected: new Set(),
 };
+// ── multi-select serve ────────────────────────────────────
+function dhcpUpdateSelectedBtn() {
+  // drop selections for devices that vanished or are already served
+  for (const mac of [...D.selected]) { const d = D.devices.find(x => x.mac === mac); if (!d || d.targeted || d.state === 'leased') D.selected.delete(mac); }
+  const b = dEl('dhcp-serve-sel-btn'); if (!b) return;
+  const n = D.selected.size;
+  b.style.display = n ? '' : 'none';
+  b.textContent = `▶ SERVE SELECTED (${n})`;
+  const all = dEl('dhcp-check-all');
+  if (all) { const askers = D.devices.filter(d => d.state === 'asking' && !d.targeted); all.checked = askers.length > 0 && askers.every(d => D.selected.has(d.mac)); }
+}
+function dhcpCheckAll(on) {
+  for (const d of D.devices) if (d.state === 'asking' && !d.targeted) { if (on) D.selected.add(d.mac); else D.selected.delete(d.mac); }
+  dhcpRenderDevices();
+}
+async function dhcpServeSelected() {
+  const macs = [...D.selected]; if (!macs.length) return;
+  if (!await dhcpEnsureEngine()) return;
+  const opts = await dhcpValidateForm(); if (!opts) return;
+  let ok = 0;
+  for (const mac of macs) { const r = await hud.dhcp.serveDevice(mac, opts); if (r.ok) ok++; else dhcpLog(`Could not target ${mac}: ${r.msg}`, 'err'); }
+  D.selected.clear();
+  setDhcpStatus(`◎ TARGETING ${ok} DEVICE${ok !== 1 ? 'S' : ''}` + (D.foreign.length ? ' — NOTE: OTHER DHCP AT ' + D.foreign.join(', ') : ''), D.foreign.length ? 'warn' : 'ok', 6000);
+  dhcpRenderDevices();
+}
 const DCFG_KEYS = ['adapterIp','subnet','rangeStart','rangeEnd','gateway','lease','dns','domainName','ntp','tftpServer','bootFile','opt43'];
 const dEl = id => document.getElementById(id);
 
@@ -8372,7 +8433,8 @@ async function dhcpRogueGate() {
   if (!probe.ok && !probe.servers?.length) { dhcpLog(probe.msg || 'Active scan unavailable — relying on passive detection', 'warn'); return true; }
   if (!probe.servers.length) { setDhcpStatus(probe.reused ? 'RECENT SCAN WAS CLEAR — NO OTHER DHCP SERVER' : 'NO OTHER DHCP SERVER ANSWERED', 'ok', 3000); return true; }
   D.foreign = probe.servers.slice();
-  const heard = probe.recentlyHeard && probe.recentlyHeard.length ? `<br><br><span style="font-size:11px;color:var(--label-dim)">${probe.recentlyHeard.map(escHtml).join(', ')} didn't answer this probe but was heard on the wire in the last two minutes — routers often ignore a second DISCOVER a few seconds after the first.</span>` : '';
+  let heard = probe.recentlyHeard && probe.recentlyHeard.length ? `<br><br><span style="font-size:11px;color:var(--label-dim)">${probe.recentlyHeard.map(escHtml).join(', ')} didn't answer this probe but was heard on the wire in the last two minutes — routers often ignore a second DISCOVER a few seconds after the first.</span>` : '';
+  if (probe.offSubnet && probe.offSubnet.length) heard += `<br><br><span style="font-size:11px;color:var(--amber)">${probe.offSubnet.map(escHtml).join(', ')} is not on the subnet you'd serve — this laptop reaches it through another adapter (Wi-Fi?). Serving everyone would answer that side too. Disable that adapter, or serve devices one at a time.</span>`;
   const go = await hudModal({
     title: '⚠ ANOTHER DHCP SERVER IS LIVE', tone: 'warn',
     bodyHtml: `Something already answered at <span class="hl">${probe.servers.map(escHtml).join(', ')}</span>.${heard}<br><br>Serving <b>everyone</b> on a network that already has DHCP can knock devices offline. If you only need one device, use the <span class="hl">SERVE</span> button on its row instead.`,
@@ -8487,6 +8549,33 @@ async function dhcpEngineToggle() {
 }
 
 // ── devices ───────────────────────────────────────────────
+// ── devices / log splitter ────────────────────────────────
+let _dhcpSplit = 0.6;   // share of the flexible space the device table gets
+try { const v = parseFloat(localStorage.getItem('net-ether-dhcp-split')); if (v >= 0.2 && v <= 0.85) _dhcpSplit = v; } catch {}
+function dhcpApplySplit() {
+  const t = document.querySelector('#panel-dhcp .dhcp-table'), l = dEl('dhcp-logrow');
+  if (!t || !l) return;
+  t.style.flex = `${_dhcpSplit} 1 0`;
+  l.style.flex = `${1 - _dhcpSplit} 1 0`;
+}
+document.addEventListener('DOMContentLoaded', () => {
+  dhcpApplySplit();
+  const sp = dEl('dhcp-splitter'); if (!sp) return;
+  sp.addEventListener('mousedown', e => {
+    e.preventDefault();
+    const t = document.querySelector('#panel-dhcp .dhcp-table'), l = dEl('dhcp-logrow');
+    const top = t.getBoundingClientRect().top, bottom = l.getBoundingClientRect().bottom;
+    const total = bottom - top - sp.offsetHeight;
+    sp.classList.add('dragging'); document.body.classList.add('dhcp-resizing');
+    const move = ev => { _dhcpSplit = Math.max(0.2, Math.min(0.85, (ev.clientY - top) / total)); dhcpApplySplit(); };
+    const up = () => {
+      document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+      sp.classList.remove('dragging'); document.body.classList.remove('dhcp-resizing');
+      try { localStorage.setItem('net-ether-dhcp-split', _dhcpSplit.toFixed(2)); } catch {}
+    };
+    document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+  });
+});
 const DHCP_STATE_ORDER = { asking: 0, offered: 1, declined: 2, leased: 3, quiet: 4 };
 const DHCP_PILL = { asking: 'ASKING', offered: 'OFFERED', leased: 'LEASED', declined: 'CONFLICT', quiet: 'WENT QUIET' };
 const dhcpIpNum = ip => ip ? ip.split('.').reduce((a, o) => (a << 8) + (+o), 0) >>> 0 : 0;
@@ -8501,6 +8590,7 @@ function dhcpRenderDevices() {
   dEl('dhcp-csv-btn')?.classList.toggle('disabled', leased === 0);
   if (!D.devices.length) {
     list.innerHTML = `<div class="dhcp-empty">${D.mode === 'off' ? 'ENGINE OFFLINE' : 'LISTENING — DEVICES THAT ASK FOR AN ADDRESS APPEAR HERE'}</div>`;
+    dhcpUpdateSelectedBtn();
     return;
   }
   const sorted = D.devices.slice().sort((a, b) => {
@@ -8511,6 +8601,7 @@ function dhcpRenderDevices() {
   });
   list.innerHTML = '';
   for (const d of sorted) list.appendChild(dhcpBuildCard(d));
+  dhcpUpdateSelectedBtn();
 }
 function dhcpBuildCard(d) {
   const row = document.createElement('div');
@@ -8545,8 +8636,10 @@ function dhcpBuildCard(d) {
   else if (d.state === 'quiet')    act = `quiet <span data-ago="${d.lastSeen}">${dhcpAgo(d.lastSeen)}</span>`;
   if (d.foreignServer) act += ` <span class="warn" title="Asked ${escHtml(d.foreignServer)}">⚠</span>`;
 
+  const canPick = D.mode !== 'serve-all' && !d.targeted && d.state !== 'leased' && d.state !== 'offered';
+  const check = canPick ? `<input type="checkbox" class="dhcp-check" data-check="${mac}"${D.selected.has(d.mac) ? ' checked' : ''} title="Tick to serve this device with the others you pick">` : `<span style="display:inline-block;width:16px"></span>`;
   row.innerHTML =
-    `<span><span class="dhcp-pill ${d.state}">${pill}</span></span>` +
+    `<span class="st">${check}<span class="dhcp-pill ${d.state}">${pill}</span></span>` +
     `<span class="ip">${ipHtml}</span>` +
     `<span class="mac" title="${mac}">${mac}</span>` +
     `<span class="vendor" title="${escHtml(d.vendor || '')}">${escHtml(d.vendor || '—')}</span>` +
@@ -8558,6 +8651,7 @@ function dhcpBuildCard(d) {
 }
 function dhcpWireCard(card, d) {
   const q = sel => card.querySelector(sel);
+  const cb = q('[data-check]'); if (cb) cb.onchange = () => { if (cb.checked) D.selected.add(d.mac); else D.selected.delete(d.mac); dhcpUpdateSelectedBtn(); };
   const open = q('[data-open]');   if (open) open.onclick = () => hud.openExternal('http://' + open.dataset.open);
   const serve = q('[data-serve]'); if (serve) serve.onclick = () => dhcpServeDevice(serve.dataset.serve);
   const un = q('[data-unserve]');  if (un) un.onclick = () => dhcpUnserveDevice(un.dataset.unserve);
@@ -8600,28 +8694,26 @@ async function dhcpCopyLog() {
   await hudCopy(text); setDhcpStatus('LOG COPIED TO CLIPBOARD', 'ok', 3000);
 }
 
-// ── Tab icon data URIs (auto-generated) ────────────────────────────────────
-const TAB_ICONS = {
-  ethernet: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAABFUlEQVR4nO1WMQ6DMAx0qg4ZmKjESAce0T/0GX1E1aVTNx5R8QreAM/oigQTQzZ3aBMF4jgppVtPQhgS3znEsRFgQaYZwgpQQye0LdYkpoS2URPrU+sbk8f7gfMVXPSamCMJzfEKqPrUhqKLmb9ZgxzgtQLqUzoCFLnqS3PXtv2eE5kIcJGrvoRkfyOJORE2i2wiTa7tkRGxYTZ5Hj0XJQW5O0+De/MFz4EduQ/j4+odI7NoTfwFgghuMreBUZBphvqC5tLYzzLNELBCwAqTvMAkLxwbsELHx+IJrkDnt32w9KrmuU/BqaahQqf6kiWe+5Plekk19fmRWeQrvZ+SAwR68rcdTQ2diGr6S3uyETCTf/Db8gQO476Ck/SFSQAAAABJRU5ErkJggg==',
-  ping: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAABSklEQVR4nGNkQAIcQmL/GagAfrx7xQhjM1LTYGwWsRClcFvSSVxyHF7zzPHpZcTnepjB+AwhpAanBT+2JZ0k5Dpi1DNRw3AGBogPsAUlhgX4DP/xtotkS1CCCJfhMIN55JsZvjyshRgmXIbTImRz8KYiZINhAMb+ApXDZxFEgZDYfw4hsf8MJypOwNgcQmL/Gf4v+M8jp4yBGf4v0EDj/2f4v+A/sl5k84jKB18e1mpi4S/hkW82Rg42bABrKiIArkNp4+9rEggqJtWC62g01S3QRKOpYwGPfPN1HvlmmKs1GRgYGJhPP2bgDFlAmQXokQezhEe++TrM8F/lTngtIJjRsOUFdAeg5wWiMxqy5i8k5masPsDlCxT5t11EFxNYLSDGEmINZ2DAEcm4il5SDWdgIFAnU1qj/Xj3ipGoSp/cOhluAVwxDZotAHyZ0mWPeKL4AAAAAElFTkSuQmCC',
-  scan: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAABRElEQVR4nLWWPY7CMBCFn1cUKVyxEiUpqHIC7rDH4BBoG6p0OQTKKTgDnCA1LVKoUrgzRTzRxP/shpEsO8r4e+OxM44As2K90VjA1PMhaCyWBPuEVlmOl8Mt9K74Oe9jc0UsegLHICmfoIC6HG6p6HL8v5aAA+MKfKl0BGJw1Tdvi8xSFIITWJY1hvtphH0fg0KcEz1FHMxNljUG8y4mNFuBHb3qGwdM0XPR0IqI591k24b7qTKgihqB7SBsyxIA0BkwjcFFYhbdAw+gY30V8JlZdAWyrO0UVFa/TIoMZEqN6bsUPCngOTUdtRw4gLFUU8P198qfi/VGQ7cautVyu9Nyu3PG0K125jBOslzT+R5Ymcj5msmcapoqdKpvssuEVyBHJBcOBDY5VHrfhQOJO/m/N5p6PkTWpf/XO3kSmJw/8NvyAmja2OsX2vjcAAAAAElFTkSuQmCC',
-  dhcp: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAA6UlEQVR42mNkQAI8csr/GagAvjy6ywhjMyIb/ufLZ2qYz8DCwwu3hAlm+JdVoQw/tiVRxYI/Xz7DQ4MF2eUcXvPwavzxtgvO5hAuI8oSRmKCBu4zcw2E4MkbBB3EwsMLCSJChnN4zcMwjMNrHlFBitMHMM0Egw2POoI+IGQ4MWqY8AULsQBfcGEEETbDkVMPisFoKQldL1GRTCkYtYBwuYQhYq4Bj1RCxQGhRIDdAiJSy6AKIpoXFQRLU3y5mlCOJ8oClOKaxHKIaAtIBTCfsfDwMjB9eXSXkYWHl6qGI9fLNK/0GWndbAEA5zOM7WQWhYwAAAAASUVORK5CYII=',
-  sites: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAABNUlEQVR4nLVWO27DMAx9KjJo8KQCGpuhU0/QO/QYOUTRxVO2HKLwKXKG5ASZvQZIJg/a2MGgwdj6UK37AMOSRb0nURRpAwHrPGEFhPvVcNusSRwT2qgMj7tzasx+fL/n5prc6pk4R1KySQqE4+5cWp3G/mkNcmDcQcyVC4EcebgdqkUeXJQiZ+Jmu8fQtyPZ82dSSPJko0gSA5jI5VhOaDRwnqzzhNPXidvWeQJ11Ly8Tk+qD+oI1JGcK/mihzzH0LeLXbC7+HsKKgEpJN8aVAnwakurllClCgBvQ99euCPdVIJqB812f5mTaXeRFajxdRKx0JqHqwzReTsXotZ5Kp4BX6Sh8jYzFtm0lOjC7aBOE1EBjYiWHEgccir11pIDhZr814oW7lejKvq/rcmTwGT8D78tP7Q86s8lk2F4AAAAAElFTkSuQmCC',
-};
-
-// Wire tab icons on load
+// ── Tab icons ── inline SVG, built in initTabIcons() below (v7.0.0; the PNG set is gone)
 (function initTabIcons() {
-  const map = {
-    'ticon-net':   TAB_ICONS.ethernet,
-    'ticon-dhcp':  TAB_ICONS.dhcp,
-    'ticon-tools': TAB_ICONS.ping,
-    'ticon-scan':  TAB_ICONS.scan,
-    'ticon-intel': TAB_ICONS.sites,
+  // v7.0.0: vector icons — crisp at any DPI, coloured by the tab (theme accent).
+  const TAB_SVG = {
+    ethernet: `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><style>.k{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.d{fill:currentColor}</style><path d="M9 4v3M15 4v3" class="k"/><rect x="6" y="7" width="12" height="8" rx="1.5" class="k"/><path d="M12 15v5M9 20h6" class="k"/><circle cx="4" cy="12" r="1.3" class="d"/><circle cx="20" cy="12" r="1.3" class="d"/></svg>`,
+    ping: `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><style>.k{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.d{fill:currentColor}</style><circle cx="12" cy="12" r="2" class="d"/><path d="M12 5a7 7 0 0 1 7 7" class="k"/><path d="M12 2a10 10 0 0 1 10 10" class="k" opacity=".55"/><path d="M4 12l3 0 2-4 3 8 2-4 3 0" class="k"/></svg>`,
+    scan: `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><style>.k{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.d{fill:currentColor}</style><circle cx="12" cy="12" r="7" class="k"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3" class="k"/><circle cx="12" cy="12" r="1.6" class="d"/><circle cx="16" cy="9" r="1.2" class="d"/><circle cx="8.5" cy="15" r="1.2" class="d"/></svg>`,
+    sites: `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><style>.k{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.d{fill:currentColor}</style><path d="M12 21s-6-5.2-6-10a6 6 0 0 1 12 0c0 4.8-6 10-6 10z" class="k"/><circle cx="12" cy="11" r="2.2" class="d"/><path d="M5 20h14" class="k" opacity=".5"/></svg>`,
+    dhcp: `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><style>.k{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.d{fill:currentColor}</style><circle cx="12" cy="12" r="8" class="k" opacity=".6"/><rect x="9.5" y="9.5" width="5" height="5" rx="1" class="d"/><circle cx="12" cy="4" r="1.5" class="d"/><circle cx="5.1" cy="16" r="1.5" class="d"/><circle cx="18.9" cy="16" r="1.5" class="d"/></svg>`,
   };
+  const map = { 'ticon-net': 'ethernet', 'ticon-dhcp': 'dhcp', 'ticon-tools': 'ping', 'ticon-scan': 'scan', 'ticon-intel': 'sites' };
   document.addEventListener('DOMContentLoaded', () => {
-    Object.entries(map).forEach(([id, src]) => {
-      const el = document.getElementById(id);
-      if (el) el.src = src;
+    Object.entries(map).forEach(([id, key]) => {
+      const img = document.getElementById(id);
+      if (!img) return;
+      const wrap = document.createElement('span');
+      wrap.className = 'tab-icon';
+      wrap.id = id;
+      wrap.innerHTML = TAB_SVG[key];
+      img.replaceWith(wrap);
     });
   });
 })();

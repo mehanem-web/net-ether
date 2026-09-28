@@ -62,6 +62,10 @@ module.exports = function initDhcp(deps) {
   let scanDebug      = null;
   let foreignServers = {};
   let lastServeAction = 0;
+  const lastIp = {};              // mac → { ip, ts } — a returning device gets its old address back if free
+  const LAST_IP_TTL_MS = 3600000;
+  const rememberIp = (mac, ip) => { if (mac && ip) lastIp[mac] = { ip, ts: Date.now() }; };
+  const recallIp = mac => { const r = lastIp[mac]; return (r && Date.now() - r.ts < LAST_IP_TTL_MS) ? r.ip : null; };
   let scanInFlight    = null;     // Promise of the running active scan — callers share it instead of stacking
   let lastScan        = null;     // { ts, result } — reused for SERVE within SCAN_REUSE_MS
   const SCAN_REUSE_MS  = 20000;
@@ -524,14 +528,27 @@ module.exports = function initDhcp(deps) {
       }
     }
     if (!ip) {
-      const nak = buildNakPacket(d.lastXid, chaddr, serveCfg.adapterIp);
-      sock && sock.send(nak, 0, nak.length, 68, '255.255.255.255');
-      log(`REQUEST from ${mac} → NAK${requestedIp ? ' (' + requestedIp + ' unavailable)' : ''}`, 'warn');
+      // RFC 2131 §4.3.2: a server with no record of this client stays SILENT on a REQUEST
+      // it can't satisfy — the client may be reconfirming a lease from the site's real
+      // router (INIT-REBOOT carries no server identifier). We NAK only when we're
+      // entitled to: it's a client WE offered/leased asking for the wrong address, or
+      // the address it wants isn't on our subnet at all (RFC allows a wrong-network NAK).
+      const ours = d.state === 'offered' || d.state === 'leased' || d.ip;
+      const maskNum = ipToNum(serveCfg.subnet);
+      const wrongNet = requestedIp && isValidIp(requestedIp) && ((ipToNum(requestedIp) & maskNum) !== (ipToNum(serveCfg.adapterIp) & maskNum));
+      if (ours || wrongNet) {
+        const nak = buildNakPacket(d.lastXid, chaddr, serveCfg.adapterIp);
+        sock && sock.send(nak, 0, nak.length, 68, '255.255.255.255');
+        log(`REQUEST from ${mac} → NAK${requestedIp ? ' (' + requestedIp + (wrongNet ? ' is not on our subnet' : ' unavailable') + ')' : ''}`, 'warn');
+      } else {
+        log(`REQUEST from ${mac} for ${requestedIp || '?'} — not ours, staying silent`, 'info');
+      }
       if (d.state === 'offered') { d.state = 'asking'; d.ip = null; d.offerExpires = null; }
       lastServeAction = Date.now();
       return;
     }
     d.state = 'leased'; d.ip = ip; d.offerExpires = null; d.expires = Date.now() + serveCfg.leaseSeconds * 1000;
+    rememberIp(mac, ip);
     log(`REQUEST from ${mac} → ACK ${ip}  [${d.vendor}]${d.hostname ? '  ' + d.hostname : ''}`, 'ok');
     const ack = buildDhcpPacket(5, d.lastXid, chaddr, ip, serveCfg);
     sock && sock.send(ack, 0, ack.length, 68, '255.255.255.255');
@@ -552,12 +569,15 @@ module.exports = function initDhcp(deps) {
     for (const q of quarantinedIps) used.add(q);
     for (const [m2, d2] of Object.entries(devices)) if (m2 !== mac && d2.ip && (d2.state === 'offered' || d2.state === 'leased')) used.add(d2.ip);
     for (const [m2, ip2] of Object.entries(store.reservations)) if (m2 !== mac) used.add(ip2);
+    // Keep another device's remembered address out of this one's pool walk while that device is still around
+    for (const m2 of Object.keys(devices)) if (m2 !== mac) { const r = recallIp(m2); if (r) used.add(r); }
     const onSubnet = ip => isValidIp(ip) && ((ipToNum(ip) & maskNum) === (ipToNum(cfg.adapterIp) & maskNum));
     const out = [];
     const push = ip => { if (ip && onSubnet(ip) && !used.has(ip) && !out.includes(ip)) out.push(ip); };
     push(store.reservations[mac]);
     const d = devices[mac];
     if (d && d.ip) push(d.ip);
+    push(recallIp(mac));
     if (requestedIp && cfg.pool.includes(requestedIp)) push(requestedIp);
     for (const ip of cfg.pool) push(ip);
     return out;
@@ -572,7 +592,7 @@ module.exports = function initDhcp(deps) {
     let changed = false;
     for (const mac of Object.keys(devices)) {
       const d = devices[mac];
-      if (d.state === 'leased' && d.expires && d.expires < now)                 { log(`Lease expired: ${d.ip}  ${mac}`); delete devices[mac]; changed = true; }
+      if (d.state === 'leased' && d.expires && d.expires < now)                 { log(`Lease expired: ${d.ip}  ${mac}`); rememberIp(mac, d.ip); delete devices[mac]; changed = true; }
       else if (d.state === 'offered' && d.offerExpires && d.offerExpires < now) { d.state = 'asking'; d.offerExpires = null; changed = true; }
       else if (d.state === 'asking' && (now - d.lastSeen) > QUIET_AFTER_MS)     { d.state = 'quiet'; changed = true; }
       else if (d.state === 'quiet' && (now - d.lastSeen) > PURGE_QUIET_MS)      { delete devices[mac]; changed = true; }
@@ -616,15 +636,19 @@ module.exports = function initDhcp(deps) {
     for (const d of Object.values(devices)) if (d.ip && (d.state === 'offered' || d.state === 'leased')) used.add(d.ip);
     const onSubnet = ip => isValidIp(ip) && ((ipToNum(ip) & maskNum) === (ipToNum(cfg.adapterIp) & maskNum));
     const askers = Object.entries(devices).filter(([, d]) => d.state === 'asking').sort((a, b) => a[1].firstSeen - b[1].firstSeen);
+    // Hold every asker's remembered address before dealing, so an earlier asker can't be dealt someone else's old IP
+    for (const [mac] of askers) { const r = recallIp(mac); if (r && onSubnet(r) && !used.has(r)) used.add('hold:' + r); }
+    const isHeldForOther = (ip, mac) => used.has('hold:' + ip) && recallIp(mac) !== ip;
     const result = {};
     for (const [mac, d] of askers) {
       let pick = null;
-      const reserved = store.reservations[mac];
+      const reserved = store.reservations[mac], remembered = recallIp(mac);
       if (reserved && onSubnet(reserved) && !used.has(reserved)) pick = reserved;
       else if (d.ip && onSubnet(d.ip) && !used.has(d.ip)) pick = d.ip;
+      else if (remembered && onSubnet(remembered) && !used.has(remembered) && !Object.values(store.reservations).includes(remembered)) pick = remembered;
       else {
         const otherRes = new Set(Object.entries(store.reservations).filter(([m]) => m !== mac).map(([, ip]) => ip));
-        for (const ip of cfg.pool) if (!used.has(ip) && !otherRes.has(ip)) { pick = ip; break; }
+        for (const ip of cfg.pool) if (!used.has(ip) && !otherRes.has(ip) && !isHeldForOther(ip, mac)) { pick = ip; break; }
       }
       if (pick) { result[mac] = pick; used.add(pick); }
     }
@@ -659,7 +683,7 @@ module.exports = function initDhcp(deps) {
     if (x.bootFile)   optStr(67, x.bootFile);
     if (x.opt43 && /^[0-9a-fA-F]+$/.test(x.opt43) && x.opt43.length % 2 === 0) opt(43, ...Buffer.from(x.opt43, 'hex'));
     pkt[o++] = 255;
-    return pkt.slice(0, o);
+    return pkt.slice(0, Math.max(o, 300));   // some older BOOTP-era clients drop replies under 300 bytes
   }
   function buildNakPacket(xid, chaddr, serverIp) {
     const pkt = Buffer.alloc(300, 0);
@@ -670,7 +694,7 @@ module.exports = function initDhcp(deps) {
     pkt[o++] = 53; pkt[o++] = 1; pkt[o++] = 6;
     pkt[o++] = 54; pkt[o++] = 4; ipToBytes(serverIp).copy(pkt, o); o += 4;
     pkt[o++] = 255;
-    return pkt.slice(0, o);
+    return pkt.slice(0, 300);
   }
   function parseReplyServerIp(msg) {
     let serverIp = null, i = 240;
@@ -722,7 +746,12 @@ module.exports = function initDhcp(deps) {
     const now = Date.now();
     const recent = Object.entries(foreignServers).filter(([, ts]) => now - ts < FOREIGN_FRESH_MS).map(([ip]) => ip);
     const servers = [...new Set([...(r.servers || []), ...recent])];
-    return { ...r, servers, recentlyHeard: recent.filter(ip => !(r.servers || []).includes(ip)) };
+    const recentlyHeard = recent.filter(ip => !(r.servers || []).includes(ip));
+    // Which of them are off the subnet we'd serve on — reachable via another adapter (Wi-Fi, usually)
+    const cfg = serveCfg || previewCfg;
+    const offSubnet = cfg ? servers.filter(ip => (ipToNum(ip) & ipToNum(cfg.subnet)) !== (ipToNum(cfg.adapterIp) & ipToNum(cfg.subnet))) : [];
+    if (recentlyHeard.length) log(`GATE — ${recentlyHeard.join(', ')} heard on the wire in the last 2 min (didn't answer this probe)${offSubnet.length ? ' — not on the serve subnet, reachable via another adapter' : ''}`, 'warn');
+    return { ...r, servers, recentlyHeard, offSubnet };
   }
   function probeSourceIp() {
     const live = lightAdapters().filter(a => a.connected && a.ip && !a.apipa).map(a => a.ip);
@@ -938,7 +967,7 @@ module.exports = function initDhcp(deps) {
     try {
       await setMode('serve-targeted');
       log(`TARGET — answering ${m} only (${targets.size} target${targets.size !== 1 ? 's' : ''})`, 'ok');
-      emitDevices();
+      announceMode();   // mode may not have changed — the target count did
       return { ok: true, targets: [...targets] };
     } catch (e) { targets.delete(m); return { ok: false, msg: e.message }; }
   });
@@ -946,8 +975,7 @@ module.exports = function initDhcp(deps) {
     const m = cleanMac(mac);
     if (m) targets.delete(m);
     if (mode === 'serve-targeted' && targets.size === 0) { await setMode('listen'); log('No targets left — back to listening'); }
-    else if (m) log(`Target removed: ${m}`);
-    emitDevices();
+    else if (m) { log(`Target removed: ${m}`); announceMode(); }
     return { ok: true, targets: [...targets] };
   });
   ipcMain.handle('dhcp-stop-serving', async () => { if (isServing()) { targets.clear(); await setMode('listen'); } return { ok: true }; });
