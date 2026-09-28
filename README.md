@@ -1,7 +1,9 @@
-# NET//ETHER — v6.2.0
+# NET//ETHER — v7.0.0
 **Broman Enterprises**
 
-A cyberpunk-styled always-on-top desktop HUD for Windows network configuration management. Built for field technicians switching between network setups on job sites.
+A cyberpunk-styled always-on-top desktop HUD for Windows network configuration management — static IP, DHCP server, ping, subnet scan and a per-site device knowledge base in one window. Built for field technicians switching between network setups on job sites.
+
+v7.0.0 absorbs **NET//DHCP**: the standalone DHCP tool is now the DHCP tab.
 
 ---
 
@@ -63,15 +65,30 @@ GitHub `main` is the source of truth; Claude pulls it directly at session start.
 Manage static IP configuration for any wired adapter.
 
 - **Presets** — 4 slots (LIVE, +3 saved). LIVE auto-populates from the active adapter and never persists to disk.
-- **Known defaults** — factory addresses for common device brands. A tile fills the device's subnet and puts you one address above it. The **AXIS** tile is link-local (`169.254.1.1 / 255.255.0.0`): current Axis cameras ship DHCP-only and fall back to a random `169.254` address, so joining that /16 is how you reach one without a DHCP server or the Axis tool.
-- **Adapter dropdown** — every wired adapter with live status, IP, DHCP/STATIC badge, and connection state
-- **APPLY CONFIG** — writes IP / subnet / gateway / DNS via `netsh`, then re-reads the adapter to confirm it took
-- **DHCP** — switches the adapter back to DHCP in one click
-- **MTU** — reads current MTU and resets to 1500 if needed (fixes the classic "can ping but can't browse" symptom)
-- **CMD** — shows the exact `netsh` lines without running them
+- **Factory defaults** — manufacturer out-of-box addresses, beside SAVE TO PRESET. A tile fills the device's subnet and puts you one address above it. The **AXIS** tile is link-local (`169.254.1.1 / 255.255.0.0`): current Axis cameras ship DHCP-only and fall back to a random `169.254` address, so joining that /16 is how you reach one without a DHCP server or the Axis tool.
+- **Adapter dropdown** — every wired adapter with live status, IP, DHCP/STATIC badge, and connection state. On a static adapter a **→ DHCP** action sits beside the badge: click twice to hand the adapter back to DHCP.
+- **APPLY CONFIG** — writes IP / subnet / gateway / DNS via `netsh`, then re-reads the adapter to confirm it took. A verified change shows three ways: green stripe on the status bar, **✓ ACTIVE** on the IP field, and a flash of the new address in the top bar. A failed one turns the field red.
+- **COPY COMMANDS** — shows the exact `netsh` lines without running them
+- **MTU** — in DIAGNOSTICS (version chip) → TOOLS: reads current MTU and resets to 1500 (fixes the classic "can ping but can't browse" symptom)
+- **CIDR** — in the **?** quick guide: prefix ↔ mask ↔ hosts; click a row to fill the subnet field
 - **REVERT** — snapshots the previous config before applying; one click to restore
 - **Connection History** — last 10 applied configs, click any to reload
 - `169.254.x.x` is allowed (with a mask hint). `0.x.x.x` and an APIPA DNS server are still rejected.
+
+### DHCP
+A DHCP server for the bench and the dead segment — NET//DHCP v3, absorbed into ETHER in v7.0.0 with its engine moved onto ETHER's elevated path and diagnostics log.
+
+- **The wide tab.** The window grows to ~820 px while DHCP is open (NET//DHCP's own layout: 3-column settings, device table, log strip) and returns to your normal width when you leave.
+- **Off at launch.** Nothing binds UDP 67 until the DHCP tab is opened. Opening it starts **LISTEN**: every DHCP request on the wire shows in the table as ASKING with the address it *would* be given, and nothing is answered.
+- **SERVE** (per row) — answers only that MAC. The safe option on a network that already has DHCP.
+- **SERVE ALL DEVICES** — answers everyone, after an active scan for other DHCP servers; asks for confirmation if one is live.
+- **QUICK START** — picks the wired adapter, derives the pool, scans, serves. If the adapter has no usable address it offers a temporary static IP (via ETHER's own apply/verify path) that reverts on quit, with crash recovery on next launch.
+- **SCAN WIRE** — active rogue-DHCP check (relay-style DISCOVER, ~6 s). Scans are serialised, a result is reused for 20 s, and the serve-all gate also counts any server heard on the wire in the last two minutes — routers often ignore a second DISCOVER sent seconds after the first. **SELF-TEST** — adapter, port 67, firewall rule, other servers, policy.
+- Ping-before-offer conflict probe, DHCPDECLINE quarantine, MAC → IP reservations (★), named profiles, idle auto-stop (default 30 min), lease CSV and activity-log export.
+- Advanced options: DNS (6), domain (15), NTP (42), vendor 43, TFTP (66), boot file (67).
+- The buttons bring the engine up themselves; the mode badge (OFFLINE / LISTENING / SERVING) is the on-off switch. OFFLINE releases UDP 67 and removes the firewall rule. The engine is also torn down on quit.
+- Every serve/firewall/static-assist step is written to DIAGNOSTICS. IT can disable the server with the `DisableDhcpServer` policy value.
+- Settings live in `%APPDATA%\net-ether\dhcp-config.json`; on first run they are imported from a standalone NET//DHCP install if one exists.
 
 ### MULTI-IP
 Secondary IP aliases on an adapter — reach a device on another subnet without changing your primary address.
@@ -119,8 +136,9 @@ Persistent site knowledge base. Survives across visits.
 
 ## DIAGNOSTICS
 
-Click the **version chip** in the titlebar.
+Click the **version chip** in the titlebar → **DIAGNOSTICS**. The same menu has **FIT WINDOW** (snap the HUD to its content) and **AUTO-FIT** (on: the window follows the active tab's content; off: your manual size sticks — dragging the window edge turns it off).
 
+- **TOOLS** — MTU → 1500 for the adapter selected in ETHER
 - **STATE** — version, elevation (with integrity level), user/host, exe and data paths, credential storage status, policy, data file sizes
 - **LOG** — every privileged operation with the exact `netsh` commands run, exit codes, captured output, and a VERIFY entry recording whether the change actually took. Also app launch, backups, imports/exports, hostname resolution timings. Persistent across restarts (`diag-log.json`, last 200 entries).
 - **COPY DIAGNOSTICS** — plain-text report to the clipboard. Paste it into a bug report.
@@ -138,6 +156,7 @@ Optional HKLM values for managed fleets (Intune / GPO). Read once at launch.
 | Key | Value | Effect |
 |-----|-------|--------|
 | `HKLM\SOFTWARE\Policies\Broman Enterprises\NET-ETHER` | `DisableOnlineVendorLookup` (REG_DWORD) = 1 | macvendors.com is never contacted; the SCAN toggle shows OFF · POLICY and is greyed out |
+| `HKLM\SOFTWARE\Policies\Broman Enterprises\NET-ETHER` | `DisableDhcpServer` (REG_DWORD) = 1 | The DHCP engine never binds UDP 67; the DHCP tab is read-only with a policy notice |
 
 ---
 
@@ -154,6 +173,8 @@ All data is per-user in `%APPDATA%\net-ether\`, pinned explicitly regardless of 
 | `vendor-cache.json` | Cached macvendors.com lookups |
 | `last-snapshot.json`, `launch-snapshot.json` | Adapter state for REVERT and restore-on-quit |
 | `diag-log.json` | Diagnostics log |
+| `dhcp-config.json` | DHCP tab: last settings, profiles, reservations, idle timer, pending static-assist revert |
+| `window-state.json` | Last window position, size and display |
 
 All JSON writes are atomic (temp file + rename).
 
@@ -164,6 +185,7 @@ All JSON writes are atomic (temp file + rename).
 ```
 NET-ETHER/
 ├── main.js          — Electron main process: window, IPC, netsh, scanning, crypto, diagnostics
+├── dhcp.js          — DHCP server engine (RFC 2131, listen-first) on ETHER's elevated path
 ├── preload.js       — Secure IPC bridge (contextBridge, fixed API surface)
 ├── package.json     — electron-builder config (nsis + portable, per-machine)
 ├── dev.bat          — One-click dev launch
@@ -184,6 +206,39 @@ NET-ETHER/
 ---
 
 ## CHANGELOG
+
+### v7.0.0
+Two apps become one. NET//DHCP is absorbed as the DHCP tab, the window sizing model is rebuilt, and the ETHER tab gets a visual pass. One release, one whitelist request.
+
+**DHCP server (from NET//DHCP v3.0.4)**
+- New `dhcp.js` module and DHCP tab. Listen-first engine, targeted serve, serve-all behind a rogue-server scan, ping-before-offer, reservations, profiles, idle auto-stop, self-test, CSV/log export — all of v3, re-plumbed.
+- **Off until the tab is opened.** Launching ETHER never binds UDP 67.
+- All shell calls moved onto `runElevated()` / `execFile` — no `exec` strings, no shell. Firewall rule (`NET-ETHER-DHCP-UDP67`) is added only when missing and removed on ENGINE OFF / quit; a leftover `NET-DHCP-Server-UDP67` rule from the old app is cleaned up.
+- Static-IP assist now goes through ETHER's apply + verify path and is recorded in the diagnostics log; revert on quit uses the same path.
+- Adapter list and vendor lookup come from ETHER. NET//DHCP's curated short names (Axis, Hikvision, Dahua, Hanwha, Bosch, …) now win over the IEEE legal-entity string everywhere, including SCAN and SITES.
+- Quit goes through one path that tears the engine down (revert static assist → socket off → firewall rule removed) before the process exits; also on Windows shutdown.
+- Tray tooltip and the live bar show the serving state; the DHCP tab gets a live dot while serving.
+- New policy value `DisableDhcpServer`.
+- One-time import of profiles/reservations from a standalone NET//DHCP install.
+
+**Window**
+- Sizing rebuilt: the panel is `[scroll body][pinned footer]`, so the status bar can never be clipped by the window edge. Height follows the active tab's real content via a ResizeObserver instead of summing child heights (the source of the off-by-a-few-px overshoot/undershoot at non-100 % DPI).
+- Height is clamped against the display the window is actually on, not the primary. Position, size and display are remembered; if that display is gone at launch the HUD falls back to top-centre of the primary.
+- A manual resize now sticks across tab switches and launches. Version chip → **FIT WINDOW** snaps back; **AUTO-FIT** toggles the behaviour.
+- Single instance: a second launch (the EPM double-click) exits and brings the running HUD to the front.
+- Always-on-top is re-asserted if Windows strips it (the Win+Shift+S overlay does). Tray click brings the HUD forward unless it's already in front; double-click always shows it.
+- Quit has a watchdog: the process is gone within 8 s regardless of what the DHCP teardown is doing.
+- Programmatic resizes no longer register as manual drags (auto-fit stayed off), are coalesced, and re-assert keyboard focus (typing stopped working after a scan).
+
+**ETHER tab**
+- APPLY shows a progress sweep while netsh runs. A verified apply lights the status bar green, tags the IP field **✓ ACTIVE** and flashes the new address in the live bar; a failed one turns the field red.
+- Status bars have a coloured accent stripe (green / amber / red / animated while busy) and a blinking cursor when idle.
+- KNOWN DEFAULTS → **FACTORY DEFAULTS** button beside SAVE TO PRESET, with a one-line explainer and a three-column grid.
+- Button row simplified: **DHCP** → `→ DHCP` in the adapter row (two clicks, only on a static adapter); **MTU** → DIAGNOSTICS → TOOLS; **CIDR** → `?` guide (CIDR tab, rows still fill the subnet field); **CMD** → **COPY COMMANDS**.
+- Section labels carry the `//` mark; primary buttons carry the icon family's corner brackets.
+
+**Docs**
+- README, quick guide, TESTING.md (new DHCP checklist and IT notes for UDP 67 + the firewall rule).
 
 ### v6.2.0
 Consolidated release: elevation rework, diagnostics, data security, and UX fixes in one build so the fleet needs a single whitelist update.

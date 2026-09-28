@@ -15,6 +15,24 @@ const { execFile, exec } = require('child_process');
 // The chosen path equals the historical default, so existing installs are unaffected.
 app.setPath('userData', path.join(app.getPath('appData'), 'net-ether'));
 
+// ── SINGLE INSTANCE ────────────────────────────────────────
+// v7.0.0: EPM/UAC can take a while to launch the exe, and a second click used
+// to spawn a second HUD (and a second UDP 67 bind). The lock makes a second
+// launch exit immediately and surface the window that's already running.
+if (!app.requestSingleInstanceLock()) {
+  app.exit(0);
+}
+app.on('second-instance', () => {
+  try {
+    if (win && !win.isDestroyed()) {
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+      diagAdd({ kind: 'app', tag: 'launch', ok: true, note: 'Second launch attempt — existing window brought to front' });
+    }
+  } catch {}
+});
+
 // ── INPUT SANITIZATION ─────────────────────────────────────
 // Main process validates all IPC inputs independently.
 // The renderer already validates, but we never trust it alone.
@@ -407,13 +425,22 @@ function setTrayMode(mode) {
   updateTrayTooltip();
 }
 
+let dhcpTrayNote = '';   // "· DHCP serving 3 leases" — set by the DHCP engine
 function updateTrayTooltip() {
+  if (!tray) return;
   const labels = {
     idle:      'NET//ETHER — online',
     ping_fail: 'NET//ETHER — connectivity alert!',
     dim:       'NET//ETHER — dimmed',
   };
-  tray.setToolTip(labels[trayState.mode] || 'NET//ETHER');
+  tray.setToolTip((labels[trayState.mode] || 'NET//ETHER') + (dhcpTrayNote ? ' ' + dhcpTrayNote : ''));
+}
+function dhcpTrayLabel(state) {
+  if (!state || state.mode === 'off') return '';
+  if (state.mode === 'listen') return '· DHCP listening';
+  const leases = `${state.leases} lease${state.leases !== 1 ? 's' : ''}`;
+  if (state.mode === 'serve-all') return `· DHCP SERVING ALL · ${leases}`;
+  return `· DHCP serving ${state.targets.length} target${state.targets.length !== 1 ? 's' : ''} · ${leases}`;
 }
 
 // ── TRAY SETUP ─────────────────────────────────────────────
@@ -424,16 +451,17 @@ function createTray() {
 
   const buildMenu = () => Menu.buildFromTemplate([
     {
-      label: win.isVisible() ? 'Hide HUD' : 'Show HUD',
+      label: win.isVisible() ? 'Hide NET//ETHER' : 'Show NET//ETHER',
       click: () => toggleWindow(),
     },
     { type: 'separator' },
     {
       label: 'Always on Top',
       type: 'checkbox',
-      checked: win.isAlwaysOnTop(),
+      checked: wantAlwaysOnTop,
       click: (item) => {
-        win.setAlwaysOnTop(item.checked);
+        wantAlwaysOnTop = item.checked;
+        win.setAlwaysOnTop(wantAlwaysOnTop, 'floating');
         tray.setContextMenu(buildMenu());
       },
     },
@@ -449,44 +477,124 @@ function createTray() {
     { type: 'separator' },
     {
       label: 'Quit NET//ETHER',
-      click: () => { app.isQuitting = true; app.quit(); },
+      click: () => { shutdownAndQuit(); },
     },
   ]);
 
   tray.setContextMenu(buildMenu());
-  tray.on('click', () => toggleWindow());
+  // Single click: bring the HUD to front unless it is already visible AND
+  // focused, in which case hide it. Double-click (which Windows delivers as
+  // click, click, double-click) always ends with the HUD shown — the old
+  // pure toggle showed-then-hid on a double-click, i.e. did nothing.
+  let trayClickTimer = null;
+  tray.on('click', () => {
+    if (trayClickTimer) clearTimeout(trayClickTimer);
+    trayClickTimer = setTimeout(() => { trayClickTimer = null; toggleWindow(); }, 220);
+  });
+  tray.on('double-click', () => {
+    if (trayClickTimer) { clearTimeout(trayClickTimer); trayClickTimer = null; }
+    showWindow();
+  });
   win.on('show', () => tray.setContextMenu(buildMenu()));
   win.on('hide', () => tray.setContextMenu(buildMenu()));
 
   startTrayAnimation();
 }
 
+function showWindow() {
+  if (!winAlive()) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  assertAlwaysOnTop();
+}
 function toggleWindow() {
   if (!winAlive()) return;
-  // A minimized window still reports isVisible() === true — without this guard a
-  // tray click on a Win+D / Show-Desktop-minimized HUD would hide it instead of
-  // bringing it back, stranding it with no taskbar button to recover from.
-  if (win.isMinimized()) { win.restore(); win.show(); win.focus(); return; }
-  if (win.isVisible()) { win.hide(); } else { win.show(); win.focus(); }
+  // Hide only when the HUD is unambiguously in front of the user. A window that
+  // is "visible" but minimized, unfocused, or that lost its topmost bit (Win+Shift+S
+  // does that) gets brought forward instead of hidden.
+  if (win.isVisible() && !win.isMinimized() && win.isFocused()) { win.hide(); return; }
+  showWindow();
+}
+
+// ── ALWAYS-ON-TOP GUARD ────────────────────────────────────
+// Windows strips the TOPMOST bit off a window when certain other topmost
+// windows come and go (the Win+Shift+S capture overlay is the one that bit
+// us). The user's preference is remembered here and re-asserted on show /
+// focus and on a slow watchdog, so the HUD never quietly drops behind Explorer.
+let wantAlwaysOnTop = true;
+function assertAlwaysOnTop() {
+  if (!winAlive()) return;
+  try {
+    if (win.isAlwaysOnTop() !== wantAlwaysOnTop) {
+      win.setAlwaysOnTop(wantAlwaysOnTop, 'floating');
+      if (wantAlwaysOnTop) diagAdd({ kind: 'app', tag: 'window', ok: true, note: 'Always-on-top was stripped by another window — re-asserted' });
+    }
+  } catch {}
+}
+// No periodic re-assert: a timer fights other topmost windows (the Win+Shift+S
+// capture UI ended up underneath the HUD). Focus / show / restore is enough —
+// the HUD is back on top the moment it's touched or recalled from the tray.
+
+// ── WINDOW STATE (position + display memory) ──────────────
+// v7.0.0: remember where the HUD was and on which display. On launch, if that
+// display is still attached and the saved spot is on it, go back there;
+// otherwise fall back to top-centre of the primary display. Windows' own guess
+// on a multi-monitor dock is not to be trusted.
+const WINDOW_STATE_PATH = path.join(app.getPath('userData'), 'window-state.json');
+let winStateTimer = null;
+
+function loadWindowState() {
+  try { return JSON.parse(fs.readFileSync(WINDOW_STATE_PATH, 'utf8')); } catch { return null; }
+}
+function saveWindowState() {
+  if (!winAlive() || win.isMinimized()) return;
+  try {
+    const b = win.getBounds();
+    const d = screen.getDisplayMatching(b);
+    fs.writeFileSync(WINDOW_STATE_PATH, JSON.stringify({ x: b.x, y: b.y, width: b.width, height: b.height, displayId: d.id }), 'utf8');
+  } catch {}
+}
+function scheduleSaveWindowState() {
+  if (winStateTimer) clearTimeout(winStateTimer);
+  winStateTimer = setTimeout(saveWindowState, 400);
+}
+// The display the window is on right now — every clamp uses this, never the primary.
+function currentDisplay() {
+  try { return winAlive() ? screen.getDisplayMatching(win.getBounds()) : screen.getPrimaryDisplay(); }
+  catch { return screen.getPrimaryDisplay(); }
+}
+function resolveInitialBounds(initW, initH) {
+  const primary = screen.getPrimaryDisplay();
+  const fallback = () => ({ x: Math.round(primary.workArea.x + (primary.workArea.width - initW) / 2), y: primary.workArea.y + 20, width: initW, height: initH });
+  const st = loadWindowState();
+  if (!st || typeof st.x !== 'number' || typeof st.y !== 'number') return fallback();
+  const w = Math.max(320, Math.min(st.width || initW, 1200));
+  const h = Math.max(300, Math.min(st.height || initH, 2000));
+  // Is the saved spot still on an attached display? Require the titlebar's
+  // centre to be inside some work area, so it can always be grabbed.
+  const probe = { x: st.x + Math.round(w / 2), y: st.y + 17 };
+  const onScreen = screen.getAllDisplays().some(d => {
+    const a = d.workArea;
+    return probe.x >= a.x && probe.x <= a.x + a.width && probe.y >= a.y && probe.y <= a.y + a.height;
+  });
+  if (!onScreen) return fallback();
+  return { x: st.x, y: st.y, width: w, height: h };
 }
 
 // ── WINDOW ─────────────────────────────────────────────────
 function createWindow() {
-  // Electron 28 on Windows: BrowserWindow width/height/x/y all use LOGICAL pixels.
+  // Electron on Windows: BrowserWindow width/height/x/y all use LOGICAL pixels.
   // Do NOT multiply by scaleFactor — Electron handles DPI scaling internally.
-  // workAreaSize is also logical px (excludes taskbar). Units are consistent.
-  const { width, height } = screen.getPrimaryDisplay().workAreaSize;
-
   const initW = 390;  // logical CSS px
-  const initH = 300;  // logical CSS px — autoResize grows this after load
-  const initX = Math.round((width - initW) / 2);
-  const initY = 20;   // pin near top — grows downward, never off-screen
+  const initH = 300;  // logical CSS px — the renderer fits this to content after load
+  const b = resolveInitialBounds(initW, initH);
 
   win = new BrowserWindow({
-    width:  initW,
-    height: initH,
-    x: initX,
-    y: initY,
+    width:  b.width,
+    height: b.height,
+    x: b.x,
+    y: b.y,
     frame: false,
     transparent: false,
     backgroundColor: '#0d1a0d',
@@ -518,12 +626,22 @@ function createWindow() {
   // has manually resized (renderer sets _userResized flag via resize IPC).
   // Fire window-user-resized only for actual user drag — not our own setSize calls.
   // win._progResize is set true briefly around programmatic setSize calls.
-  win._progResize = false;
+  // A resize is "ours" if it lands on the size we last asked for. The old
+  // setImmediate flag cleared before Windows delivered the event, so the
+  // renderer mistook every auto-fit for a manual drag and switched itself off.
+  win._progSize = null;
   win.on('resize', () => {
-    if (win._progResize) return;
+    scheduleSaveWindowState();
+    const [w, h] = win.getSize();
+    if (win._progSize && win._progSize.w === w && win._progSize.h === h) return;
+    if (win._progSize && Date.now() - win._progSize.ts < 400) return;   // intermediate frame of our own resize
     if (!win.isDestroyed() && win.webContents)
       win.webContents.send('window-user-resized');
   });
+  win.on('move', scheduleSaveWindowState);
+  win.on('show',    assertAlwaysOnTop);
+  win.on('focus',   assertAlwaysOnTop);
+  win.on('restore', assertAlwaysOnTop);
 
   if (IS_DEV) {
     win.webContents.openDevTools({ mode: 'detach' });
@@ -544,6 +662,7 @@ app.whenReady().then(async () => {
   diagLoad();
   createWindow();
   createTray();
+  initDhcpEngine();
   // Snapshot all connected adapters immediately at launch — this is the
   // "restore to launch state" baseline. Runs async, doesn't block UI.
   takeLaunchSnapshot();
@@ -560,7 +679,11 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => { /* stay in tray */ });
-app.on('before-quit', () => { app.isQuitting = true; flushVendorCache(); });
+app.on('before-quit', (e) => {
+  // Anything that quits outside shutdownAndQuit() (e.g. Windows shutdown)
+  // still gets a best-effort DHCP teardown.
+  if (!quitInProgress) { e.preventDefault(); shutdownAndQuit(); }
+});
 
 // ── IPC: window controls (main window) ────────────────────
 // Guard: win is hidden (not destroyed) on close, but during quit it can be torn
@@ -568,12 +691,25 @@ app.on('before-quit', () => { app.isQuitting = true; flushVendorCache(); });
 const winAlive = () => win && !win.isDestroyed();
 
 ipcMain.on('win-close',    () => { if (winAlive()) win.hide(); });
-ipcMain.on('win-quit',     () => {
+// Quit goes through one path so the DHCP engine can revert a static-assist
+// address, release UDP 67 and remove its firewall rule before the process ends.
+let quitInProgress = false;
+async function shutdownAndQuit() {
+  if (quitInProgress) return;
+  quitInProgress = true;
   app.isQuitting = true;
-  flushVendorCache();
+  // Watchdog: whatever happens below, the process is gone in 8 s.
+  const watchdog = setTimeout(() => { try { diagFlush(); } catch {} app.exit(0); }, 8000);
+  try { saveWindowState(); } catch {}
+  try { if (winAlive()) win.hide(); } catch {}
+  try { flushVendorCache(); } catch {}
+  try { if (DHCP) await Promise.race([DHCP.shutdown(), new Promise(r => setTimeout(r, 6000))]); } catch {}
+  try { diagFlush(); } catch {}
   try { tray.destroy(); } catch {}
-  app.quit();
-});
+  clearTimeout(watchdog);
+  app.exit(0);
+}
+ipcMain.on('win-quit', () => { shutdownAndQuit(); });
 // win-minimize removed — skipTaskbar:true makes minimize a dead end; the button hides to tray.
 // win-move removed — drag uses -webkit-app-region
 
@@ -582,15 +718,59 @@ ipcMain.on('win-quit',     () => {
 
 // autoResize sends target height in logical CSS px. setSize also takes logical px.
 // Do NOT multiply by scaleFactor — Electron handles DPI internally.
+// Programmatic resize. Keeps keyboard focus: a frameless window on Windows
+// can lose OS-level keyboard focus across a SetWindowPos while still looking
+// focused (mouse works, typing goes nowhere) — so if we had focus, take it back.
+function progResize(width, height) {
+  if (!winAlive()) return;
+  const cur = win.getBounds();
+  const w = Math.round(width), h = Math.round(height);
+  if (w === cur.width && h === cur.height) return;
+  const hadFocus = win.isFocused();
+  win._progSize = { w, h, ts: Date.now() };
+  win.setSize(w, h, false);
+  if (hadFocus) setTimeout(() => { try { if (winAlive() && !win.isFocused()) win.focus(); win.webContents.focus(); } catch {} }, 30);
+}
+function maxHeightHere() {
+  const area = currentDisplay().workArea;
+  const cur  = win.getBounds();
+  return Math.max(300, (area.y + area.height) - cur.y - 8);
+}
 ipcMain.handle('win-set-size', (e, height) => {
-  if (!win || win.isDestroyed()) return;
-  const { height: screenH } = screen.getPrimaryDisplay().workAreaSize;
-  const [currentW] = win.getSize();
-  const h = Math.min(Math.max(Math.round(height), 300), screenH - 40);
-  win._progResize = true;
-  win.setSize(currentW, h, true);
-  setImmediate(() => { win._progResize = false; });
+  if (!winAlive()) return;
+  const h = Math.min(Math.max(Math.round(height), 300), maxHeightHere());
+  progResize(win.getBounds().width, h);
 });
+
+// Width control for wide tabs (DHCP). Remembers the narrow width so leaving
+// the wide tab restores whatever the user had, clamped to the display.
+let narrowWidth = null;
+ipcMain.handle('win-set-width', (e, { wide, width }) => {
+  if (!winAlive()) return;
+  const area = currentDisplay().workArea;
+  const cur  = win.getBounds();
+  if (wide) {
+    if (narrowWidth === null) narrowWidth = cur.width;
+    const target = Math.min(Math.max(Math.round(width) || 760, 560), area.width - 16);
+    if (target === cur.width) return;
+    // keep the window on-screen if it grows past the right edge
+    const x = Math.max(area.x, Math.min(cur.x, area.x + area.width - target - 8));
+    win._progSize = { w: target, h: cur.height, ts: Date.now() };
+    win.setBounds({ x, y: cur.y, width: target, height: cur.height }, false);
+  } else {
+    if (narrowWidth === null) return;
+    const target = narrowWidth; narrowWidth = null;
+    if (target === cur.width) return;
+    win._progSize = { w: target, h: cur.height, ts: Date.now() };
+    win.setBounds({ x: cur.x, y: cur.y, width: target, height: cur.height }, false);
+  }
+  const hadFocus = win.isFocused();
+  if (hadFocus) setTimeout(() => { try { win.focus(); win.webContents.focus(); } catch {} }, 30);
+});
+
+// Work-area height of the window's own display — the renderer caps its
+// content-fit height with this so the HUD never grows off the bottom.
+ipcMain.handle('win-get-max-height', () => winAlive() ? maxHeightHere() : 980);
 
 // ── IPC: opacity ───────────────────────────────────────────
 // FIX v5.22: changed from ipcMain.on → ipcMain.handle so renderer's
@@ -659,7 +839,7 @@ ipcMain.handle('get-current-ip', (e, adapterName) => {
 });
 
 // ── IPC: get-adapters (full, with netsh status) ────────────
-ipcMain.handle('get-adapters', async () => {
+async function getAdaptersFull() {
   try {
     const ifaces = os.networkInterfaces();
 
@@ -806,7 +986,8 @@ ipcMain.handle('get-adapters', async () => {
       });
     } catch { return []; }
   }
-});
+}
+ipcMain.handle('get-adapters', async () => getAdaptersFull());
 // ── IPC: subnet scanner ────────────────────────────────────
 
 // ── OUI VENDOR TABLE ──────────────────────────────────────
@@ -1106,13 +1287,38 @@ const BUILTIN_OUI = {
 // Load CSV at startup (synchronous, happens before any IPC is registered)
 loadOuiCsv();
 
+// Curated field short names (from NET//DHCP) — win over the IEEE legal-entity
+// string so a row says "Hikvision", not "HANGZHOU HIKVISION DIGITAL TECHNOLOGY CO.,LTD."
+const OUI_SHORT = {
+  '00037A': 'Axis', '00408C': 'Axis', 'ACCC8E': 'Axis', 'B8A44F': 'Axis',
+  '0023AC': 'Hikvision', 'D0C0BF': 'Hikvision', 'C8028F': 'Hikvision', 'E8B4C8': 'Hikvision',
+  '2857BE': 'Hikvision', '4419B6': 'Hikvision', 'C0517E': 'Hikvision', '54C415': 'Hikvision',
+  '001A07': 'Dahua', 'A4DCBE': 'Dahua', '709F2D': 'Dahua', '3CEF8C': 'Dahua', 'E0508B': 'Dahua',
+  '0002D1': 'Hanwha', '000918': 'Hanwha', '001663': 'Hanwha',
+  '000F7C': 'Bosch', '000463': 'Bosch', '00075F': 'Bosch',
+  '00E091': 'Pelco', 'B4A2EB': 'Verkada',
+  '00D02C': 'Honeywell', '004084': 'Honeywell',
+  '001885': 'Motorola', '001A1E': 'Motorola', 'B4A8B9': 'Avigilon',
+  'B4A4E3': 'Genetec', '2CF0EE': 'Lenel', '006035': 'Lenel', '00068E': 'HID Global',
+  'B4FBE4': 'Ubiquiti', 'DC9FDB': 'Ubiquiti', '788A20': 'Ubiquiti', 'F492BF': 'Ubiquiti', '24A43C': 'Ubiquiti',
+  'FCECDA': 'Ubiquiti', '7483C2': 'Ubiquiti', '68D79A': 'Ubiquiti', '802AA8': 'Ubiquiti',
+  '001CC4': 'Cisco', '001B54': 'Cisco', 'A89D21': 'Cisco', '001874': 'Cisco', '001E13': 'Cisco',
+  '881544': 'Meraki', '0C8DDB': 'Meraki', 'AC17C8': 'Meraki',
+  '000B86': 'Aruba', '24DEC6': 'Aruba', 'D8C7C8': 'Aruba', '204C03': 'Aruba',
+  'C4017C': 'Ruckus', '74911A': 'Ruckus',
+  '005056': 'VMware', '000C29': 'VMware', '080027': 'VirtualBox',
+  'B827EB': 'Raspberry Pi', 'DCA632': 'Raspberry Pi', 'E45F01': 'Raspberry Pi',
+  '00407F': 'FLIR', '0080F0': 'Panasonic', '706BB9': 'Panasonic',
+  '001882': 'March Networks', '001DBA': 'Altronix',
+};
+
 function lookupVendor(mac) {
   if (!mac) return null;
   // Normalize: strip separators, uppercase
   const clean = mac.replace(/[:\-]/g, '').toUpperCase();
   if (clean.length < 6) return null;
-  // Try 6-char (MA-L), then 7-char, then 9-char (MA-S) prefix
-  return OUI[clean.slice(0, 6)] || OUI[clean.slice(0, 7)] || OUI[clean.slice(0, 9)] || null;
+  // Curated short name first, then 6-char (MA-L), 7-char, 9-char (MA-S) prefix
+  return OUI_SHORT[clean.slice(0, 6)] || OUI[clean.slice(0, 6)] || OUI[clean.slice(0, 7)] || OUI[clean.slice(0, 9)] || null;
 }
 
 let scanAbortFlag = false;
@@ -1570,7 +1776,7 @@ function isLocallyAdministered(mac) {
 //   DisableOnlineVendorLookup  REG_DWORD  1 = never contact macvendors.com
 // Read once at startup; enforced here in main regardless of renderer state.
 const POLICY_KEY = 'HKLM\\SOFTWARE\\Policies\\Broman Enterprises\\NET-ETHER';
-const POLICY = { onlineVendorDisabled: false, read: false };
+const POLICY = { onlineVendorDisabled: false, dhcpServerDisabled: false, read: false };
 let policyReady = null;
 
 function readPolicy() {
@@ -1581,8 +1787,14 @@ function readPolicy() {
       const m = out.match(/DisableOnlineVendorLookup\s+REG_DWORD\s+(0x\w+)/i);
       POLICY.onlineVendorDisabled = !!(m && parseInt(m[1], 16) !== 0);
     } catch { POLICY.onlineVendorDisabled = false; }
+    try {
+      const out = (await execAsync(`reg query "${POLICY_KEY}" /v DisableDhcpServer`, { timeout: 3000, windowsHide: true }).catch(() => '')).replace(/\r/g, '');
+      const m = out.match(/DisableDhcpServer\s+REG_DWORD\s+(0x\w+)/i);
+      POLICY.dhcpServerDisabled = !!(m && parseInt(m[1], 16) !== 0);
+    } catch { POLICY.dhcpServerDisabled = false; }
     POLICY.read = true;
     if (POLICY.onlineVendorDisabled) diagAdd({ kind: 'app', tag: 'policy', ok: true, note: 'DisableOnlineVendorLookup=1 — macvendors.com lookups disabled by policy' });
+    if (POLICY.dhcpServerDisabled)   diagAdd({ kind: 'app', tag: 'policy', ok: true, note: 'DisableDhcpServer=1 — DHCP server engine disabled by policy' });
     return POLICY;
   })();
   return policyReady;
@@ -2215,7 +2427,7 @@ ipcMain.handle('ping-host', async (e, host) => {
 });
 
 // ── IPC: apply network config (elevated) ──────────────────
-ipcMain.handle('apply-network-config', async (e, { adapter, ip, subnet, gateway, dns }) => {
+async function applyNetworkConfig({ adapter, ip, subnet, gateway, dns }) {
   const safeAdapter = sanitizeAdapter(adapter);
   if (!safeAdapter)           return { ok: false, err: 'Invalid adapter name' };
   if (!isValidIp(ip))         return { ok: false, err: 'Invalid IP address' };
@@ -2264,10 +2476,11 @@ ipcMain.handle('apply-network-config', async (e, { adapter, ip, subnet, gateway,
   }
   diagVerify('apply', false, `${safeAdapter} expected ${ip} — not seen in netsh or registry after 4.5s`);
   return { ...result, ok: false, verified: false, err: 'Command ran but IP did not change — check adapter name or admin rights' };
-});
+}
+ipcMain.handle('apply-network-config', async (e, args) => applyNetworkConfig(args || {}));
 
 // ── IPC: apply DHCP (elevated) ────────────────────────────
-ipcMain.handle('apply-dhcp', async (e, { adapter }) => {
+async function applyDhcpConfig({ adapter }) {
   const safeAdapter = sanitizeAdapter(adapter);
   if (!safeAdapter) return { ok: false, err: 'Invalid adapter name' };
   const psLines = [
@@ -2311,7 +2524,8 @@ ipcMain.handle('apply-dhcp', async (e, { adapter }) => {
   // output is in the diagnostics log either way.
   diagVerify('dhcp', false, `${safeAdapter} still static after 4.5s`);
   return { ...result, ok: false, verified: false, err: 'DHCP command ran but adapter is still static — check adapter name and run as admin' };
-});
+}
+ipcMain.handle('apply-dhcp', async (e, args) => applyDhcpConfig(args || {}));
 
 // ── IPC: IP alias management ───────────────────────────────
 
@@ -2436,6 +2650,35 @@ ipcMain.handle('alias-build-cmd', async (e, { action, adapter, ip, subnet, curre
 // ── IPC: diagnostics overlay ──────────────────────────────
 // (The old v3.x session log was removed as too intrusive; this is a different
 // instrument — silent until summoned from the titlebar version chip.)
+// ── DHCP SERVER ENGINE (dhcp.js) ──────────────────────────
+// Absorbed from NET//DHCP in v7.0.0. Off until the DHCP tab asks for it.
+let DHCP = null;
+function initDhcpEngine() {
+  try {
+    DHCP = require('./dhcp')({
+      app, ipcMain,
+      getWin: () => win,
+      diagAdd, runElevated,
+      isValidIp, isValidSubnet, sanitizeAdapter, lookupVendor,
+      getAdapters: () => getAdaptersFull(),
+      applyStatic: (args) => applyNetworkConfig(args),
+      applyDhcp:   (args) => applyDhcpConfig(args),
+      readAdapterConfig: async (name) => {
+        const safe = sanitizeAdapter(name);
+        if (!safe) return { ok: false };
+        try {
+          const snap = await snapshotAdapterConfig(safe);
+          return snap ? { ok: true, ip: snap.ip, subnet: snap.subnet, gateway: snap.gateway, dns: snap.dns, dhcp: snap.isDhcp } : { ok: false };
+        } catch { return { ok: false }; }
+      },
+      getPolicy: () => readPolicy(),
+      onStateChange: (state) => { dhcpTrayNote = dhcpTrayLabel(state); updateTrayTooltip(); },
+    });
+  } catch (err) {
+    diagAdd({ kind: 'error', tag: 'dhcp', ok: false, note: 'DHCP engine failed to load: ' + err.message });
+  }
+}
+
 function fileStat(p) {
   try { const s = fs.statSync(p); return { exists: true, bytes: s.size, mtime: s.mtimeMs }; }
   catch { return { exists: false, bytes: 0, mtime: null }; }
@@ -2478,6 +2721,7 @@ async function buildDiagState() {
     ouiEntries: Object.keys(OUI).length,
     creds:      credStatus(),
     policy:     { ...POLICY },
+    dhcp:       DHCP ? DHCP.getState() : null,
     files: {
       'presets.json':         fileStat(path.join(ud, 'presets.json')),
       'sites.json':           fileStat(path.join(ud, 'sites.json')),
@@ -2486,6 +2730,8 @@ async function buildDiagState() {
       'last-snapshot.json':   fileStat(path.join(ud, 'last-snapshot.json')),
       'launch-snapshot.json': fileStat(path.join(ud, 'launch-snapshot.json')),
       'diag-log.json':        fileStat(DIAG_LOG_PATH),
+      'dhcp-config.json':     fileStat(path.join(ud, 'dhcp-config.json')),
+      'window-state.json':    fileStat(WINDOW_STATE_PATH),
     },
     logEntries: diagLog.length,
   };
@@ -2631,7 +2877,7 @@ ipcMain.handle('get-adapter-config', async (e, adapter) => {
   try {
     const snap = await snapshotAdapterConfig(safeAdapter);
     if (!snap) return { ok: false };
-    return { ok: true, ip: snap.ip, subnet: snap.subnet, gateway: snap.gateway, dns: snap.dns };
+    return { ok: true, ip: snap.ip, subnet: snap.subnet, gateway: snap.gateway, dns: snap.dns, dhcp: snap.isDhcp };
   } catch { return { ok: false }; }
 });
 
