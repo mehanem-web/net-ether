@@ -34,6 +34,7 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 - [ ] FACTORY DEFAULTS (beside SAVE TO PRESET) opens a 3-column grid with the explainer line. AXIS tile fills 169.254.1.1 / 255.255.0.0, no gateway. APPLY succeeds (mask hint only, no error).
 - [ ] `?` → CIDR tab → click /16 → subnet field reads 255.255.0.0.
 - [ ] LIVE on a DHCP adapter shows gateway and DNS, not blanks.
+- [ ] PING: ♪ on a row → sonar on each reply. Unplug that device → downward sweep, then EEK-EEK-EEK every ~1.4 s. Plug it back → upward sweep, sonar resumes. STOP silences it. Only one row can be toned at a time.
 - [ ] Two adapters named "Ethernet" and "Ethernet 2": apply / alias / verify on "Ethernet" never reports the other one's address.
 - [ ] SITES → IMPORT a JSON where you've hand-edited a site id to `x');alert(1);//` → import succeeds, LOG has "Import sanitised: 1 site id(s) regenerated", nothing pops.
 - [ ] Type 169.254.5.5 with 255.255.255.0 → amber note about /16, still applies.

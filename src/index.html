@@ -855,7 +855,7 @@ html, body {
 
 .mon-header {
   display: grid;
-  grid-template-columns: 20px 12px 1fr 54px 50px 40px 56px 38px;
+  grid-template-columns: 20px 12px 1fr 54px 50px 40px 56px 38px 20px;
   gap: 5px; padding: 3px 8px 5px;
   border-bottom: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.1);
   font-size: 13px; letter-spacing: 0;
@@ -865,7 +865,7 @@ html, body {
 #monitor-rows { display: flex; flex-direction: column; gap: 4px; }
 .monitor-row {
   display: grid;
-  grid-template-columns: 20px 12px 1fr 54px 50px 40px 56px 38px;
+  grid-template-columns: 20px 12px 1fr 54px 50px 40px 56px 38px 20px;
   gap: 5px; padding: 7px 8px;
   border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.1);
   border-radius: var(--radius); background: rgba(0,0,0,0.25);
@@ -915,6 +915,16 @@ html, body {
 }
 .trcrt-btn:hover { color: var(--green); border-color: var(--green-dim); }
 .trcrt-btn.active { color: var(--amber); border-color: rgba(255,204,0,0.4); }
+/* v7.0.0 toner — hear one host: sonar while it answers, alarm when it doesn't */
+.tone-btn {
+  font-size: 11px; line-height: 1; text-align: center; color: rgba(var(--ar),var(--ag),var(--ab),0.3);
+  border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.12); border-radius: var(--radius-sm); padding: 1px 0;
+  cursor: pointer; transition: all 0.15s; user-select: none;
+}
+.tone-btn:hover { color: var(--green); border-color: var(--green-dim); }
+.tone-btn.on { color: var(--green); border-color: var(--green); background: var(--green-faint); box-shadow: 0 0 6px rgba(var(--ar),var(--ag),var(--ab),0.4); animation: tone-pulse 1s ease-in-out infinite; }
+.tone-btn.on.alarm { color: var(--red); border-color: var(--red); background: rgba(255,68,85,0.1); box-shadow: 0 0 6px rgba(255,68,85,0.5); animation: cursor-blink 0.5s steps(1) infinite; }
+@keyframes tone-pulse { 50% { box-shadow: 0 0 12px rgba(var(--ar),var(--ag),var(--ab),0.7); } }
 .tracert-panel {
   display: none; margin-top: 2px;
   background: rgba(0,0,0,0.4); border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.12);
@@ -3065,7 +3075,7 @@ body.dhcp-resizing { cursor: row-resize; user-select: none; }
       <div style="text-align:right">AVG</div>
       <div style="text-align:right">LOSS</div>
       <div style="text-align:right">HISTORY</div>
-      <div></div>
+      <div></div><div></div>
     </div>
     <div id="monitor-rows"></div>
 
@@ -4177,6 +4187,7 @@ const HELP_CONTENT = {
       ['+ GATEWAY',  'Adds the adapter\'s gateway. + MY IP adds your own address as a sanity check.'],
       ['DOT COLOUR', 'Green under 150 ms · amber 150 ms and up · red no response. Sparkline is the last 60 samples.'],
       ['TRCRT',      'Traceroute to that host, hops stream live.'],
+      ['♪ TONER',    'Hear one host. Sonar ping on every reply, submarine alarm when it stops answering, a sweep on each change. Pull cables at the switch and listen — no need to see the screen.'],
       ['COPY',       'Full summary to clipboard for the service report.'],
       ['PAUSE / STOP','PAUSE freezes the display and keeps data. STOP clears everything.'],
     ],
@@ -5342,6 +5353,100 @@ function monRenderEmptyTable() {
   if (hdr) hdr.style.display = 'none';
 }
 
+// ── TONER (v7.0.0) ─────────────────────────────────────────
+// A cable toner for ping. Pick one host; every reply is a sonar ping, every miss
+// is the submarine alarm. Web Audio oscillators only — no files, no network.
+let monToneHost  = null;
+let monToneState = null;      // 'ok' | 'fail' — last state we sounded
+let monToneCtx   = null;
+let monAlarmTimer = null;
+function monToneCtxGet() {
+  if (!monToneCtx) { try { monToneCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return null; } }
+  if (monToneCtx.state === 'suspended') monToneCtx.resume().catch(() => {});
+  return monToneCtx;
+}
+function monToneToggle(host) {
+  if (monToneHost === host) { monToneSilence(); monToneHost = null; }
+  else {
+    monToneSilence();
+    monToneHost = host;
+    monToneState = null;
+    const ctx = monToneCtxGet();
+    if (ctx) monSonar(ctx, 0.5);             // confirm on the click (also unlocks audio)
+    if (monState !== 'running') monSetStatus('♪ TONER ARMED ON ' + host.toUpperCase() + ' — START THE MONITOR', 'warn');
+  }
+  monActiveHosts().forEach((h, i) => monPaintRow(h, undefined, i));
+}
+function monToneSilence() {
+  if (monAlarmTimer) { clearInterval(monAlarmTimer); monAlarmTimer = null; }
+  monToneState = null;
+}
+function monToneResult(ok) {
+  const ctx = monToneCtxGet(); if (!ctx) return;
+  if (ok) {
+    if (monToneState === 'fail') { monToneSilence(); monSweep(ctx, 380, 1100, 0.35); }   // back online: sweep up
+    monToneState = 'ok';
+    monSonar(ctx, 0.35);
+  } else {
+    if (monToneState !== 'fail') {                                                        // dropped: sweep down, then alarm loop
+      monSweep(ctx, 1100, 300, 0.4);
+      monToneState = 'fail';
+      if (monAlarmTimer) clearInterval(monAlarmTimer);
+      const eek = () => { if (monToneState === 'fail') monAlarm(monToneCtxGet()); };
+      setTimeout(eek, 450);
+      monAlarmTimer = setInterval(eek, 1400);
+    }
+  }
+}
+// Sonar: clean sine, quick decay, a faint echo — the "ping" everyone knows.
+function monSonar(ctx, vol) {
+  const t = ctx.currentTime;
+  const play = (t0, gainPeak) => {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(1250, t0);
+    o.frequency.exponentialRampToValueAtTime(900, t0 + 0.28);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(gainPeak, t0 + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.32);
+    o.connect(g).connect(ctx.destination);
+    o.start(t0); o.stop(t0 + 0.34);
+  };
+  play(t, vol);
+  play(t + 0.18, vol * 0.18);
+}
+// Alarm: EEK EEK EEK — three harsh, damped blips, lower and rougher than the sonar.
+function monAlarm(ctx) {
+  if (!ctx) return;
+  const t = ctx.currentTime;
+  for (let i = 0; i < 3; i++) {
+    const t0 = t + i * 0.26;
+    const o = ctx.createOscillator(), g = ctx.createGain(), f = ctx.createBiquadFilter();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(520, t0);
+    o.frequency.linearRampToValueAtTime(410, t0 + 0.16);
+    f.type = 'lowpass'; f.frequency.setValueAtTime(1400, t0); f.Q.value = 4;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.32, t0 + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.2);
+    o.connect(f).connect(g).connect(ctx.destination);
+    o.start(t0); o.stop(t0 + 0.22);
+  }
+}
+// Transition sweep so a change registers even if you missed the blip.
+function monSweep(ctx, from, to, dur) {
+  const t = ctx.currentTime;
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = 'triangle';
+  o.frequency.setValueAtTime(from, t);
+  o.frequency.exponentialRampToValueAtTime(to, t + dur);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(ctx.destination);
+  o.start(t); o.stop(t + dur + 0.02);
+}
+
 function monBuildRows() {
   const rows = document.getElementById('monitor-rows');
   rows.innerHTML = '';
@@ -5396,7 +5501,8 @@ function monPaintRow(host, dotState, idx) {
     <div class="metric ${avgCls}">${avgStr}</div>
     <div class="loss-cell"><span class="loss-val ${lossCls}">${lossStr}</span></div>
     <div class="spark-cell">${monSparkline(d.history)}</div>
-    <div class="trcrt-btn" onclick="tracertToggle('${escHtml(host)}')" title="Traceroute">TRCRT</div>`;
+    <div class="trcrt-btn" onclick="tracertToggle('${escHtml(host)}')" title="Traceroute">TRCRT</div>
+    <div class="tone-btn${monToneHost === host ? ' on' + (last && !last.ok ? ' alarm' : '') : ''}" onclick="monToneToggle('${escHtml(host)}')" title="Toner: hear this host — sonar while it answers, alarm when it doesn't. Pull cables at the switch and listen.">♪</div>`;
 
   // Restore tracert button state if a tracert is active for this host
   if (tracertActiveHost === host) {
@@ -5460,6 +5566,7 @@ async function monRunCycle() {
     if (d.history.length > MON_HISTORY_LEN) d.history.shift();
     monPaintRow(host, undefined, i);
     monFlashRow(host, r.ok);
+    if (monToneHost === host) monToneResult(r.ok);
   });
   monUpdateStatus(anyFail);
   monUpdateCounter();
@@ -5544,6 +5651,7 @@ function monStart() {
 }
 
 function monPause() {
+  monToneSilence();
   if (monState !== 'running') return;
   monState = 'paused';
   if (monPingTimer) { clearTimeout(monPingTimer); monPingTimer = null; }
@@ -5566,6 +5674,7 @@ function monResume() {
 
 function monStop() {
   monState = 'stopped';
+  monToneSilence();
   tracertClose();
   if (monPingTimer) { clearTimeout(monPingTimer); monPingTimer = null; }
   monStopTicker();
