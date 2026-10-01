@@ -543,6 +543,7 @@ function assertAlwaysOnTop() {
 // on a multi-monitor dock is not to be trusted.
 const WINDOW_STATE_PATH = path.join(app.getPath('userData'), 'window-state.json');
 let winStateTimer = null;
+let narrowWidth = null;   // set while the wide (DHCP) tab is open — see win-set-width
 
 function loadWindowState() {
   try { return JSON.parse(fs.readFileSync(WINDOW_STATE_PATH, 'utf8')); } catch { return null; }
@@ -552,7 +553,10 @@ function saveWindowState() {
   try {
     const b = win.getBounds();
     const d = screen.getDisplayMatching(b);
-    fs.writeFileSync(WINDOW_STATE_PATH, JSON.stringify({ x: b.x, y: b.y, width: b.width, height: b.height, displayId: d.id }), 'utf8');
+    // On the wide tab the window is temporarily 820 px; remember the width the user
+    // actually chose, or ETHER would open wide next launch.
+    const width = (typeof narrowWidth === 'number' && narrowWidth !== null) ? narrowWidth : b.width;
+    fs.writeFileSync(WINDOW_STATE_PATH, JSON.stringify({ x: b.x, y: b.y, width, height: b.height, displayId: d.id }), 'utf8');
   } catch {}
 }
 function scheduleSaveWindowState() {
@@ -744,7 +748,6 @@ ipcMain.handle('win-set-size', (e, height) => {
 
 // Width control for wide tabs (DHCP). Remembers the narrow width so leaving
 // the wide tab restores whatever the user had, clamped to the display.
-let narrowWidth = null;
 ipcMain.handle('win-set-width', (e, { wide, width }) => {
   if (!winAlive()) return;
   const area = currentDisplay().workArea;

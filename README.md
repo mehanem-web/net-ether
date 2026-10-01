@@ -244,6 +244,7 @@ Two apps become one. NET//DHCP is absorbed as the DHCP tab, the window sizing mo
 - PING: **♪ toner** on each row — hear one host: sonar on every reply, submarine alarm when it drops, a sweep on each change. Web Audio only, no files. For pulling cables at a switch with the laptop across the room.
 - SCAN: rows stay sorted by IP as they arrive. Randomised (private) MACs are labelled as such instead of Unknown.
 - Titlebar yields on the left (chip, then logo) so ─ ✕ never clip; minimum width 340. Vector tab icons — crisp at any DPI and theme-coloured.
+- DHCP: the laptop's own DHCP client no longer appears in the device table (its REQUESTs still feed rogue-server detection).
 - Security: imported site JSON is sanitised at import (site IDs, MACs, IPs forced to shape; strings bounded) — imported identifiers reach inline handlers where HTML escaping isn't protection. CSP meta tag (`connect-src 'none'`). Adapter lookups match the exact netsh interface name ("Ethernet" no longer matches "Ethernet 2"). Ping host can't start with `-`. Electron lock bumped to 41.10.x.
 
 **Docs**

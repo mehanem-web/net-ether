@@ -194,6 +194,12 @@ module.exports = function initDhcp(deps) {
   function startPoller() { if (!pollTimer) { pollAdapters(); pollTimer = setInterval(pollAdapters, ADAPTER_POLL_MS); } }
   function stopPoller()  { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
   function localAdapterIps() { return new Set(lightAdapters().filter(a => a.ip).map(a => a.ip)); }
+  function localAdapterMacs() {
+    const out = new Set();
+    for (const a of knownAdapters) if (a.mac) out.add(String(a.mac).toLowerCase().replace(/-/g, ':'));
+    for (const addrs of Object.values(os.networkInterfaces())) for (const x of addrs) if (x.mac && x.mac !== '00:00:00:00:00:00') out.add(x.mac.toLowerCase());
+    return out;
+  }
   function otherSubnetAdapters(serverIp, mask) {
     if (!isValidIp(serverIp) || !isValidIp(mask)) return [];
     const m = ipToNum(mask), myNet = ipToNum(serverIp) & m;
@@ -440,6 +446,17 @@ module.exports = function initDhcp(deps) {
     }
     if (!msgType) return;
     if (!requestedIp && ciaddr !== '0.0.0.0') requestedIp = ciaddr;
+
+    // The laptop's own DHCP client broadcasts land here too. Keep the rogue-server
+    // signal from its REQUESTs (that's real information) but never list ourselves.
+    if (localAdapterMacs().has(mac)) {
+      if (serverIdent && !localAdapterIps().has(serverIdent) && !foreignServers[serverIdent]) {
+        foreignServers[serverIdent] = Date.now();
+        log(`OTHER DHCP SERVER on the wire — this laptop is leasing from ${serverIdent}`, 'warn');
+        send('dhcp-rogue', { server: serverIdent, how: 'passive' });
+      } else if (serverIdent && !localAdapterIps().has(serverIdent)) foreignServers[serverIdent] = Date.now();
+      return;
+    }
 
     const now = Date.now();
     let d = devices[mac];

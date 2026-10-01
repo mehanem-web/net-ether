@@ -97,8 +97,8 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 
 ### Installer (home PC, run as admin)
 - [ ] Uninstall any per-user v6.1 copy first (Settings → Apps).
-- [ ] Run `NET-ETHER-Installer-7.0.0-rc.2.exe` → directory page defaults to `C:\Program Files\Broman Enterprises\NET-ETHER\`. Install completes, shortcut works, app launches elevated.
-- [ ] Silent: `NET-ETHER-Installer-7.0.0-rc.2.exe /S` from an admin prompt → same result, no UI.
+- [ ] Run `NET-ETHER-Installer-7.0.0.exe` → directory page defaults to `C:\Program Files\Broman Enterprises\NET-ETHER\`. Install completes, shortcut works, app launches elevated.
+- [ ] Silent: `NET-ETHER-Installer-7.0.0.exe /S` from an admin prompt → same result, no UI.
 - [ ] Data from before the install (presets, sites) is still there — `%APPDATA%` is unaffected by install mode.
 - [ ] Uninstall from Programs & Features → exe gone, `%APPDATA%\net-ether` kept.
 
