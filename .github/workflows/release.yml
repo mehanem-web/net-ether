@@ -109,12 +109,8 @@ jobs:
       # carries no signing config and a home build.bat run is unaffected.
       # Endpoint is the East US Artifact Signing endpoint (account region).
       - name: Build and sign Windows targets (nsis + portable)
-        run: >
-          npx electron-builder --win nsis portable --publish never
-          -c.win.azureSignOptions.publisherName="Johan Broman"
-          -c.win.azureSignOptions.endpoint=https://eus.codesigning.azure.net
-          -c.win.azureSignOptions.codeSigningAccountName=broman-net-suite
-          -c.win.azureSignOptions.certificateProfileName=net-suite
+        shell: pwsh
+        run: npx electron-builder --win nsis portable --publish never --config.win.azureSignOptions.publisherName="Johan Broman" --config.win.azureSignOptions.endpoint=https://eus.codesigning.azure.net --config.win.azureSignOptions.codeSigningAccountName=broman-net-suite --config.win.azureSignOptions.certificateProfileName=net-suite
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
