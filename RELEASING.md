@@ -135,3 +135,36 @@ released builds quietly stop matching.
 - **Size limits.** Repo files cap at 100 MB (hard block). Release assets cap at
   2 GB. The installers are ~100 MB, which is exactly why they belong on the
   release and not in the tree.
+
+
+## Code signing (v7.0.1+)
+
+Release binaries are signed in CI with **Azure Artifact Signing** (formerly
+Trusted Signing). Publisher: **Johan Broman** (individual validation; an
+organization identity can replace it later without changing the workflow).
+
+How it fits together:
+
+- Azure: Artifact Signing account `broman-net-suite` (East US), certificate
+  profile `net-suite` (Public Trust). App registration `net-suite-ci` holds a
+  **federated credential** for GitHub Actions — entity type Environment, name
+  `release` — and the role *Artifact Signing Certificate Profile Signer* on the
+  account. No client secret exists.
+- GitHub: repo secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`,
+  `AZURE_SUBSCRIPTION_ID` (names, not secrets, but kept out of the tree). The
+  `release` environment exists in repo settings (created automatically on first
+  use).
+- Workflow: `azure/login@v2` with OIDC → `Install-Module TrustedSigning` →
+  electron-builder with `-c.win.azureSignOptions.*` on the command line →
+  `Get-AuthenticodeSignature` check that fails the job if anything is unsigned.
+
+`build.bat` at home is unaffected and produces **unsigned** binaries — signing
+options are not in `package.json` on purpose. Only tagged CI builds are signed.
+
+Certificates are short-lived (days) and rotated by Azure automatically; nothing
+to renew. The identity validation itself expires after a year or so — Azure
+emails before it does; re-validate, no workflow change.
+
+For IT: a signed release lets EPM / Defender trust the **publisher certificate**
+instead of a per-version hash. After the first signed build is whitelisted by
+publisher, future releases need no new request.

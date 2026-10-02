@@ -1,4 +1,4 @@
-# NET//ETHER — v7.0.0
+# NET//ETHER — v7.0.1
 **Broman Enterprises**
 
 A cyberpunk-styled always-on-top desktop HUD for Windows network configuration management — static IP, DHCP server, ping, subnet scan and a per-site device knowledge base in one window. Built for field technicians switching between network setups on job sites.
@@ -206,6 +206,9 @@ NET-ETHER/
 ---
 
 ## CHANGELOG
+
+### v7.0.1
+- Release binaries are code-signed in CI (Azure Artifact Signing, publisher Johan Broman). No functional change. IT can now whitelist by publisher instead of per-version hash — see RELEASING.md.
 
 ### v7.0.0
 Two apps become one. NET//DHCP is absorbed as the DHCP tab, the window sizing model is rebuilt, and the ETHER tab gets a visual pass. One release, one whitelist request.

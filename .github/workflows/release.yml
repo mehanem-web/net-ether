@@ -15,10 +15,14 @@ on:
 
 permissions:
   contents: write   # required to upload assets to the release
+  id-token: write   # required for the OIDC login to Azure (code signing) — no stored secret
 
 jobs:
   build-windows:
     runs-on: windows-latest
+    # The OIDC token's subject is "repo:mehanem-web/net-ether:environment:release",
+    # which is what the Azure federated credential matches — any tag, one credential.
+    environment: release
 
     steps:
       # Normalizes "6.1.0" -> "v6.1.0", strips stray whitespace, and confirms
@@ -73,6 +77,26 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # ── Code signing (Azure Artifact Signing, formerly Trusted Signing) ──
+      # The workflow authenticates to Azure as this repo via OIDC (federated
+      # credential on the net-suite-ci app registration, entity type Environment
+      # named "release"), so
+      # there is no client secret anywhere. The three IDs below are not secrets
+      # — they're names — but live in repo secrets so they aren't in the tree.
+      # Signing happens only here; build.bat at home stays unsigned.
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Trusted Signing PowerShell module
+        shell: pwsh
+        run: |
+          Install-Module -Name TrustedSigning -Force -Scope CurrentUser -AllowClobber
+          Get-Module -ListAvailable TrustedSigning | Select-Object Name, Version
+
       # Mirrors build.bat exactly: nsis + portable, no cert discovery.
       # (The msi target was removed from package.json in v6.2.0 — no release
       # ever shipped one. Don't reintroduce it here or in build.bat.)
@@ -81,10 +105,29 @@ jobs:
       # exits 1 *after* building successfully, killing the job before the upload
       # step runs. Setting GH_TOKEN empty does not prevent this - only the flag
       # does. The upload step below owns publishing.
-      - name: Build Windows targets (nsis + portable)
-        run: npx electron-builder --win nsis portable --publish never
+      # The azureSignOptions are passed on the command line so package.json
+      # carries no signing config and a home build.bat run is unaffected.
+      # Endpoint is the East US Artifact Signing endpoint (account region).
+      - name: Build and sign Windows targets (nsis + portable)
+        run: >
+          npx electron-builder --win nsis portable --publish never
+          -c.win.azureSignOptions.publisherName="Johan Broman"
+          -c.win.azureSignOptions.endpoint=https://eus.codesigning.azure.net
+          -c.win.azureSignOptions.codeSigningAccountName=broman-net-suite
+          -c.win.azureSignOptions.certificateProfileName=net-suite
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+
+      - name: Verify signatures
+        shell: pwsh
+        run: |
+          Get-ChildItem dist\NET-ETHER-*.exe | ForEach-Object {
+            $sig = Get-AuthenticodeSignature $_.FullName
+            "{0,-45} {1,-12} {2}" -f $_.Name, $sig.Status, $sig.SignerCertificate.Subject
+            if ($sig.Status -ne 'Valid') { throw "Unsigned or invalid signature: $($_.Name)" }
+          }
 
       - name: Show what got built
         run: dir dist

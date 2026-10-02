@@ -97,8 +97,8 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 
 ### Installer (home PC, run as admin)
 - [ ] Uninstall any per-user v6.1 copy first (Settings → Apps).
-- [ ] Run `NET-ETHER-Installer-7.0.0.exe` → directory page defaults to `C:\Program Files\Broman Enterprises\NET-ETHER\`. Install completes, shortcut works, app launches elevated.
-- [ ] Silent: `NET-ETHER-Installer-7.0.0.exe /S` from an admin prompt → same result, no UI.
+- [ ] Run `NET-ETHER-Installer-7.0.1.exe` → directory page defaults to `C:\Program Files\Broman Enterprises\NET-ETHER\`. Install completes, shortcut works, app launches elevated.
+- [ ] Silent: `NET-ETHER-Installer-7.0.1.exe /S` from an admin prompt → same result, no UI.
 - [ ] Data from before the install (presets, sites) is still there — `%APPDATA%` is unaffected by install mode.
 - [ ] Uninstall from Programs & Features → exe gone, `%APPDATA%\net-ether` kept.
 
@@ -118,6 +118,14 @@ Everything above is already proven; this is only what the fleet changes.
 - [ ] Two launches in a row during the EPM delay → one window.
 
 ---
+
+## Deployment notes for IT (v7.0.1 — signed binaries)
+
+From v7.0.1 every release is Authenticode-signed, publisher **Johan Broman**
+(Azure Artifact Signing, Microsoft-issued Public Trust certificate). EPM and
+Defender/Intune can now trust the **publisher** rather than a per-version file
+hash: whitelist the certificate once and subsequent NET// releases are trusted
+on arrival. Right-click the exe → Properties → Digital Signatures to inspect.
 
 ## Deployment notes for IT (v7.0.0 — DHCP server absorbed)
 
