@@ -15,14 +15,10 @@ on:
 
 permissions:
   contents: write   # required to upload assets to the release
-  id-token: write   # required for the OIDC login to Azure (code signing) — no stored secret
 
 jobs:
   build-windows:
     runs-on: windows-latest
-    # The OIDC token's subject is "repo:mehanem-web/net-ether:environment:release",
-    # which is what the Azure federated credential matches — any tag, one credential.
-    environment: release
 
     steps:
       # Normalizes "6.1.0" -> "v6.1.0", strips stray whitespace, and confirms
@@ -78,19 +74,11 @@ jobs:
         run: npm ci
 
       # ── Code signing (Azure Artifact Signing, formerly Trusted Signing) ──
-      # The workflow authenticates to Azure as this repo via OIDC (federated
-      # credential on the net-suite-ci app registration, entity type Environment
-      # named "release"), so
-      # there is no client secret anywhere. The three IDs below are not secrets
-      # — they're names — but live in repo secrets so they aren't in the tree.
-      # Signing happens only here; build.bat at home stays unsigned.
-      - name: Azure login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
+      # electron-builder's Azure signing path authenticates with the three
+      # AZURE_* environment variables below (Azure.Identity EnvironmentCredential)
+      # and nothing else — an OIDC login is ignored. So the net-suite-ci app
+      # registration carries a client secret (24-month expiry; rotate when Azure
+      # emails). Signing happens only here; build.bat at home stays unsigned.
       - name: Install Trusted Signing PowerShell module
         shell: pwsh
         run: |
@@ -115,6 +103,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
 
       - name: Verify signatures
         shell: pwsh

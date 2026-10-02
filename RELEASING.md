@@ -146,17 +146,19 @@ organization identity can replace it later without changing the workflow).
 How it fits together:
 
 - Azure: Artifact Signing account `broman-net-suite` (East US), certificate
-  profile `net-suite` (Public Trust). App registration `net-suite-ci` holds a
-  **federated credential** for GitHub Actions — entity type Environment, name
-  `release` — and the role *Artifact Signing Certificate Profile Signer* on the
-  account. No client secret exists.
+  profile `net-suite` (Public Trust). App registration `net-suite-ci` has the
+  role *Artifact Signing Certificate Profile Signer* on the account and a
+  **client secret** (`github-ci`, 24-month expiry — Azure emails before it
+  lapses; make a new one and update the GitHub secret). electron-builder's
+  Azure signing only authenticates with the AZURE_* environment variables, so
+  OIDC/federated login isn't usable here even though it works.
 - GitHub: repo secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`,
-  `AZURE_SUBSCRIPTION_ID` (names, not secrets, but kept out of the tree). The
-  `release` environment exists in repo settings (created automatically on first
-  use).
-- Workflow: `azure/login@v2` with OIDC → `Install-Module TrustedSigning` →
-  electron-builder with `-c.win.azureSignOptions.*` on the command line →
-  `Get-AuthenticodeSignature` check that fails the job if anything is unsigned.
+  `AZURE_SUBSCRIPTION_ID` (names, kept out of the tree) and
+  `AZURE_CLIENT_SECRET` (the real secret).
+- Workflow: `Install-Module TrustedSigning` → electron-builder with
+  `--config.win.azureSignOptions.*` on the command line and the AZURE_* vars in
+  its environment → `Get-AuthenticodeSignature` check that fails the job if
+  anything is unsigned.
 
 `build.bat` at home is unaffected and produces **unsigned** binaries — signing
 options are not in `package.json` on purpose. Only tagged CI builds are signed.
