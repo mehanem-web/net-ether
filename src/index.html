@@ -246,14 +246,16 @@ html, body {
   line-height: 1;
 }
 /* Live indicator on the DHCP tab while the engine is serving */
+/* v7.1.0: the DHCP tab's dot is always there and follows the engine — red OFFLINE,
+   green LISTENING, amber (blinking) SERVING. Fixed colours + dark ring, like the badge. */
 .tab-live-dot {
-  display: none; position: absolute; top: 4px; right: 8px;
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--amber); box-shadow: 0 0 6px var(--amber);
-  animation: cursor-blink 1s steps(1) infinite;
+  display: block; position: absolute; top: 4px; right: 8px;
+  width: 6px; height: 6px; border-radius: 50%; box-sizing: content-box;
+  border: 1.5px solid rgba(0,0,0,0.85);
+  background: #ff4455; box-shadow: none; opacity: 0.75;
 }
-.tab.serving .tab-live-dot { display: block; }
-.tab.listening .tab-live-dot { display: block; background: var(--green); box-shadow: 0 0 6px var(--green); animation: none; opacity: 0.7; }
+.tab.serving .tab-live-dot   { background: #ffcc00; box-shadow: 0 0 6px rgba(255,204,0,0.7); opacity: 1; animation: cursor-blink 1s steps(1) infinite; }
+.tab.listening .tab-live-dot { background: #22dd66; box-shadow: 0 0 6px rgba(34,221,102,0.7); opacity: 0.9; }
 
 /* ── PANELS ── */
 .panel {
@@ -1254,6 +1256,7 @@ html, body {
   background: rgba(255,204,0,0.06);
 }
 .scan-start-btn.scanning:hover { background: rgba(255,204,0,0.12); }
+.scan-start-btn.disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* progress */
 .scan-progress-wrap {
@@ -1347,6 +1350,7 @@ html, body {
 .scan-result-row.type-access      { border-left-color: rgba(100,220,255,0.70); }
 .scan-result-row.type-printer     { border-left-color: rgba(var(--lr),var(--lg),var(--lb),0.35); }
 .scan-result-row.type-other       { border-left-color: rgba(var(--ar),var(--ag),var(--ab),0.30); }
+.scan-result-row.type-media       { border-left-color: rgba(160,120,255,0.45); }
 /* Dot, IP, ms, action buttons and IP-copy all stay on the first line */
 .scan-result-row > .scan-result-dot,
 .scan-result-row > .scan-result-ip,
@@ -1354,6 +1358,20 @@ html, body {
 .scan-result-row > .scan-copy-btn {
   flex-shrink: 0;
 }
+/* v7.1.0: on a wide row the MAC sits right of the IP (frees the meta line); narrow rows keep it below */
+#scan-results { container-type: inline-size; }
+.scan-result-mac-top { display: none; font-family: var(--font-mono); font-size: var(--sz-micro); color: var(--label-dim); letter-spacing: 0.5px; flex-shrink: 0; }
+@container (min-width: 600px) {
+  .scan-result-vendor { max-width: 220px; }
+  .scan-result-host   { max-width: 220px; }
+  .scan-result-mac-top { display: inline; margin-left: 2px; }
+  .scan-result-row.has-meta .scan-result-meta > .scan-result-mac { display: none; }
+  .scan-result-row > .scan-result-ip { flex: 0 0 auto; }      /* MAC sits right beside the IP… */
+  .scan-result-row > .scan-result-ms { margin-left: auto; }   /* …and the ms + buttons stay right */
+  .scan-result-row > .scan-row-actions { margin-left: 0; }
+}
+/* v7.1.0: IP / MAC / PING / WSHARK wrap together as one unit, never one at a time */
+.scan-row-actions { display: flex; gap: 4px; flex-shrink: 0; flex-wrap: nowrap; margin-left: auto; }
 /* Meta row always breaks to its own line */
 .scan-result-row > .scan-result-meta {
   flex-basis: 100%;
@@ -2324,6 +2342,7 @@ html, body {
 .intel-device-row.type-access     { border-left-color: rgba(100,220,255,0.70); }
 .intel-device-row.type-printer    { border-left-color: rgba(var(--lr),var(--lg),var(--lb),0.35); }
 .intel-device-row.type-other      { border-left-color: rgba(var(--ar),var(--ag),var(--ab),0.30); }
+.intel-device-row.type-media      { border-left-color: rgba(160,120,255,0.45); }
 
 .intel-device-main {
   display: flex; align-items: center; gap: 8px;
@@ -2349,6 +2368,7 @@ html, body {
 .intel-device-type.tc-nvr        { color: rgba(255,180,0,0.80);   border-color: rgba(255,180,0,0.35); }
 .intel-device-type.tc-network    { color: rgba(var(--lr),var(--lg),var(--lb),0.80); border-color: rgba(var(--lr),var(--lg),var(--lb),0.35); }
 .intel-device-type.tc-server     { color: rgba(255,100,80,0.85);  border-color: rgba(255,100,80,0.35); }
+.intel-device-type.tc-media      { color: rgba(160,120,255,0.85);  border-color: rgba(160,120,255,0.35); }
 .intel-device-type.tc-workstation{ color: var(--green-dim);        border-color: rgba(var(--ar),var(--ag),var(--ab),0.35); }
 .intel-device-type.tc-access     { color: rgba(100,220,255,0.85); border-color: rgba(100,220,255,0.30); }
 .intel-device-type.tc-printer    { color: rgba(var(--lr),var(--lg),var(--lb),0.45); border-color: rgba(var(--lr),var(--lg),var(--lb),0.20); }
@@ -2611,6 +2631,133 @@ html, body {
 .copy-cmd-row { margin-top: 6px; }
 .copy-cmd-row .cmd-btn { width: 100%; }
 
+/* ── v7.1.0: adapter tools — live in the ADAPTER label line, zero extra height ── */
+.field-label.adapter-label { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+/* v7.1.0: wrap, never clip — the chip group drops to its own line when it can't fit */
+.adapter-tools { flex-wrap: nowrap; }
+.field-label.adapter-label .adapter-tools { margin-left: auto; }
+.field-label.adapter-label .adapter-refresh-btn { float: none; margin-left: 2px; }
+.adapter-tools { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.tool-chip {
+  display: none; align-items: center; gap: 4px;
+  font-family: var(--font-hud); font-size: 8.5px; font-weight: 900; letter-spacing: 1px;
+  padding: 2px 6px; border-radius: 3px; border: 1px solid var(--border);
+  color: var(--label-dim); background: var(--surface); cursor: pointer; white-space: nowrap;
+  user-select: none; transition: all 0.15s;
+}
+.tool-chip.show { display: inline-flex; }
+.tool-chip:hover { color: var(--green); border-color: var(--green-dim); background: var(--green-faint); }
+.tool-chip.busy { opacity: 0.5; pointer-events: none; }
+.tool-chip.warn { color: rgba(255,204,0,0.85); border-color: rgba(255,204,0,0.4); background: rgba(255,204,0,0.06); }
+.tool-chip.warn:hover { color: var(--amber); border-color: var(--amber); }
+.tool-chip.off  { color: var(--amber); border-color: rgba(255,204,0,0.55); background: rgba(255,204,0,0.10); }
+.tool-chip .pip { width: 5px; height: 5px; border-radius: 50%; background: var(--green); box-shadow: 0 0 4px rgba(var(--ar),var(--ag),var(--ab),0.6); }
+.tool-chip.off .pip { background: var(--amber); box-shadow: 0 0 4px rgba(255,204,0,0.6); }
+
+/* link speed replaces CONNECTED in the adapter row */
+.adapter-status-state.speed-ok   { color: var(--green); }
+.adapter-status-state.speed-warn { color: var(--amber); }
+.adapter-status-state.speed-bad  { color: var(--red); }
+
+/* PING row: capture column appears only when Wireshark is installed */
+.monitor-row.has-cap, .mon-header.has-cap { grid-template-columns: 20px 12px 1fr 54px 50px 40px 56px 38px 20px 16px; gap: 4px; }
+.monitor-row.has-cap { padding: 7px 6px; }
+.cap-btn {
+  font-size: 12px; text-align: center; cursor: pointer; line-height: 1; padding: 3px 0;
+  border-radius: var(--radius-sm); border: 1px solid transparent;
+  color: rgba(var(--ar),var(--ag),var(--ab),0.35); user-select: none; transition: all 0.15s;
+}
+.cap-btn { transition: none; }
+.cap-btn:hover { color: var(--green); border-color: var(--green-dim); }
+.metric.closed { color: var(--amber); }
+
+/* SITES drawer: wake-on-LAN */
+.intel-wake-btn {
+  font-family: var(--font-hud); font-size: 11px; font-weight: 700;
+  letter-spacing: 2px; padding: 7px 14px;
+  border-radius: var(--radius); cursor: pointer; transition: all 0.15s; border: 1px solid;
+  color: var(--label-dim); border-color: var(--border); background: var(--surface);
+}
+.intel-wake-btn:hover { color: var(--green); border-color: var(--green-dim); background: var(--green-faint); }
+.intel-wake-btn.sent  { color: var(--green); border-color: var(--green); }
+
+/* SCAN results header: export */
+.scan-export-btn {
+  font-size: var(--sz-micro); font-weight: 700; letter-spacing: 1px; padding: 2px 7px;
+  border-radius: var(--radius-sm); border: 1px solid var(--border); color: var(--label-dim);
+  cursor: pointer; user-select: none; transition: all 0.15s;
+}
+.scan-export-btn:hover { color: var(--green); border-color: var(--green-dim); background: var(--green-faint); }
+.scan-export-btn.copied { color: var(--green); border-color: var(--green); }
+
+/* ── v7.1.0: RECON ── */
+.recon-intro { font-size: var(--sz-micro); color: var(--label-dim); letter-spacing: 0.5px; line-height: 1.5; margin: -2px 0 10px; }
+.recon-adapter-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.recon-k { font-size: 9px; font-weight: 700; letter-spacing: 2px; color: var(--label-dim); }
+.recon-adapter { font-family: var(--font-mono); font-size: var(--sz-primary); color: var(--green); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recon-adapter.none { color: var(--label-dim); }
+#recon-mode .pill.silent { color: var(--amber); border-color: rgba(255,204,0,0.5); background: rgba(255,204,0,0.06); }
+#recon-btn.listening { border-color: var(--amber); color: var(--amber); background: rgba(255,204,0,0.08); }
+.recon-cards { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.recon-card {
+  display: grid; grid-template-columns: 62px 1fr auto; gap: 4px 10px; align-items: center;
+  padding: 7px 10px; border-radius: var(--radius); background: rgba(0,0,0,0.45);
+  border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.18); border-left-width: 3px;
+  animation: slide-in 0.15s ease-out;
+}
+.recon-card .rc-tag { font-family: var(--font-hud); font-size: 9px; font-weight: 900; letter-spacing: 1.5px; color: var(--label-dim); }
+.recon-card .rc-title { font-size: var(--sz-primary); font-weight: 700; color: var(--label); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recon-card .rc-detail { grid-column: 2 / span 2; font-size: var(--sz-micro); color: var(--label-dim); letter-spacing: 0.3px; line-height: 1.4; }
+.recon-card.ok    { border-left-color: var(--green); }  .recon-card.ok .rc-title { color: var(--green); }
+.recon-card.warn  { border-left-color: var(--amber); border-color: rgba(255,204,0,0.35); }  .recon-card.warn .rc-title { color: var(--amber); } .recon-card.warn .rc-tag { color: var(--amber); }
+.recon-card.info  { border-left-color: rgba(var(--ar),var(--ag),var(--ab),0.5); }
+.recon-card.quiet { border-left-color: var(--border); opacity: 0.75; }
+.recon-card .rc-act {
+  font-family: var(--font-hud); font-size: 9px; font-weight: 900; letter-spacing: 1.5px; padding: 3px 9px;
+  border-radius: 3px; border: 1px solid var(--green); color: var(--green); background: var(--green-faint); cursor: pointer; white-space: nowrap;
+}
+.recon-card .rc-act:hover { background: rgba(var(--ar),var(--ag),var(--ab),0.2); }
+.recon-tools { display: flex; gap: 6px; justify-content: flex-end; margin-top: 4px; }
+.recon-tools .tool-chip { display: inline-flex; }
+.recon-tools .tool-chip.hidden { display: none; }
+.recon-empty { font-size: var(--sz-micro); color: var(--label-dim); letter-spacing: 1px; text-align: center; padding: 14px 0; }
+
+/* ── v7.1.0: discovery, REACH, LLDP ── */
+.scan-disc-badge {
+  font-size: var(--sz-micro); font-weight: 700; letter-spacing: 1px; padding: 2px 6px;
+  border-radius: var(--radius-sm); border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.35);
+  color: var(--green); background: var(--green-ghost); white-space: nowrap; cursor: default;
+}
+.scan-disc-badge.ll { color: var(--amber); border-color: rgba(255,204,0,0.45); background: rgba(255,204,0,0.06); }
+.scan-result-model { font-size: var(--sz-micro); color: var(--label); letter-spacing: 0.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+.scan-action-reach { border-color: rgba(255,204,0,0.55); color: var(--amber); background: rgba(255,204,0,0.06); }
+.scan-action-reach:hover { border-color: var(--amber); background: rgba(255,204,0,0.14); }
+.scan-result-row.off-subnet .scan-result-ms { color: var(--amber); }
+@keyframes disc-pulse { 0% { box-shadow: 0 0 0 0 rgba(var(--ar),var(--ag),var(--ab),0.55); } 100% { box-shadow: 0 0 0 10px rgba(var(--ar),var(--ag),var(--ab),0); } }
+.scan-result-row.disc-pulse { animation: disc-pulse 1.4s ease-out 2; }
+.scan-opt-row { justify-content: flex-end; }
+.scan-btn-row { display: flex; gap: 6px; }
+.scan-btn-row .scan-start-btn { flex: 2 1 0; min-width: 0; }
+.scan-btn-row .scan-discover-big { flex: 1 1 0; }
+.scan-btn-sub { display: flex; justify-content: space-between; gap: 10px; margin: 3px 2px 6px; font-size: 9px; letter-spacing: 1px; color: var(--label-dim); text-transform: uppercase; }
+.scan-btn-sub span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scan-btn-sub span:last-child { text-align: right; }
+@media (max-width: 560px) { .scan-btn-sub { display: none; } }   /* SCAN is a 640 tab; the hints only fit there */
+.scan-discover-big.busy { opacity: 0.5; pointer-events: none; }
+.reach-chip {
+  display: none; align-items: center; gap: 8px; margin: 0 0 8px;
+  padding: 5px 10px; border-radius: var(--radius); border: 1px solid rgba(255,204,0,0.5);
+  background: rgba(255,204,0,0.07); color: var(--amber); font-size: 10px; letter-spacing: 1px; white-space: nowrap;
+}
+.reach-chip > span { overflow: hidden; text-overflow: ellipsis; }
+.reach-chip.show { display: flex; }
+.reach-chip .reach-ip { font-weight: 700; }
+.reach-chip .reach-rm { margin-left: auto; cursor: pointer; font-family: var(--font-hud); font-size: 9px; font-weight: 900;
+  padding: 2px 7px; border-radius: 3px; border: 1px solid rgba(255,204,0,0.5); color: var(--amber); user-select: none; }
+.reach-chip .reach-rm:hover { background: rgba(255,204,0,0.15); }
+.reach-chip.busy .reach-rm { opacity: 0.5; pointer-events: none; }
+
+
 /* ── v7.0.0: version-chip menu ── */
 .chip-menu {
   position: absolute; top: 30px; left: 10px; z-index: 650; display: none;
@@ -2661,16 +2808,21 @@ html, body {
   display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-hud); font-size: 9px; font-weight: 900; letter-spacing: 1.2px;
   padding: 3px 9px; border-radius: 3px; border: 1px solid var(--border); color: var(--label-dim); white-space: nowrap; flex-shrink: 0;
 }
-.dhcp-mode-badge .mb-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--label-dim); }
+.dhcp-mode-badge .mb-dot { width: 9px; height: 9px; border-radius: 50%; background: #ff4455; border: 2px solid rgba(0,0,0,0.85); box-sizing: content-box; position: relative; }
+/* v7.1.0: the engine dot is a traffic light that ignores the theme — fixed hex,
+   dark ring — so OFFLINE vs LISTENING reads the same on every palette. */
 .dhcp-mode-badge.listen  { color: var(--green); border-color: rgba(var(--ar),var(--ag),var(--ab),0.4); }
-.dhcp-mode-badge.listen  .mb-dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.dhcp-mode-badge.listen  .mb-dot { background: #22dd66; box-shadow: 0 0 6px rgba(34,221,102,0.7); }
 .dhcp-mode-badge.serving { color: var(--amber); border-color: rgba(255,204,0,0.5); background: rgba(255,204,0,0.06); }
-.dhcp-mode-badge.serving .mb-dot { background: var(--amber); box-shadow: 0 0 6px var(--amber); animation: cursor-blink 1s steps(1) infinite; }
+.dhcp-mode-badge.serving .mb-dot { background: #ffcc00; box-shadow: 0 0 6px rgba(255,204,0,0.7); animation: cursor-blink 1s steps(1) infinite; }
 .dhcp-mode-badge.policy  { color: var(--red); border-color: rgba(255,68,85,0.5); cursor: default; }
+.dhcp-mode-badge.policy  .mb-dot::after { content: ''; position: absolute; left: -1px; right: -1px; top: 50%; height: 2px; background: rgba(0,0,0,0.85); transform: rotate(-45deg); }
 .dhcp-mode-badge::after { content: '⏻'; font-family: var(--font-mono); font-size: 10px; opacity: 0.5; margin-left: 2px; }
 .dhcp-mode-badge:hover { border-color: var(--green); background: var(--green-faint); box-shadow: 0 0 8px rgba(var(--ar),var(--ag),var(--ab),0.25); }
 .dhcp-mode-badge:hover::after { opacity: 1; }
-.dhcp-mode-badge.off:hover .mb-dot { background: var(--green); }
+.dhcp-mode-badge.suspended { color: var(--amber); border-color: rgba(255,204,0,0.4); cursor: default; }
+.dhcp-mode-badge.suspended .mb-dot { background: #8a7a30; }
+.tab.suspended .tab-live-dot { background: #8a7a30; box-shadow: none; opacity: 0.9; }
 .dhcp-mode-badge.serving:hover { border-color: var(--amber); background: rgba(255,204,0,0.12); box-shadow: 0 0 8px rgba(255,204,0,0.3); }
 .dhcp-mode-badge:active { transform: scale(0.96); }
 .dhcp-select {
@@ -2807,6 +2959,10 @@ body.dhcp-resizing { cursor: row-resize; user-select: none; }
       <span class="tab-label">DHCP</span>
       <span class="tab-live-dot"></span>
     </div>
+    <div class="tab"        id="tab-recon" onclick="switchTab('recon')">
+      <img class="tab-icon" id="ticon-recon" src="" alt="">
+      <span class="tab-label">RECON</span>
+    </div>
   </div>
 
 
@@ -2840,8 +2996,13 @@ body.dhcp-resizing { cursor: row-resize; user-select: none; }
     <div class="section-label" style="margin-top:6px">IP CONFIGURATION</div>
 
     <div class="field-row">
-      <div class="field-label">ADAPTER
+      <div class="field-label adapter-label">ADAPTER
         <span class="adapter-refresh-btn" id="adapter-refresh-btn" onclick="loadAdapters()" title="Refresh adapter list">⟳</span>
+        <!-- v7.1.0: adapter tools — enable/disable, Wireshark, Wi-Fi -->
+        <div class="adapter-tools" id="adapter-tools">
+          <span class="tool-chip" id="tool-wifi" onclick="wifiChipClick()" title="Wi-Fi adapters on this machine — click to switch them off (or back on)"><span class="pip"></span><span id="tool-wifi-label">WI-FI</span></span>
+          <span class="tool-chip" id="tool-power" onclick="adapterPowerClick()" title="Disable or enable this adapter">DISABLE</span>
+        </div>
       </div>
       <div class="adapter-selector" id="adapter-selector"
            onclick="toggleAdapterDropdown()"
@@ -2885,7 +3046,7 @@ body.dhcp-resizing { cursor: row-resize; user-select: none; }
         </div>
         <div class="field-row" style="margin-bottom:5px">
           <div class="field-label">SUBNET MASK</div>
-          <input class="field-input" id="alias-new-subnet" type="text" placeholder="e.g. 255.255.255.0" value="255.255.255.0">
+          <input class="field-input" id="alias-new-subnet" type="text" placeholder="e.g. 255.255.255.0" value="255.255.255.0" oninput="this.dataset.userEdited='1'">
         </div>
         <div class="action-row" style="margin-top:0;margin-bottom:4px">
           <div class="apply-btn" onclick="aliasAdd()">ADD MULTI-IP</div>
@@ -3018,6 +3179,7 @@ body.dhcp-resizing { cursor: row-resize; user-select: none; }
       <div class="section-label">DEVICES ON THE WIRE<span class="cnt" id="dhcp-dev-count">0</span></div>
       <div class="dhcp-tools">
         <span class="cmd-btn dhcp-mini serve" id="dhcp-serve-sel-btn" onclick="dhcpServeSelected()" style="display:none" title="Answer only the ticked devices">▶ SERVE SELECTED</span>
+        <span class="cmd-btn dhcp-mini" id="dhcp-resv-sel-btn" onclick="dhcpReserveSelected()" style="display:none" title="Pin the ticked devices to consecutive addresses from a start IP — 20 cameras in one go">★ RESERVE SELECTED</span>
         <span class="cmd-btn dhcp-mini disabled" id="dhcp-csv-btn" onclick="dhcpExportCsv()" title="Copy lease table as CSV">⎘ CSV</span>
         <span class="cmd-btn dhcp-mini disabled" id="dhcp-release-btn" onclick="dhcpReleaseAll()" title="Clear every lease and offer">✕ RELEASE ALL</span>
       </div>
@@ -3061,6 +3223,8 @@ body.dhcp-resizing { cursor: row-resize; user-select: none; }
         <div class="mon-interval-btn" data-ms="10000" onclick="monSetInterval(10000)">10S</div>
       </div>
       <div style="flex:1;min-width:0"></div>
+      <!-- v7.1.0: PORT BLINK — strobe the toned host's switch LED for 20 s -->
+      <div class="mon-action-btn mon-btn-blink" id="mon-btn-blink" onclick="monBlink()" style="display:none" title="Floods the toned host with tiny UDP packets for 20 s so its switch-port activity LED strobes — find the port without pulling cables. Same subnet only.">⚡ BLINK</div>
       <div style="display:flex;gap:4px;flex-shrink:0;justify-content:flex-end">
         <div class="mon-action-btn mon-btn-start" id="mon-btn-start" onclick="monHandleStart()">▶ START</div>
         <div class="mon-action-btn mon-btn-pause" id="mon-btn-pause" onclick="monPause()" style="display:none">⏸ PAUSE</div>
@@ -3075,7 +3239,7 @@ body.dhcp-resizing { cursor: row-resize; user-select: none; }
       <div style="text-align:right">AVG</div>
       <div style="text-align:right">LOSS</div>
       <div style="text-align:right">HISTORY</div>
-      <div></div><div></div>
+      <div></div><div></div><div class="mon-header-cap" style="display:none"></div>
     </div>
     <div id="monitor-rows"></div>
 
@@ -3115,13 +3279,19 @@ body.dhcp-resizing { cursor: row-resize; user-select: none; }
       <div class="scan-auto-btn" onclick="scanAutoDetect()" title="Re-detect from adapter">⟳</div>
     </div>
 
-    <div class="scan-start-btn" id="scan-start-btn" onclick="toggleScan()">▶ SCAN SUBNET</div>
+    <!-- v7.1.0: two ways to find things, side by side — sweep the /24, or ask the wire -->
+    <div class="scan-btn-row">
+      <div class="scan-start-btn" id="scan-start-btn" onclick="toggleScan()">▶ SCAN SUBNET</div>
+      <div class="scan-start-btn scan-discover-big" id="scan-discover-btn" onclick="scanDiscoverClick()" title="Multicast discovery only — WS-Discovery/ONVIF, SSDP, mDNS. Finds cameras on other subnets and link-local 169.254 boxes without sweeping. 3 s.">◎ DISCOVER</div>
+    </div>
+    <div class="scan-btn-sub"><span>ping + ARP sweep · ports · names</span><span title="WS-Discovery/ONVIF, SSDP, mDNS — finds devices on other subnets too">multicast · ONVIF SSDP mDNS · 3 s</span></div>
     <div class="scan-opt-row">
       <div class="scan-opt-toggle on" id="online-vendor-toggle" onclick="toggleOnlineVendor()" title="Look up unknown MAC vendors on macvendors.com when the offline table misses">
         <span>ONLINE VENDOR LOOKUP</span><span class="pill" id="online-vendor-pill">ON</span>
       </div>
     </div>
 
+    <div class="reach-chip" id="reach-chip"><span>LINK-LOCAL</span><span class="reach-ip" id="reach-ip"></span><span id="reach-on"></span><span class="reach-rm" onclick="reachRemove()" title="Remove the temporary 169.254 alias now (it's also removed on quit)">REMOVE</span></div>
     <div class="scan-progress-wrap" id="scan-progress-wrap">
       <div class="scan-progress-header">
         <span class="scan-progress-label" id="scan-progress-label">SCANNING...</span>
@@ -3135,6 +3305,7 @@ body.dhcp-resizing { cursor: row-resize; user-select: none; }
     <div class="scan-results-header" id="scan-results-header" style="display:none">
       <span class="scan-found-count" id="scan-found-count">0 FOUND</span>
       <div style="display:flex;gap:6px;align-items:center">
+        <span class="scan-export-btn" id="scan-export-btn" onclick="scanExportClick()" title="Copy the results as CSV or a markdown table">COPY ▾</span>
         <span class="scan-save-site-btn" id="scan-save-site-btn" onclick="saveSite()" title="Save results to site library">SAVE SITE</span>
         <span class="scan-clear-btn" onclick="clearScanResults()">CLEAR</span>
       </div>
@@ -3157,6 +3328,40 @@ body.dhcp-resizing { cursor: row-resize; user-select: none; }
   </div></div><!-- /panel-content /panel-scroll -->
   <div class="panel-footer"><div class="scan-status-bar" id="scan-status">READY</div></div>
   </div><!-- /panel-scan -->
+
+  <!-- ════════════ PANEL: RECON (v7.1.0) — listen before you talk ════════════ -->
+  <div class="panel" id="panel-recon">
+  <div class="panel-scroll"><div class="panel-content">
+
+    <div class="section-label">RECON — LISTEN BEFORE YOU TALK</div>
+    <div class="recon-intro" id="recon-intro">Plug in, say nothing, and let the port tell you what it is: which switch and port, whether it wants 802.1X, which VLAN, who's handing out addresses, who's talking, and a free address you could take. Up to 65 s — LLDP announces every 30, CDP every 60.</div>
+
+    <div class="recon-adapter-row">
+      <span class="recon-k">ON</span><span class="recon-adapter" id="recon-adapter">— select an adapter on the ETHER tab —</span>
+      <div class="scan-opt-toggle on" id="recon-mode" onclick="reconToggleMode()" title="STANDARD leaves the adapter as-is — Windows itself will chatter (DHCP, NetBIOS, LLMNR). SILENT unbinds IPv4/IPv6 for the listen so nothing leaves the port, then restores them. SILENT needs the app elevated.">
+        <span id="recon-mode-label">STANDARD</span><span class="pill" id="recon-mode-pill">NOISY</span>
+      </div>
+    </div>
+
+    <div class="scan-start-btn" id="recon-btn" onclick="reconToggle()">▶ LISTEN</div>
+    <div class="scan-progress-wrap" id="recon-progress-wrap">
+      <div class="scan-progress-header">
+        <span class="scan-progress-label" id="recon-progress-label">LISTENING...</span>
+        <span class="scan-progress-count" id="recon-progress-count">0 s</span>
+      </div>
+      <div class="scan-progress-bar"><div class="scan-progress-fill" id="recon-progress-fill"></div></div>
+    </div>
+
+    <div class="recon-cards" id="recon-cards"></div>
+
+    <div class="recon-tools" id="recon-tools">
+      <span class="tool-chip" id="recon-shark" onclick="wiresharkAdapter()" title="Open a live Wireshark capture on this adapter — the whole wire, no filter">WIRESHARK</span>
+      <span class="tool-chip" id="recon-copy" onclick="reconCopy()" title="Copy the verdicts as text for the ticket">COPY</span>
+    </div>
+
+  </div></div><!-- /panel-content /panel-scroll -->
+  <div class="panel-footer"><div class="scan-status-bar" id="recon-status">READY</div></div>
+  </div><!-- /panel-recon -->
 
     <!-- ════════════ PANEL: SITES (element ids keep the historical 'intel' prefix) ════════════ -->
   <div class="panel" id="panel-intel">
@@ -3260,6 +3465,7 @@ body.dhcp-resizing { cursor: row-resize; user-select: none; }
 <div class="chip-menu" id="chip-menu">
   <div class="chip-menu-item" onclick="chipMenuPick('diag')"><span>DIAGNOSTICS</span><span class="k">log · tools</span></div>
   <div class="chip-menu-item" onclick="chipMenuPick('fit')"><span>FIT WINDOW</span><span class="k">to content</span></div>
+  <div class="chip-menu-item" onclick="chipMenuPick('report')"><span>SITE REPORT</span><span class="k">copy · markdown</span></div>
 </div>
 
 <!-- ── HUD MODAL (v7.0.0) — confirmations, prompts, result lists ── -->
@@ -3452,6 +3658,7 @@ let isDirty = false;
 let cmdVisible = false;
 let previousConfig = null; // snapshot before last successful apply
 let revertInProgress = false; // bypass no-change check during revert
+let quitAliasAcknowledged = false; // v7.1.0: ✕ warned about an alias once; the next ✕ quits
 
 // ── INIT ───────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
@@ -3490,6 +3697,9 @@ window.addEventListener('DOMContentLoaded', async () => {
   renderPaletteSwatches();
   initDiag();
   initOnlineVendorToggle();
+  loadTools();   // v7.1.0: Wireshark / tshark presence → tool chips, capture buttons
+  reachRefreshChip();
+  if (window.hud && hud.onReconUpdate) hud.onReconUpdate(ev => { if (reconBusy) reconRenderLive(ev); });
   // loadAdapters is async — it populates the live bar, gateway field, etc.
   // Wait for it to finish then do one final fit so everything is visible
   // on first paint with no scrolling needed.
@@ -3533,7 +3743,9 @@ setTimeout(() => { adapterDropdownReady = true; }, 1200);
 // Silently re-polls adapter state every 15s when LIVE preset is active
 // so the status pill and LIVE fields stay current without manual refresh
 setInterval(() => {
-  if (activePreset === 0 && window.hud) loadAdapters('silent');
+  // v7.1.0: skip while hidden in the tray — backgroundThrottling is off so timers keep
+  // time for the PING monitor, but there's no point spawning PowerShell for a HUD nobody sees.
+  if (activePreset === 0 && window.hud && !document.hidden) loadAdapters('silent');
 }, 15000);
 
 // Tracks whether we've already seeded ping slot 0 with the live IP this session.
@@ -3554,6 +3766,8 @@ async function loadAdapters(fromApply) {
     if (fromApply === true) setNetStatus('CONFIG APPLIED SUCCESSFULLY', 'ok', 5000);
     updateAdapterStatus();
     updateMultiIpBadge();
+    loadWifi();   // v7.1.0: served from main's Get-NetAdapter cache, no extra spawn
+    if (aliasPeekOpen) loadAliasTab();   // v7.1.0: an open MULTI-IP panel re-reads whenever the adapters do
   } catch {}
   if (!silent) btn.classList.remove('spinning');
   // Restore revert button if we have a previous config — refresh shouldn't clear it
@@ -3856,6 +4070,89 @@ function chipMenuPick(what) {
   closeChipMenu();
   if (what === 'diag') openDiag();
   if (what === 'fit')  { _lastFitH = 0; setAutoFit(true); }
+  if (what === 'report') siteReportCopy();
+}
+
+// ── v7.1.0: SITE-VISIT REPORT — one click, markdown for the ticket ──
+// Everything this session already knows, in the order a report reads:
+// adapter, scans (with site changes), DHCP leases, ping results, privileged ops.
+const sessionStart = Date.now();
+const sessionScans = [];   // { ts, base, found, changes }
+async function siteReportCopy() {
+  const when = new Date();
+  const fmtT = ts => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const L = [];
+  L.push(`# NET//ETHER site visit — ${when.toLocaleDateString()}`);
+  const mins = Math.round((Date.now() - sessionStart) / 60000);
+  L.push(`Session ${fmtT(sessionStart)} → ${fmtT(Date.now())} (${mins < 60 ? mins + ' min' : Math.floor(mins / 60) + ' h ' + (mins % 60) + ' min'})`, '');
+
+  // adapter
+  const a = currentAdapterEntry();
+  L.push('## Adapter');
+  if (a) {
+    const spd = linkSpeedChip(a);
+    L.push(`- ${a.name} — ${a.ip || 'no IP'}${a.subnet ? ' / ' + a.subnet : ''}${a.gateway ? ' gw ' + a.gateway : ''} · ${a.isDhcp ? 'DHCP' : 'STATIC'}${spd ? ' · ' + spd.text : ''}${a.admin === 'Disabled' ? ' · DISABLED' : ''}`);
+  } else L.push('- (none selected)');
+  if (reconLast && reconLast.verdicts) {
+    const sw = reconLast.verdicts.find(v => v.tag === 'SWITCH' && v.kind === 'ok');
+    if (sw) L.push(`- Switch: ${sw.title}`);
+  }
+  L.push('');
+
+  // scans
+  L.push(`## Scans (${sessionScans.length})`);
+  if (!sessionScans.length) L.push('- none this session');
+  sessionScans.forEach(sc => L.push(`- ${fmtT(sc.ts)} ${sc.base}.0/24 — ${sc.found} host${sc.found !== 1 ? 's' : ''}${sc.changes ? ' — ' + sc.changes : ''}`));
+  const rows = typeof scanCollectRows === 'function' ? scanCollectRows() : [];
+  if (rows.length) {
+    L.push('', `Last results (${rows.length}):`, '', '| IP | HOSTNAME | MAC | VENDOR | TYPE | PORTS |', '|---|---|---|---|---|---|');
+    rows.forEach(r => L.push(`| ${r.ip}${r.self ? ' (self)' : ''} | ${r.hostname} | ${r.mac} | ${r.vendor} | ${r.type} | ${r.ports.join(' ')} |`));
+  }
+  L.push('');
+
+  // recon
+  if (reconLast && reconLast.verdicts && reconLast.verdicts.length) {
+    L.push('## Recon');
+    reconLast.verdicts.forEach(v => L.push(`- ${v.tag}: ${v.title}${v.detail ? ' — ' + v.detail : ''}`));
+    L.push('');
+  }
+
+  // dhcp
+  L.push('## DHCP');
+  if (typeof D === 'object' && D.mode && D.mode !== 'off') {
+    const leased = D.devices.filter(d => d.state === 'leased');
+    L.push(`- Engine ${D.mode.toUpperCase()}${leased.length ? `, ${leased.length} lease${leased.length !== 1 ? 's' : ''}` : ', no leases'}`);
+    leased.sort((x, y) => dhcpIpNum(x.ip) - dhcpIpNum(y.ip)).forEach(d => L.push(`- ${d.ip} ${d.mac.toUpperCase()} ${d.hostname || ''} ${d.vendor || ''}${d.reserved ? ' ★' : ''}`.replace(/\s+/g, ' ').trim()));
+  } else L.push('- engine off');
+  L.push('');
+
+  // ping
+  const hosts = monActiveHosts();
+  L.push('## Ping');
+  if (!hosts.length) L.push('- none');
+  hosts.forEach(h => {
+    const d = monHostData[h]; if (!d || !d.sent) { L.push(`- ${h} — 0 sent`); return; }
+    const oks = d.history.filter(x => x.ok);
+    const avg = oks.length ? Math.round(oks.reduce((s, x) => s + x.ms, 0) / oks.length) : null;
+    const loss = Math.round(((d.sent - d.successful) / d.sent) * 100);
+    const last = d.history[d.history.length - 1];
+    L.push(`- ${h} — ${d.sent} sent, ${loss}% loss${avg !== null ? ', avg ' + avg + ' ms' : ''}, last ${last ? (last.ok ? last.ms + ' ms' : (last.err === 'REFUSED' ? 'CLOSED' : 'FAIL')) : '—'}`);
+  });
+  L.push('');
+
+  // privileged ops this session (from the diagnostics log)
+  L.push('## Operations');
+  let ops = [];
+  try {
+    const dg = window.hud && hud.diagGet ? await hud.diagGet() : null;
+    ops = (dg && dg.log ? dg.log : []).filter(e => e.ts >= sessionStart && (e.kind === 'op' || e.kind === 'verify' || e.kind === 'error'));
+  } catch {}
+  if (!ops.length) L.push('- none');
+  ops.sort((x, y) => x.ts - y.ts).forEach(e => L.push(`- ${fmtT(e.ts)} ${e.kind.toUpperCase()} ${e.tag}${e.ok === false ? ' FAIL' : e.ok === true ? ' OK' : ''}${e.note ? ' — ' + String(e.note).split('\n')[0] : ''}`));
+
+  const text = L.join('\n');
+  hudCopy(text).then(() => setNetStatus(`SITE REPORT COPIED — ${text.split('\n').length} LINES OF MARKDOWN`, 'ok', 5000))
+               .catch(() => setNetStatus('COPY FAILED', 'err', 3000));
 }
 document.addEventListener('click', e => {
   const m = document.getElementById('chip-menu');
@@ -3871,9 +4168,11 @@ function switchTab(tab) {
   if (tab === 'tools') monRenderHostEditor();
   if (tab === 'intel') intelOnTabOpen();
   if (tab === 'dhcp')  dhcpOnTabOpen();
-  // DHCP is the wide tab: the window grows to DHCP_WIDTH while it's open and
-  // goes back to whatever width you had when you leave.
-  if (window.hud && hud.setWidth) hud.setWidth({ wide: tab === 'dhcp', width: DHCP_WIDTH }).catch(() => {});
+  if (tab === 'recon') reconOnTabOpen();
+  // v7.1.0: wide tabs — DHCP at 820, SCAN and SITES at 640 (one line per host, MAC beside
+  // the IP). The window goes back to whatever width you had when you leave them.
+  const wideW = WIDE_TABS[tab] || 0;
+  if (window.hud && hud.setWidth) hud.setWidth({ wide: !!wideW, width: wideW || DHCP_WIDTH }).catch(() => {});
   document.body.classList.toggle('wide-tab', tab === 'dhcp');
   // A manual size lasts until the next tab switch — the new tab fits itself.
   _userResized = false;
@@ -3881,6 +4180,7 @@ function switchTab(tab) {
   autoResize();
 }
 const DHCP_WIDTH = 820;
+const WIDE_TABS = { dhcp: 820, scan: 640, intel: 640 };
 
 // ── PRESET BAR ─────────────────────────────────────────────
 function updateSavePresetBtn() {
@@ -4000,6 +4300,139 @@ function updateLiveBar() {
   adapterEl.textContent = a.name;
 }
 
+// ── v7.1.0: LINK SPEED + ADAPTER TOOLS ─────────────────────
+function linkSpeedChip(a) {
+  const bps = a.linkBps || 0;
+  if (!bps) return null;
+  let text;
+  if (bps >= 1e9)      text = (bps / 1e9).toFixed(bps % 1e9 ? 1 : 0) + ' GBPS';
+  else if (bps >= 1e6) text = Math.round(bps / 1e6) + ' MBPS';
+  else                 text = Math.round(bps / 1e3) + ' KBPS';
+  const cls = bps >= 1e9 ? 'speed-ok' : bps >= 100e6 ? 'speed-warn' : 'speed-bad';
+  const title = bps >= 1e9
+    ? 'Negotiated link speed'
+    : `Negotiated link speed: ${text}. On a gigabit port this usually means a bad crimp, cable or switch port — or a 100 Mb device on the far end.`;
+  return { text, cls, title };
+}
+
+let toolsInfo = null;          // { wireshark, tshark, tsharkVersion, tsharkOk } from main
+let wifiList  = [];            // [{ name, status, adminUp }]
+async function loadTools() {
+  if (!window.hud || !hud.getTools) return;
+  try { toolsInfo = await hud.getTools(); } catch { toolsInfo = null; }
+  renderAdapterTools(currentAdapterEntry());
+  document.querySelectorAll('#scan-results .scan-result-row').forEach(row => {
+    const ipEl = row.querySelector('.scan-result-ip'); if (ipEl) scanAddCaptureBtn(row, ipEl.textContent.trim());
+  });
+  if (typeof monBuildRows === 'function' && monActiveHosts().length) monBuildRows();
+}
+async function loadWifi() {
+  if (!window.hud || !hud.getWifi) return;
+  try { wifiList = await hud.getWifi() || []; } catch { wifiList = []; }
+  renderAdapterTools(currentAdapterEntry());
+}
+function currentAdapterEntry() {
+  const v = document.getElementById('adapter').value.trim().toLowerCase();
+  return adapterList.find(x => x.name.toLowerCase() === v) || null;
+}
+function renderAdapterTools(a) {
+  const power = document.getElementById('tool-power');
+  const wifi  = document.getElementById('tool-wifi');
+  if (!power || !wifi) return;
+  // enable / disable the selected adapter
+  if (a) {
+    const disabled = a.admin === 'Disabled';
+    power.textContent = disabled ? 'ENABLE' : 'DISABLE';
+    power.title = disabled ? `Enable ${a.name}` : `Disable ${a.name} — it comes back with ENABLE`;
+    power.classList.toggle('warn', disabled);
+    power.classList.add('show');
+  } else power.classList.remove('show');
+  reconToolsState();
+  // Wi-Fi chip: shown when the machine has a wireless adapter at all
+  if (wifiList.length) {
+    const anyUp = wifiList.some(w => w.adminUp);
+    wifi.classList.add('show');
+    wifi.classList.toggle('off', !anyUp);
+    document.getElementById('tool-wifi-label').textContent = anyUp ? 'WI-FI' : 'WI-FI OFF';
+    wifi.title = anyUp
+      ? `${wifiList.map(w => w.name).join(', ')} — click to switch Wi-Fi off so the scan and DHCP stay on the wire`
+      : `${wifiList.map(w => w.name).join(', ')} is disabled — click to switch Wi-Fi back on`;
+  } else wifi.classList.remove('show');
+}
+
+async function setAdapterEnabled(name, enabled, chip) {
+  if (!window.hud || !hud.adapterSetEnabled) return false;
+  if (chip) chip.classList.add('busy');
+  setNetStatus(`${enabled ? 'ENABLING' : 'DISABLING'} ${name.toUpperCase()}...`, '');
+  let r;
+  try { r = await hud.adapterSetEnabled(name, enabled); } catch (err) { r = { ok: false, err: err.message }; }
+  if (chip) chip.classList.remove('busy');
+  if (r.ok) {
+    setNetStatus(`✓ ${name.toUpperCase()} ${enabled ? 'ENABLED' : 'DISABLED'}${r.verified ? '' : ' — NOT YET CONFIRMED, REFRESH IN A MOMENT'}`, r.verified ? 'ok' : 'warn', 5000);
+    return true;
+  }
+  const msg = r.err === 'CANCELLED'    ? 'CANCELLED — UAC PROMPT DISMISSED'
+            : r.err === 'DHCP_SERVING' ? 'THE DHCP SERVER IS SERVING ON THAT ADAPTER — STOP SERVING FIRST'
+            : r.err === 'UNKNOWN_ADAPTER' ? 'ADAPTER NOT FOUND — REFRESH THE LIST'
+            : 'ERROR: ' + (r.err || 'unknown');
+  setNetStatus(msg, r.err === 'CANCELLED' ? 'warn' : 'err', 6000);
+  return false;
+}
+
+async function adapterPowerClick() {
+  const a = currentAdapterEntry();
+  if (!a) return;
+  const disabled = a.admin === 'Disabled';
+  if (!disabled) {
+    const live = a.connected && a.ip;
+    const go = await hudModal({
+      title: 'DISABLE ' + a.name.toUpperCase() + '?', tone: 'warn',
+      bodyHtml: (live ? `<span class="hl">${escHtml(a.name)}</span> is the adapter you're working on right now (${escHtml(a.ip)}). ` : '') +
+                `The link drops immediately; the IP configuration is kept and comes back when you ENABLE it again. ` +
+                `Any PING or SCAN running over it will fail until then.`,
+      buttons: [{ label: 'DISABLE', style: 'danger', value: true }, { label: 'CANCEL', style: 'cancel', value: null }],
+    });
+    if (!go) return;
+  }
+  const ok = await setAdapterEnabled(a.name, disabled, document.getElementById('tool-power'));
+  if (ok) setTimeout(() => loadAdapters('silent'), 1200);
+}
+
+async function wifiChipClick() {
+  if (!wifiList.length) return;
+  const anyUp = wifiList.some(w => w.adminUp);
+  const names = wifiList.map(w => w.name);
+  if (anyUp) {
+    const go = await hudModal({
+      title: 'SWITCH WI-FI OFF?', tone: 'warn',
+      bodyHtml: `Disables <span class="hl">${escHtml(names.join(', '))}</span> so everything — SCAN, DHCP, PING — goes out the wire. ` +
+                `The chip stays amber until you switch it back on. Wi-Fi stays off after a reboot too, so don't leave the site without it.`,
+      buttons: [{ label: 'WI-FI OFF', style: 'danger', value: true }, { label: 'CANCEL', style: 'cancel', value: null }],
+    });
+    if (!go) return;
+  }
+  const chip = document.getElementById('tool-wifi');
+  for (const w of wifiList) {
+    if (anyUp && !w.adminUp) continue;      // already off
+    await setAdapterEnabled(w.name, !anyUp, chip);
+  }
+  setTimeout(loadWifi, 1200);
+}
+
+function wiresharkAdapter() {
+  const a = currentAdapterEntry();
+  if (!a) { setReconStatus('SELECT AN ADAPTER ON THE ETHER TAB FIRST', 'warn', 3000); return; }
+  wiresharkOpen({ adapter: a.name }, setReconStatus);
+}
+async function wiresharkOpen(opts, status = setNetStatus) {
+  if (!window.hud || !hud.wiresharkOpen) return;
+  let r;
+  try { r = await hud.wiresharkOpen(opts); } catch (err) { r = { ok: false, err: err.message }; }
+  if (r.ok) status(`WIRESHARK OPENED ON ${String(r.adapter).toUpperCase()}${opts.host ? ' — HOST ' + opts.host : ''}`, 'ok', 4000);
+  else status(r.err === 'NOT_FOUND' ? 'WIRESHARK NOT FOUND ON THIS MACHINE' : 'WIRESHARK: ' + (r.err || 'failed'), 'err', 5000);
+  return r;
+}
+
 function updateAdapterStatus() {
   const adapterVal = document.getElementById('adapter').value.trim().toLowerCase();
   const selector   = document.getElementById('adapter-selector');
@@ -4015,6 +4448,8 @@ function updateAdapterStatus() {
     dot.className   = 'adapter-status-dot unknown';
     state.textContent = '—';
     state.className = 'adapter-status-state';
+    state.title = '';
+    renderAdapterTools(null);
     selector.className = 'adapter-selector' + (adapterDropdownOpen ? ' open' : '');
     if (dhcpBadge) dhcpBadge.style.display = 'none';
     updateAdapterDhcpAction(null);
@@ -4026,8 +4461,14 @@ function updateAdapterStatus() {
   const connected = a.connected && a.ip;
   dot.className = 'adapter-status-dot ' + (connected ? 'connected' : (a.admin === 'Disabled' ? 'disconnected' : 'unknown'));
 
-  state.textContent = (a.admin === 'Disabled' ? 'DISABLED' : a.state || '').toUpperCase();
-  state.className   = 'adapter-status-state' + (connected ? ' connected' : '');
+  // v7.1.0: a connected adapter shows its negotiated link speed instead of CONNECTED.
+  // A gigabit port talking at 100 is the first thing an experienced tech checks.
+  const spd = connected ? linkSpeedChip(a) : null;
+  // v7.1.0: DISCONNECTED means no link. Link with nothing bound reads NO ADDRESS — a different problem.
+  state.textContent = spd ? spd.text : a.noAddress ? 'NO ADDRESS' : (a.admin === 'Disabled' ? 'DISABLED' : a.state || '').toUpperCase();
+  state.className   = 'adapter-status-state' + (connected ? ' connected' : '') + (spd ? ' ' + spd.cls : '') + (a.noAddress ? ' speed-warn' : '');
+  state.title       = spd ? spd.title : a.noAddress ? 'Link is up but Windows has no IPv4 address on it — RENEW asks DHCP again, or APPLY a static' : '';
+  renderAdapterTools(a);
 
   // Selector container state
   let selCls = 'adapter-selector';
@@ -4058,10 +4499,18 @@ function autoFillAliasSubnet(ipVal) {
   const second = parseInt(parts[1], 10);
   if (isNaN(first)) return;
   const subnetEl = document.getElementById('alias-new-subnet');
-  if (!subnetEl || subnetEl.value.trim() !== '255.255.255.0') return; // only replace the default
-  if (first === 10)                                      subnetEl.value = '255.0.0.0';
-  else if (first === 172 && second >= 16 && second <= 31) subnetEl.value = '255.255.0.0';
-  else                                                   subnetEl.value = '255.255.255.0';
+  if (!subnetEl) return;
+  // v7.1.0: /24 is what the field actually looks like — the classful /8 for 10.x was never right.
+  // Exception: an alias inside the primary's own network inherits the primary's mask.
+  const a = currentAdapterEntry();
+  const toNum = ip => ip.split('.').reduce((n, o) => ((n << 8) + (+o)) >>> 0, 0);
+  let mask = '255.255.255.0';
+  if (a && a.ip && a.subnet && /^\d{1,3}(\.\d{1,3}){3}$/.test(ipVal)) {
+    const m = toNum(a.subnet);
+    if (((toNum(ipVal) & m) >>> 0) === ((toNum(a.ip) & m) >>> 0)) mask = a.subnet;
+  }
+  if (first === 169 && second === 254) mask = '255.255.0.0';
+  if (!subnetEl.dataset.userEdited) subnetEl.value = mask;
 }
 function autoFillSubnet(ipVal) {
   const parts = ipVal.split('.');
@@ -4074,10 +4523,8 @@ function autoFillSubnet(ipVal) {
   const gatewayEl = document.getElementById('gateway');
 
   if (!subnetEl.value.trim()) {
-    if (first === 10)                                        subnetEl.value = '255.0.0.0';
-    else if (first === 172 && second >= 16 && second <= 31) subnetEl.value = '255.255.0.0';
-    else if (first >= 128 && first < 192)                   subnetEl.value = '255.255.0.0';
-    else                                                     subnetEl.value = '255.255.255.0';
+    // v7.1.0: /24 unless it's link-local — classful defaults don't match any real site
+    subnetEl.value = (first === 169 && second === 254) ? '255.255.0.0' : '255.255.255.0';
   }
 
   if (!gatewayEl.value.trim()) {
@@ -4149,8 +4596,8 @@ document.addEventListener('keydown', e => {
 // One screen per tab. Opens on whichever tab is active; the strip at the top
 // switches between them. FULL MANUAL → opens the bundled PDF.
 // ══════════════════════════════════════════════════════════════
-const HELP_TABS = ['net', 'tools', 'scan', 'intel', 'dhcp', 'cidr'];
-const HELP_LABEL = { net: 'ETHER', dhcp: 'DHCP', tools: 'PING', scan: 'SCAN', intel: 'SITES', cidr: 'CIDR' };
+const HELP_TABS = ['net', 'tools', 'scan', 'intel', 'dhcp', 'recon', 'cidr'];
+const HELP_LABEL = { net: 'ETHER', dhcp: 'DHCP', tools: 'PING', scan: 'SCAN', intel: 'SITES', recon: 'RECON', cidr: 'CIDR' };
 const HELP_CONTENT = {
   net: {
     lead: 'Adapter IP configuration. Everything you change here goes through netsh on the selected adapter.',
@@ -4163,6 +4610,10 @@ const HELP_CONTENT = {
       ['MTU',        'Moved to DIAGNOSTICS (version chip → DIAGNOSTICS → TOOLS). Resets MTU to 1500 — fixes "can ping, can\'t load pages."'],
       ['CIDR',       'The CIDR tab in this guide. Click a row to put that mask in the subnet field.'],
       ['MULTI-IP',   'Adds a second IP without touching the primary. On a DHCP adapter it converts to static first (you\'ll be asked twice). Remove aliases before you leave — they survive reboots.'],
+      ['LINK SPEED', 'A connected adapter shows its negotiated speed where CONNECTED used to be. Green 1 Gbps, amber 100 Mbps, red 10. A gigabit port stuck at 100 is a bad crimp, cable or port.'],
+      ['DISABLE / ENABLE', 'In the ADAPTER line. Drops the link, keeps the IP config, comes back with ENABLE. Blocked while the DHCP server is serving on that adapter.'],
+      ['WI-FI',      'Switches every wireless adapter off so SCAN, DHCP and PING go out the wire. The chip stays amber until you turn it back on — and it stays off through a reboot.'],
+      ['SITE REPORT', 'Version chip → SITE REPORT. One click copies a markdown summary of this session: adapter, scans and site changes, DHCP leases, ping results, every privileged operation. Paste into the ticket.'],
     ],
     gotcha: 'Modern Axis cameras have no factory IP — they fall back to 169.254.x.x. Use the AXIS tile to join that /16, then find the camera\'s address in its label or the Axis tool.',
   },
@@ -4176,6 +4627,8 @@ const HELP_CONTENT = {
       ['SCAN WIRE',  'Active check for other DHCP servers (~6 s). No serving, no changes.'],
       ['SELF-TEST',  'Adapter, port 67, firewall rule, other servers — in plain language.'],
       ['★ PIN',      'Reserve a fixed address for a MAC. ✕ takes an address back. Leases are in memory only.'],
+      ['★ RESERVE SELECTED', 'Tick devices, give a start address, and they get consecutive reservations in list order. Server, gateway and existing reservations are skipped.'],
+      ['SERVE FROM ALIAS', 'An adapter with a MULTI-IP alias asks which address to serve from. Pick the alias to hand out leases on the camera subnet while the laptop keeps its own.'],
       ['AUTO-STOP',  'Serving drops back to LISTEN after N idle minutes (ADVANCED, default 30). ENGINE OFF releases UDP 67 entirely.'],
     ],
     gotcha: 'Every SERVE and firewall change is written to DIAGNOSTICS. IT can switch this tab off with the DisableDhcpServer policy value.',
@@ -4183,24 +4636,30 @@ const HELP_CONTENT = {
   tools: {
     lead: 'Continuous reachability monitor for up to 8 hosts.',
     rows: [
-      ['METHOD',     'TCP port 80, not ICMP — works through switches and appliances that drop ping.'],
+      ['METHOD',     'ICMP first; if ping is blocked, a TCP connect to port 80 counts as alive. Add :port (e.g. 192.168.0.50:554) to watch that one service instead — CLOSED means the host answered but the port is shut.'],
       ['+ GATEWAY',  'Adds the adapter\'s gateway. + MY IP adds your own address as a sanity check.'],
       ['DOT COLOUR', 'Green under 150 ms · amber 150 ms and up · red no response. Sparkline is the last 60 samples.'],
       ['TRCRT',      'Traceroute to that host, hops stream live.'],
-      ['♪ TONER',    'Hear one host. Sonar ping on every reply, submarine alarm when it stops answering, a sweep on each change. Pull cables at the switch and listen — no need to see the screen.'],
+      ['♪ TONER',    'Hear one host. Sonar ping on every reply, submarine alarm when it stops answering, a sweep on each change. The sonar pitch sags as latency climbs, so a struggling link is audible before it fails. Pull cables at the switch and listen — no need to see the screen.'],
+      ['⚡ BLINK',    'With a host toned: 20 s of tiny UDP packets so that port\'s activity LED strobes on the switch. Find the port without pulling anything. Same subnet only.'],
       ['COPY',       'Full summary to clipboard for the service report.'],
+      ['◉ CAPTURE',  'Live Wireshark capture filtered to that host. Only shown when Wireshark is installed.'],
       ['PAUSE / STOP','PAUSE freezes the display and keeps data. STOP clears everything.'],
     ],
-    gotcha: 'The tray icon flashes red while any host is failing, even with the HUD hidden.',
+    gotcha: 'The tray icon flashes red while any host is failing, even with the HUD hidden — and the toned host pops a toast when it flips state while the HUD is in the tray.',
   },
   scan: {
-    lead: 'Sweeps a /24 with ICMP and ARP, then probes 10 common ports on every responder.',
+    lead: 'Sweeps a /24 with ICMP and ARP, then probes 14 ports on every responder — web, RTSP, RDP, SSH, plus Hikvision, Dahua, Bosch and Genetec service ports.',
     rows: [
       ['BASE / RANGE','Auto-filled from the adapter. Narrow the range (e.g. 1-60) to finish faster.'],
       ['SITE PICKER', 'Load a saved site\'s subnet. Scanning a known subnet compares results against that site\'s device list.'],
       ['VENDOR',      'From the bundled offline OUI table; online lookup only if that misses.'],
       ['OPEN / RDP / SSH','Launches the device web UI, an RDP session, or copies the SSH command.'],
       ['SAVE SITE',   'Stores the results as a site for next time.'],
+      ['◎ DISCOVER',  'Multicast discovery (WS-Discovery/ONVIF, SSDP, mDNS) — runs with every sweep and on its own. Finds boxes the sweep can\'t: cameras on 169.254.x.x out of the box, devices on the wrong subnet. Off-subnet rows show the source (ONVIF, SSDP, mDNS) where the ms would be.'],
+      ['REACH',       'On a 169.254 row: adds a temporary 169.254 alias to the adapter (DHCP adapters convert to static first) and opens the box. An amber chip shows the alias; REMOVE drops it, and quitting drops it too.'],
+      ['COPY ▾',      'The whole result list as CSV (for Excel) or a markdown table (for the ticket).'],
+      ['CAPTURE',     'Live Wireshark capture filtered to that host. Only shown when Wireshark is installed.'],
       ['CHANGES CHIP','After scanning a known subnet, an amber chip lists NEW / MISSING / MOVED. VIEW → jumps to the site.'],
     ],
     gotcha: 'ARP only sees hosts on your own subnet. If you\'re on the wrong subnet you\'ll get ping hits but no MACs.',
@@ -4210,12 +4669,28 @@ const HELP_CONTENT = {
     rows: [
       ['SITE CARD',  'Name, tag, last scan, device count, and change badges since the previous scan.'],
       ['DRAWER',     'Click a device for MAC, hostname, first/last seen, open ports, notes, and credentials.'],
+      ['WAKE',       'Wake-on-LAN. Sends a magic packet to the device\'s MAC on every connected subnet. Give it 30 s, then scan.'],
       ['TYPE CHIP',  'Click to cycle CAMERA · NVR/DVR · NETWORK · SERVER · WORKSTATION · ACCESS CTL · PRINTER · OTHER.'],
       ['SCAN NOW',   'Loads this site\'s subnet into SCAN. Results come back as a change chip — nothing switches tabs on you.'],
       ['EXCEL',      'Formatted workbook of every site and device.'],
       ['JSON / IMPORT','Portable export for another machine. IMPORT backs up your current data first, then MERGE (by MAC) or REPLACE.'],
     ],
     gotcha: 'Credentials are encrypted on disk with Windows DPAPI — readable only by your account on this machine. JSON export leaves them out unless you choose WITH CREDS, which writes plaintext.',
+  },
+  recon: {
+    lead: 'Plug in and listen. In about a minute the port tells you what it is — without you sending a single packet. Needs Wireshark 4.6+ (tshark + npcap).',
+    rows: [
+      ['LISTEN',     'Up to 65 s of passive capture on the ETHER adapter. Verdicts appear as evidence arrives; LLDP comes at ~30 s, CDP at ~60. Click again to stop early.'],
+      ['STANDARD / SILENT', 'STANDARD leaves the adapter alone — Windows itself still chatters (DHCP, NetBIOS, LLMNR). SILENT unbinds IPv4/IPv6 for the listen so nothing leaves the port, then restores them. If the app died mid-listen, the next elevated launch restores them too.'],
+      ['SWITCH',     'Switch name, port and VLAN from LLDP/CDP. "No announcement" means it\'s off on that port or it isn\'t a managed switch — that\'s an answer, not an error.'],
+      ['802.1X',     'EAPOL from the switch means the port wants authentication. A camera without a cert gets MAB or the guest VLAN, if anything.'],
+      ['STP / TRUNK', 'Spanning-tree BPDUs mean don\'t hang an unmanaged switch off this port. Tagged frames or per-VLAN BPDUs for several VLANs mean it\'s a trunk — an untagged device lands on the native VLAN.'],
+      ['DHCP',       'Which server answered, with the gateway, mask and DNS it handed out. "Clients asking, nobody answering" is the dead-server signature.'],
+      ['HOSTS',      'How many addresses were heard and on which subnet(s). More than one subnet on an access port is worth a question.'],
+      ['ADDRESS',    'A free-looking address on the busiest subnet, with the mask and gateway heard. TAKE puts it in the ETHER form — APPLY still runs the duplicate check.'],
+      ['WIRESHARK',  'The whole wire, live, in the Wireshark the fleet already has.'],
+    ],
+    gotcha: 'Windows NIC drivers often strip 802.1Q tags before the capture sees them, so a trunk is spotted from per-VLAN BPDUs and CDP/LLDP as much as from tags. BPDU guard can\'t be detected passively — "STP running" is the actionable version.',
   },
 };
 let _helpOpen = false;
@@ -4380,6 +4855,8 @@ function diagStateRows(s) {
     ['exe',       s.exe, ''],
     ['userData',  s.userData, ''],
     ['oui table', s.ouiEntries ? `${s.ouiEntries.toLocaleString()} entries` : 'not loaded', s.ouiEntries ? '' : 'warn'],
+    ['wireshark', s.tools ? (s.tools.wireshark ? `${s.tools.wireshark}${s.tools.tshark ? ' · tshark ' + (s.tools.tsharkVersion || '?') + (s.tools.tsharkOk ? '' : ' (4.6+ needed)') : ' · tshark missing'}` : 'not found') : '—',
+                  s.tools && s.tools.wireshark && s.tools.tsharkOk ? '' : 'warn'],
     ['credentials', diagCredLabel(s.creds).text, diagCredLabel(s.creds).cls],
     ['policy',    [s.policy && s.policy.onlineVendorDisabled ? 'DisableOnlineVendorLookup=1' : null, s.policy && s.policy.dhcpServerDisabled ? 'DisableDhcpServer=1' : null].filter(Boolean).join(' · ') || 'none set', ''],
     ['dhcp engine', s.dhcp ? (s.dhcp.mode === 'off' ? 'off (UDP 67 not bound)' : `${s.dhcp.mode}${s.dhcp.serveCfg ? ' · ' + s.dhcp.serveCfg.rangeStart + '–' + s.dhcp.serveCfg.rangeEnd : ''} · ${s.dhcp.leases} lease${s.dhcp.leases !== 1 ? 's' : ''}`) : 'not loaded', s.dhcp && s.dhcp.mode !== 'off' && s.dhcp.mode !== 'listen' ? 'warn' : ''],
@@ -4752,6 +5229,7 @@ async function applyConfig() {
       const result = await hud.applyConfig({
         adapter: f.adapter || '',
         ip: f.ip, subnet: f.subnet, gateway: f.gateway, dns: f.dns,
+        tag: revertInProgress ? 'revert' : undefined,
       });
       if (result.ok) {
         unlockApplyBtn();
@@ -4993,7 +5471,8 @@ async function revertConfig() {
     document.getElementById('adapter').value = adapter;
     previousConfig = null;
     setNetStatus('REVERTING TO DHCP...', 'ok');
-    await applyDhcp();
+    revertInProgress = true;
+    try { await applyDhcp(); } finally { revertInProgress = false; }
     return;
   }
 
@@ -5086,6 +5565,7 @@ function clearIpApplied() {
 }
 function setNetStatus(msg, type, ms)   { setStatus('net-status',   'status-bar',      msg, type, ms); }
 function setScanStatus(msg, type, ms)  { setStatus('scan-status',  'scan-status-bar',  msg, type, ms); }
+function setReconStatus(msg, type, ms) { setStatus('recon-status', 'scan-status-bar',  msg, type, ms); }
 
 // ══════════════════════════════════════════════════════════════
 // SAFEGUARD SYSTEM
@@ -5160,6 +5640,21 @@ async function safeHide() {
 async function safeQuit() {
   saveLivePreset();
   if (!window.hud) return;
+
+  // v7.1.0: ✕ runs the same alias check as ─ — a MULTI-IP left on a customer adapter is the
+  // thing most worth stopping a quit for, and it used to be checked only on hide
+  try {
+    const r = await hud.checkActiveAliases();
+    if (r.ok && r.warnings.length && !quitAliasAcknowledged) {
+      const lines = r.warnings.map(w => `${w.adapter} has ${w.count} active Multi-IPs — remove before leaving this network`).join('\n');
+      showSafeguardBanner(lines + '\nPress ✕ again to quit anyway.', 'err', '⚠ MULTI-IPs STILL ACTIVE');
+      switchTab('net');
+      autoResize();
+      quitAliasAcknowledged = true;
+      setTimeout(() => { quitAliasAcknowledged = false; }, 15000);   // a second ✕ within 15 s goes through
+      return;
+    }
+  } catch {}
 
   // Check for launch-state deltas before quitting
   try {
@@ -5311,7 +5806,7 @@ function monRenderHostEditor() {
     row.className = 'host-edit-row';
     row.innerHTML = `
       <input class="host-input" type="text" value="${escHtml(h)}"
-        placeholder="IP or hostname"
+        placeholder="IP, hostname or IP:port"
         ${locked ? 'disabled' : ''}
         oninput="monHosts[${i}]=this.value.trim()">
       <div class="host-remove-btn" onclick="monRemoveHost(${i})"
@@ -5376,17 +5871,44 @@ function monToneToggle(host) {
     if (monState !== 'running') monSetStatus('♪ TONER ARMED ON ' + host.toUpperCase() + ' — START THE MONITOR', 'warn');
   }
   monActiveHosts().forEach((h, i) => monPaintRow(h, undefined, i));
+  const bb = document.getElementById('mon-btn-blink'); if (bb) bb.style.display = monToneHost ? '' : 'none';
+}
+// v7.1.0: PORT BLINK — 20 s of tiny UDP packets to the toned host, ~25/s, so the
+// switch's activity LED for that port strobes visibly. Pure traffic, nothing elevated.
+let monBlinkUntil = 0;
+async function monBlink() {
+  if (!monToneHost || !window.hud || !hud.portBlink) return;
+  let host = String(monToneHost).replace(/:\d{1,5}$/, '');
+  const dres = monHostData[monToneHost] && monHostData[monToneHost].resolved;
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(host) && dres) host = dres;   // v7.1.0: hostname target → its resolved IP
+  const bb = document.getElementById('mon-btn-blink');
+  if (Date.now() < monBlinkUntil) { hud.portBlink({ host, seconds: 0 }); monBlinkUntil = 0; if (bb) bb.textContent = '⚡ BLINK'; return; }
+  monBlinkUntil = Date.now() + 20000;
+  if (bb) bb.textContent = '⚡ BLINKING';
+  const tick = setInterval(() => { if (Date.now() >= monBlinkUntil) { clearInterval(tick); if (bb) bb.textContent = '⚡ BLINK'; } }, 500);
+  let r;
+  try { r = await hud.portBlink({ host, seconds: 20 }); } catch (err) { r = { ok: false, err: err.message }; }
+  if (!r.ok) { monBlinkUntil = 0; if (bb) bb.textContent = '⚡ BLINK'; monSetStatus(r.err === 'OFF_SUBNET' ? 'BLINK NEEDS A HOST ON YOUR OWN SUBNET' : r.err === 'SELF' ? 'THAT\'S THIS MACHINE — BLINK SOMETHING ON THE OTHER END OF A CABLE' : r.err === 'INVALID_HOST' ? 'BLINK NEEDS AN IP — THIS HOSTNAME HASN\'T RESOLVED YET' : 'BLINK FAILED: ' + (r.err || 'unknown'), 'err', 4000); }
+}
+// v7.1.0: one click from "this host is acting weird" to a filtered live capture
+function monCapture(host) {
+  const bare = String(host).replace(/:\d{1,5}$/, '');
+  const adapter = document.getElementById('adapter').value.trim();
+  wiresharkOpen({ adapter, host: bare }, (m, t, ms) => monSetStatus(m, t === 'ok' ? 'ok' : 'err', ms || 4000));
 }
 function monToneSilence() {
   if (monAlarmTimer) { clearInterval(monAlarmTimer); monAlarmTimer = null; }
   monToneState = null;
 }
-function monToneResult(ok) {
+function monToneResult(ok, ms = 0) {
   const ctx = monToneCtxGet(); if (!ctx) return;
   if (ok) {
     if (monToneState === 'fail') { monToneSilence(); monSweep(ctx, 380, 1100, 0.35); }   // back online: sweep up
     monToneState = 'ok';
-    monSonar(ctx, 0.35);
+    // v7.1.0: pitch follows latency — a clean LAN host pings high, a struggling one sags.
+    // 1250 Hz at ≤5 ms, down to ~650 Hz at 300 ms+, so a flaky link is audible before it fails.
+    const sag = Math.min(1, Math.max(0, (ms - 5) / 300));
+    monSonar(ctx, 0.35, 1250 - 600 * sag);
   } else {
     if (monToneState !== 'fail') {                                                        // dropped: sweep down, then alarm loop
       monSweep(ctx, 1100, 300, 0.4);
@@ -5399,13 +5921,13 @@ function monToneResult(ok) {
   }
 }
 // Sonar: clean sine, quick decay, a faint echo — the "ping" everyone knows.
-function monSonar(ctx, vol) {
+function monSonar(ctx, vol, hz = 1250) {
   const t = ctx.currentTime;
   const play = (t0, gainPeak) => {
     const o = ctx.createOscillator(), g = ctx.createGain();
     o.type = 'sine';
-    o.frequency.setValueAtTime(1250, t0);
-    o.frequency.exponentialRampToValueAtTime(900, t0 + 0.28);
+    o.frequency.setValueAtTime(hz, t0);
+    o.frequency.exponentialRampToValueAtTime(hz * 0.72, t0 + 0.28);
     g.gain.setValueAtTime(0.0001, t0);
     g.gain.exponentialRampToValueAtTime(gainPeak, t0 + 0.012);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.32);
@@ -5452,13 +5974,19 @@ function monBuildRows() {
   rows.innerHTML = '';
   const hdr = document.getElementById('mon-header');
   const active = monActiveHosts();
-  if (hdr) hdr.style.display = active.length ? '' : 'none';
+  const hasCap = !!(toolsInfo && toolsInfo.wireshark);   // v7.1.0: capture column only when Wireshark exists
+  if (hdr) {
+    hdr.style.display = active.length ? '' : 'none';
+    hdr.classList.toggle('has-cap', hasCap);
+    const capHdr = hdr.querySelector('.mon-header-cap');
+    if (capHdr) capHdr.style.display = hasCap ? '' : 'none';
+  }
   active.forEach((host, idx) => {
     if (!monHostData[host]) monHostData[host] = { history: [], sent: 0, successful: 0 };
     const wrap = document.createElement('div');
     wrap.className = 'mon-row-wrap';
     const div = document.createElement('div');
-    div.className = 'monitor-row';
+    div.className = 'monitor-row' + (hasCap ? ' has-cap' : '');
     div.id = 'mr-' + safeid(host);
     const panel = document.createElement('div');
     panel.className = 'tracert-panel';
@@ -5485,6 +6013,7 @@ function monPaintRow(host, dotState, idx) {
   let lastStr = '—', lastCls = 'dim';
   if (last) {
     if (last.ok) { lastStr = last.ms + 'ms'; lastCls = last.ms < 50 ? 'ok' : last.ms < 150 ? 'warn' : 'fail'; }
+    else if (last.err === 'REFUSED') { lastStr = 'CLOSED'; lastCls = 'closed'; }   // v7.1.0: host is up, that port isn't
     else { lastStr = 'FAIL'; lastCls = 'fail'; }
   }
   const avgStr = avg !== null ? avg + 'ms' : '—';
@@ -5497,12 +6026,13 @@ function monPaintRow(host, dotState, idx) {
       <div class="host-name-main" title="${escHtml(host)}">${escHtml(host)}</div>
       ${resolved}
     </div>
-    <div class="metric ${lastCls}">${lastStr}</div>
+    <div class="metric ${lastCls}" title="${last && !last.ok ? escHtml(last.why || last.err || 'no reply') : ''}">${lastStr}</div>
     <div class="metric ${avgCls}">${avgStr}</div>
     <div class="loss-cell"><span class="loss-val ${lossCls}">${lossStr}</span></div>
     <div class="spark-cell">${monSparkline(d.history)}</div>
     <div class="trcrt-btn" onclick="tracertToggle('${escHtml(host)}')" title="Traceroute">TRCRT</div>
-    <div class="tone-btn${monToneHost === host ? ' on' + (last && !last.ok ? ' alarm' : '') : ''}" onclick="monToneToggle('${escHtml(host)}')" title="Toner: hear this host — sonar while it answers, alarm when it doesn't. Pull cables at the switch and listen.">♪</div>`;
+    <div class="tone-btn${monToneHost === host ? ' on' + (last && !last.ok ? ' alarm' : '') : ''}" onclick="monToneToggle('${escHtml(host)}')" title="Toner: hear this host — sonar while it answers, alarm when it doesn't. Pull cables at the switch and listen.">♪</div>
+    ${el.classList.contains('has-cap') ? `<div class="cap-btn" onclick="monCapture('${escHtml(host)}')" title="Open a live Wireshark capture filtered to this host">◉</div>` : ''}`;
 
   // Restore tracert button state if a tracert is active for this host
   if (tracertActiveHost === host) {
@@ -5556,17 +6086,28 @@ async function monRunCycle() {
     if (!monHostData[host]) monHostData[host] = { history: [], sent: 0, successful: 0 };
     const d = monHostData[host];
     d.sent++;
+    const prev = d.history[d.history.length - 1];
     if (r.ok) {
       d.successful++;
       d.history.push({ ok: true, ms: r.ms || 0 });
       // Capture resolved IP if host is a hostname and response includes it
       if (r.resolvedIp && r.resolvedIp !== host && !d.resolved) d.resolved = r.resolvedIp;
     }
-    else { d.history.push({ ok: false, ms: 0 }); anyFail = true; }
+    else { d.history.push({ ok: false, ms: 0, err: r.err || null, why: r.why || null }); anyFail = true; }
     if (d.history.length > MON_HISTORY_LEN) d.history.shift();
     monPaintRow(host, undefined, i);
     monFlashRow(host, r.ok);
-    if (monToneHost === host) monToneResult(r.ok);
+    if (monToneHost === host) {
+      monToneResult(r.ok, r.ms || 0);
+      // v7.1.0: the toned host flipped — toast if the HUD is in the tray (main checks visibility)
+      if (prev && prev.ok !== r.ok && window.hud && hud.notifyHidden) {
+        hud.notifyHidden({
+          title: r.ok ? 'NET//ETHER — back online' : 'NET//ETHER — host down',
+          body:  r.ok ? `${host} is answering again` : `${host} stopped answering${r.err === 'REFUSED' ? ' (port closed)' : ''}`,
+          warn:  !r.ok,
+        });
+      }
+    }
   });
   monUpdateStatus(anyFail);
   monUpdateCounter();
@@ -5719,19 +6260,33 @@ function monSetInterval(ms) {
 }
 
 function monUpdateStatus(anyFail) {
+  if (Date.now() < monStatusHoldUntil) return;   // v7.1.0: a held message (BLINK / capture warning) outlives the cycle
   const targets = monActiveHosts();
-  const totalSent = targets.reduce((a, h) => a + (monHostData[h]?.sent || 0), 0);
-  const totalOk   = targets.reduce((a, h) => a + (monHostData[h]?.successful || 0), 0);
-  const loss = totalSent > 0 ? Math.round(((totalSent - totalOk) / totalSent) * 100) : 0;
-  if (anyFail) monSetStatus(`ALERT — ${loss}% PACKET LOSS`, 'warn');
-  else monSetStatus('ALL TARGETS ONLINE', 'ok');
+  // v7.1.0: CLOSED is a service answer, not packet loss — count it separately from DOWN
+  let down = 0, closed = 0, sentDown = 0, okDown = 0;
+  targets.forEach(h => {
+    const d = monHostData[h]; if (!d || !d.sent) return;
+    const last = d.history[d.history.length - 1];
+    if (last && !last.ok && last.err === 'REFUSED') { closed++; return; }
+    sentDown += d.sent; okDown += d.successful;
+    if (last && !last.ok) down++;
+  });
+  const loss = sentDown > 0 ? Math.round(((sentDown - okDown) / sentDown) * 100) : 0;
+  if (down || closed) {
+    const parts = [];
+    if (down)   parts.push(`${down} DOWN · ${loss}% LOSS`);
+    if (closed) parts.push(`${closed} CLOSED`);
+    monSetStatus(`ALERT — ${parts.join(' · ')}`, 'warn');
+  } else monSetStatus('ALL TARGETS ONLINE', 'ok');
 }
 
-function monSetStatus(msg, type) {
+let monStatusHoldUntil = 0;
+function monSetStatus(msg, type, holdMs) {
   const el = document.getElementById('mon-status-bar');
   if (!el) return;
   el.textContent = msg;
   el.className = 'status-bar' + (type ? ' ' + type : '');
+  monStatusHoldUntil = holdMs ? Date.now() + holdMs : 0;
 }
 
 function monStartTicker() {
@@ -5834,6 +6389,7 @@ let _adapterDhcpArmed = null;
 function adapterDhcpClick() {
   const btn = document.getElementById('adapter-dhcp-action');
   if (!btn) return;
+  if (btn.dataset.mode === 'renew') { adapterRenew(); return; }
   if (_adapterDhcpArmed) {
     clearTimeout(_adapterDhcpArmed); _adapterDhcpArmed = null;
     btn.classList.remove('armed'); btn.textContent = '→ DHCP';
@@ -5847,7 +6403,19 @@ function adapterDhcpClick() {
 function updateAdapterDhcpAction(a) {
   const btn = document.getElementById('adapter-dhcp-action');
   if (!btn) return;
-  btn.classList.toggle('show', !!(a && a.isDhcp === false));
+  // v7.1.0: static → "→ DHCP"; DHCP but no address → "RENEW". Both regardless of link.
+  const renew = !!(a && a.isDhcp === true && a.noAddress);
+  btn.dataset.mode = renew ? 'renew' : 'dhcp';
+  if (!_adapterDhcpArmed) btn.textContent = renew ? 'RENEW' : '→ DHCP';
+  btn.title = renew ? 'Ask the DHCP server for a lease again (ipconfig /renew)' : 'Hand this adapter back to DHCP (click twice)';
+  btn.classList.toggle('show', !!(a && (a.isDhcp === false || renew)));
+}
+async function adapterRenew() {
+  const a = currentAdapterEntry(); if (!a || !window.hud || !hud.adapterRenew) return;
+  setNetStatus(`ASKING DHCP FOR A LEASE ON ${a.name.toUpperCase()}...`, '');
+  let r; try { r = await hud.adapterRenew(a.name); } catch (err) { r = { ok: false, err: err.message }; }
+  if (r.ok) { setNetStatus('RENEW SENT — WAITING FOR THE LEASE...', 'ok', 5000); setTimeout(() => loadAdapters('silent'), 2500); setTimeout(() => loadAdapters('silent'), 6000); }
+  else setNetStatus('RENEW FAILED: ' + (r.err || 'unknown').toUpperCase(), 'err', 6000);
 }
 
 async function applyDhcp() {
@@ -5862,7 +6430,7 @@ async function applyDhcp() {
   }
   setNetStatus('SWITCHING TO DHCP...', '');
   try {
-    const result = await hud.applyDhcp(adapter);
+    const result = await hud.applyDhcp(adapter, revertInProgress ? 'revert' : undefined);
     if (result.ok) {
       setNetStatus(`✓ ${adapter.toUpperCase()} IS BACK ON DHCP — REFRESHING...`, 'ok');
       clearIpApplied();
@@ -6201,6 +6769,7 @@ function startScan() {
 
   scanRunning = true;
   scanFound   = 0;
+  scanPortMap = {};
   scanChangesDismiss(); // a fresh scan supersedes any earlier change chip
   portProbeQueue = [];
   activeSiteDB = {};
@@ -6242,6 +6811,7 @@ function startScan() {
 
   hud.offScan();
   if (hud.offPortProbe) hud.offPortProbe();
+  scanProbeListening = true;   // the sweep's listener (registered below) serves standalone probes too
   hud.onScanResult(onScanResult);
   hud.onScanDone(onScanDone);
   hud.onScanEnrich(({ host, mac, vendor }) => enrichScanResult(host, mac, vendor));
@@ -6252,6 +6822,7 @@ function startScan() {
   }
 
   hud.scanStart({ baseIp: base, scanStart, scanEnd });
+  scanDiscover(base);   // v7.1.0: multicast discovery runs alongside the sweep (3 s)
 }
 
 function stopScan() {
@@ -6259,6 +6830,7 @@ function stopScan() {
     hud.scanStop();
     hud.offScan();
     if (hud.offPortProbe) hud.offPortProbe();
+    scanProbeListening = false;
   }
   portProbeQueue = [];
   finishScan(true);
@@ -6312,12 +6884,13 @@ function onScanDone({ aborted }) {
         const vendor   = vendorEl ? vendorEl.textContent.trim() : '';
         const mac      = macEl    ? macEl.textContent.trim()    : '';
         const hostname = hostEl   ? hostEl.textContent.trim()   : '';
-        const ports  = [];
-        row.querySelectorAll('.port-badge[title]').forEach(b => {
-          const m = b.title.match(/Port (\d+)/);
-          if (m) ports.push({ port: parseInt(m[1]), open: true });
-        });
-        return ip ? { ip, vendor, mac, hostname, ports } : null;
+        // v7.1.0: from scanPortMap — badges miss every port that became an action button
+        const ports  = ip && scanPortMap[ip] ? scanPortMap[ip].slice() : [];
+        if (row.classList.contains('self')) return null;   // v7.1.0: the laptop is not a site device
+        // a type the device announced (mDNS/SSDP/ONVIF) travels with the result
+        const tc = (row.className.match(/\btype-(\S+)/) || [])[1];
+        const type = row.dataset.typeSrc === 'disc' && tc ? (SITE_TYPES.find(t => intelTypeClass(t) === tc) || '') : '';
+        return ip ? { ip, vendor, mac, hostname, ports, type } : null;
       }).filter(Boolean);
       if (results.length) intelProcessScanResults(base, results);
     }, 2500);
@@ -6365,8 +6938,13 @@ function setScanRowHostname(ip, name, source) {
     if (macEl) macEl.insertAdjacentElement('afterend', el); else meta.prepend(el);
   }
   el.textContent = name;
-  el.title = source === 'nbt' ? `NetBIOS name: ${name}` : source === 'self' ? 'This machine' : `DNS name: ${name}`;
+  el.title = source === 'nbt' ? `NetBIOS name: ${name}` : source === 'self' ? 'This machine' : source === 'disc' ? `Discovered name: ${name}` : `DNS name: ${name}`;
   el.classList.toggle('nbt', source === 'nbt');
+  // v7.1.0: a NetBIOS name means a Windows box — a ports-only CAMERA guess (554 open) was WMP sharing
+  if (source === 'nbt' && row.dataset.typeSrc === 'ports' && /\btype-camera\b/.test(row.className)) {
+    row.className = row.className.replace(/\btype-\S+/g, '').trim();
+    const tc = intelTypeClass('WORKSTATION'); if (tc) row.classList.add('type-' + tc);
+  }
   autoResize();
 }
 
@@ -6374,6 +6952,8 @@ function markScanRowSelf(ip) {
   const row = document.getElementById('sr-' + ip.replace(/\./g, '_'));
   if (!row || row.querySelector('.scan-result-self')) return;
   row.classList.add('self');
+  // v7.1.0: a type guessed from ports alone doesn't apply to this machine (554 is WMP sharing, not a camera)
+  if (row.dataset.typeSrc === 'ports') { row.className = row.className.replace(/\btype-\S+/g, '').trim(); delete row.dataset.typeSrc; }
   const badge = document.createElement('span');
   badge.className = 'scan-result-self';
   badge.textContent = 'SELF';
@@ -6384,6 +6964,7 @@ function markScanRowSelf(ip) {
 
 function finishScan(aborted) {
   scanRunning = false;
+  sessionScans.push({ ts: Date.now(), base: document.getElementById('scan-base').value.trim(), found: scanFound, changes: '' });   // v7.1.0: site report
 
   const btn = document.getElementById('scan-start-btn');
   btn.textContent = '▶ SCAN SUBNET';
@@ -6492,13 +7073,17 @@ function appendScanResult(ip, ms, fromArp, mac, vendor) {
   row.innerHTML = `
     <div class="scan-result-dot"></div>
     <div class="scan-result-ip">${escHtml(ip)}</div>
+    ${hasMeta ? `<span class="scan-result-mac-top" title="${escHtml(macDisplay)}">${escHtml(macDisplay)}</span>` : ''}
     <div class="scan-result-ms">${msStr}</div>
-    <span class="scan-copy-btn" onclick="scanCopy('${escHtml(ip)}', this)" title="Copy IP">IP</span>
-    ${hasMeta ? `<span class="scan-copy-btn" onclick="scanCopy('${escHtml(macDisplay)}', this)" title="Copy MAC">MAC</span>` : ''}
-    <span class="scan-copy-btn" onclick="scanPingHost('${escHtml(ip)}')" title="Add to the PING monitor and start it">PING</span>
+    <div class="scan-row-actions">
+      <span class="scan-copy-btn" onclick="scanCopy('${escHtml(ip)}', this)" title="Copy IP">IP</span>
+      ${hasMeta ? `<span class="scan-copy-btn" data-mac="1" onclick="scanCopy('${escHtml(macDisplay)}', this)" title="Copy MAC">MAC</span>` : ''}
+      <span class="scan-copy-btn" onclick="scanPingHost('${escHtml(ip)}')" title="Add to the PING monitor and start it">PING</span>
+    </div>
     ${metaBlock}`;
 
   if (hasMeta && !vendor) queueOnlineVendorLookup(mac, ip);
+  scanAddCaptureBtn(row, ip);   // v7.1.0: every host gets CAPTURE, open ports or not
   // v7.0.0: rows stay sorted by IP as they arrive, whichever order the sweep finds them
   const ipNum = a => a.split('.').reduce((n, o) => (n << 8) + (+o), 0) >>> 0;
   const mine = ipNum(ip);
@@ -6546,6 +7131,12 @@ function enrichScanResult(ip, mac, vendor) {
   // Replace or append meta
   if (existingMetaEl) existingMetaEl.replaceWith(metaEl);
   else row.appendChild(metaEl);
+  // v7.1.0: wide rows show the MAC next to the IP
+  if (!row.querySelector('.scan-result-mac-top')) {
+    const top = document.createElement('span'); top.className = 'scan-result-mac-top'; top.textContent = macDisplay; top.title = macDisplay;
+    const ipEl = row.querySelector('.scan-result-ip'); const selfB = row.querySelector('.scan-result-self');
+    (selfB || ipEl)?.insertAdjacentElement('afterend', top);
+  }
 
   // Add MAC copy button if not already there
   if (!row.querySelector('.scan-copy-btn[data-mac]')) {
@@ -6555,9 +7146,9 @@ function enrichScanResult(ip, mac, vendor) {
     macBtn.title = 'Copy MAC';
     macBtn.textContent = 'MAC';
     macBtn.onclick = function() { scanCopy(macDisplay, this); };
-    // Insert after the IP copy button
-    const ipBtn = row.querySelector('.scan-copy-btn');
-    if (ipBtn && ipBtn.nextSibling) ipBtn.parentNode.insertBefore(macBtn, ipBtn.nextSibling);
+    // Insert after the IP copy button, inside the action group
+    const ipBtn = row.querySelector('.scan-row-actions .scan-copy-btn') || row.querySelector('.scan-copy-btn');
+    if (ipBtn && ipBtn.parentNode) ipBtn.parentNode.insertBefore(macBtn, ipBtn.nextSibling);
     else row.appendChild(macBtn);
   }
 
@@ -7062,13 +7653,23 @@ const PORT_SERVICES = {
     hudCopy(url).then(() => setScanStatus(`FTP URL COPIED: ${url}`, 'ok', 4000))
                 .catch(() => setScanStatus('COPY FAILED', 'err', 2000));
   }},
+  // v7.1.0: vendor ports — badges only, they sharpen the type guess
+  8000:  { label: 'HIK 8000',  badge: 'service' },
+  37777: { label: 'DAHUA',     badge: 'rtsp'    },
+  1756:  { label: 'BOSCH RCP', badge: 'rtsp'    },
+  5500:  { label: 'GENETEC',   badge: 'service' },
 };
+
+// v7.1.0: open ports per scanned IP, kept out of the DOM so SITES and the
+// COPY export see every port — including the ones shown as action buttons.
+let scanPortMap = {};
 
 function updateScanRowPorts(host, ports) {
   const portEl = document.getElementById('ports-' + host.replace(/\./g, '_'));
   if (!portEl) return;
 
   const open = ports.filter(p => p.open);
+  scanPortMap[host] = open.map(p => ({ port: p.port, open: true }));
 
   // No open ports — just clear the probing indicator, show nothing
   if (!open.length) {
@@ -7112,8 +7713,9 @@ function updateScanRowPorts(host, ports) {
   if (!row.className.match(/\btype-\S+/)) {
     const vendorEl = row.querySelector('.scan-result-vendor');
     const vendor = vendorEl ? vendorEl.textContent : '';
-    const tc = intelTypeClass(intelGuessType(vendor, ports));
-    if (tc) row.classList.add('type-' + tc);
+    const hostEl = row.querySelector('.scan-result-host');
+    const tc = intelTypeClass(intelGuessType(vendor, ports, { self: row.classList.contains('self'), nbt: !!(hostEl && hostEl.classList.contains('nbt')) }));
+    if (tc) { row.classList.add('type-' + tc); if (!vendor) row.dataset.typeSrc = 'ports'; }
   }
   row.querySelectorAll('.smart-action').forEach(b => b.remove());
   const metaEl = row.querySelector('.scan-result-meta');
@@ -7173,9 +7775,377 @@ function clearScanResults() {
   document.getElementById('scan-empty').textContent = 'ENTER BASE IP AND START SCAN';
   document.getElementById('scan-empty').style.display = '';
   scanFound = 0;
+  scanPortMap = {};
+  scanDiscMap = {};
   portProbeQueue = [];
   setScanStatus('READY', '');
   autoResize();
+}
+
+// ── v7.1.0: CAPTURE on every row ───────────────────────────
+function scanAddCaptureBtn(row, ip) {
+  if (!(toolsInfo && toolsInfo.wireshark) || row.querySelector('.scan-action-cap')) return;
+  const cap = document.createElement('span');
+  cap.className = 'scan-copy-btn scan-action-cap';
+  cap.textContent = 'WSHARK';
+  cap.title = 'Open a live Wireshark capture filtered to this host';
+  cap.onclick = () => wiresharkOpen({ adapter: document.getElementById('adapter').value.trim(), host: ip }, setScanStatus);
+  const group = row.querySelector('.scan-row-actions');
+  if (group) group.appendChild(cap); else row.appendChild(cap);
+}
+
+// ── v7.1.0: DISCOVERY — WS-Discovery/ONVIF, SSDP, mDNS ─────
+// Runs alongside every sweep and on its own from the ◎ DISCOVER button. Its
+// real value is the hosts the sweep can't see: a camera on 169.254.x.x out
+// of the box, a box on the wrong VLAN. Those get an off-subnet row with the
+// discovery source where the ms would be, and a REACH button for link-local.
+let scanDiscMap = {};
+let scanDiscBusy = false;
+let scanProbeListening = false;   // true while a port-probe listener we attached outside a sweep is live
+const DISC_LABEL = { onvif: 'ONVIF', wsd: 'WSD', ssdp: 'SSDP', mdns: 'mDNS' };
+
+async function scanDiscover(baseIp) {
+  if (!window.hud || !hud.discoverRun || scanDiscBusy) return;
+  const adapter = document.getElementById('adapter').value.trim();
+  if (!adapter) { if (!scanRunning) setScanStatus('SELECT AN ADAPTER ON THE ETHER TAB FIRST', 'warn', 3000); return; }
+  scanDiscBusy = true;
+  const btn = document.getElementById('scan-discover-btn');
+  if (btn) { btn.classList.add('busy'); btn.textContent = '◎ LISTENING…'; }
+  let r;
+  try { r = await hud.discoverRun({ adapter, baseIp: baseIp || '' }); } catch (err) { r = { ok: false, err: err.message, results: [] }; }
+  scanDiscBusy = false;
+  if (btn) { btn.classList.remove('busy'); btn.textContent = '◎ DISCOVER'; }
+  if (!r.ok) {
+    if (r.err === 'NO_IP') setScanStatus('DISCOVERY NEEDS AN IP ON THE ADAPTER', 'warn', 4000);
+    else if (!scanRunning) setScanStatus('DISCOVERY FAILED: ' + (r.err || 'unknown'), 'err', 4000);
+    return;
+  }
+  document.getElementById('scan-results-header').style.display = 'flex';
+  const empty = document.getElementById('scan-empty'); if (empty && r.results.length) empty.style.display = 'none';
+  let off = 0;
+  r.results.forEach(d => { scanDiscMap[d.ip] = d; applyDiscovery(d); if (d.offSubnet) off++; });
+  if (!scanRunning) {
+    // v7.1.0: show *which* rows answered — a pulse on each, and the list when it's short
+    r.results.forEach(d => { const row = document.getElementById('sr-' + d.ip.replace(/\./g, '_')); if (row) { row.classList.remove('disc-pulse'); void row.offsetWidth; row.classList.add('disc-pulse'); } });
+    const short = r.results.length <= 6 ? ' — ' + r.results.map(d => d.ip.replace(/^(\d+\.\d+\.\d+)\./, '.')).join(', ') : '';
+    setScanStatus(r.results.length
+      ? `${r.results.length} ANSWERED DISCOVERY${off ? ` · ${off} OFF-SUBNET` : ''}${short}`
+      : 'NOTHING ANSWERED DISCOVERY', r.results.length ? 'ok' : 'warn', 6000);
+  }
+  updateScanFoundCount();
+  autoResize();
+}
+function scanDiscoverClick() { scanDiscover(document.getElementById('scan-base').value.trim()); }
+
+function applyDiscovery(d) {
+  const safeId = d.ip.replace(/\./g, '_');
+  let row = document.getElementById('sr-' + safeId);
+  if (!row) {
+    appendScanResult(d.ip, 0, false, d.mac || '', d.vendor || '');
+    row = document.getElementById('sr-' + safeId);
+    if (!row) return;
+    scanFound++;
+    if (d.offSubnet) {
+      // off-subnet: no port probe possible without a route — clear the "..." and label the source
+      row.classList.add('off-subnet');
+      const portsEl = row.querySelector('.scan-ports-row'); if (portsEl) portsEl.innerHTML = '';
+      scanPortMap[d.ip] = [];
+    } else if (scanRunning) {
+      portProbeQueue.push(d.ip);          // the sweep's finish will probe it with the rest
+    } else if (window.hud && hud.portProbeStart) {
+      // standalone DISCOVER: the probe listener only exists during a sweep — (re)attach it
+      if (!scanProbeListening && hud.onPortProbeResult) {
+        if (hud.offPortProbe) hud.offPortProbe();
+        hud.onPortProbeResult(({ host, ports }) => updateScanRowPorts(host, ports));
+        scanProbeListening = true;
+      }
+      hud.portProbeStart(d.ip, []);
+    }
+  } else if (d.mac && !row.querySelector('.scan-result-mac')) {
+    enrichScanResult(d.ip, d.mac, d.vendor || '');
+  }
+  const msEl = row.querySelector('.scan-result-ms');
+  // the source goes where the ms would be when nothing pinged this row (off-subnet, or DISCOVER alone)
+  if (msEl && (d.offSubnet || /^[—-]$/.test(msEl.textContent.trim()))) {
+    const lab = d.sources.filter(x => !(x === 'wsd' && d.sources.includes('onvif')))[0];
+    msEl.textContent = DISC_LABEL[lab] || 'DISC';
+    msEl.title = d.offSubnet ? 'Found by multicast discovery — not on the scanned subnet' : 'Found by multicast discovery';
+  }
+  let meta = row.querySelector('.scan-result-meta');
+  if (!meta) { meta = document.createElement('div'); meta.className = 'scan-result-meta'; row.appendChild(meta); }
+  // source badge (one, with everything in the tooltip)
+  if (!meta.querySelector('.scan-disc-badge')) {
+    const b = document.createElement('span');
+    b.className = 'scan-disc-badge' + (d.linkLocal ? ' ll' : '');
+    b.textContent = d.sources.filter(x => !(x === 'wsd' && d.sources.includes('onvif'))).map(x => DISC_LABEL[x] || x).join('+');
+    const lines = [];
+    if (d.name)     lines.push('Name: ' + d.name);
+    if (d.model)    lines.push('Model: ' + d.model);
+    if (d.location) lines.push('Location: ' + d.location);
+    if (d.ssdpServer) lines.push('SSDP: ' + d.ssdpServer);
+    if (d.services && d.services.length) lines.push('Services: ' + d.services.join(', '));
+    if (d.xaddrs && d.xaddrs.length) lines.push('URLs: ' + d.xaddrs.join('  '));
+    if (d.altIps && d.altIps.length) lines.push('Also at: ' + d.altIps.join(', '));
+    if (d.linkLocal) lines.push('Link-local address — REACH adds a 169.254 alias so you can open it');
+    b.title = lines.join('\n') || 'Answered multicast discovery';
+    const vendorEl = meta.querySelector('.scan-result-vendor');
+    if (vendorEl) vendorEl.insertAdjacentElement('afterend', b); else meta.prepend(b);
+  }
+  // name/model into the hostname slot if nothing's there, model as a dim chip
+  const nm = d.name || d.hostname;
+  if (nm && !row.querySelector('.scan-result-host')) setScanRowHostname(d.ip, nm, 'disc');
+  const nameShown = (row.querySelector('.scan-result-host') || {}).textContent || '';
+  if (d.model && d.model.trim().toLowerCase() !== nameShown.trim().toLowerCase() && !meta.querySelector('.scan-result-model')) {
+    const m = document.createElement('span'); m.className = 'scan-result-model'; m.textContent = d.model; m.title = d.model;
+    const b = meta.querySelector('.scan-disc-badge'); if (b) b.insertAdjacentElement('afterend', m); else meta.prepend(m);
+  }
+  // type from discovery. What a device *announces* beats what its MAC vendor usually makes:
+  // a TV module from a camera-module maker is still a TV. Media/printer announcements override.
+  {
+    const svc = (d.services || []).join(' ');
+    const nameAll = `${d.name || ''} ${d.model || ''} ${d.ssdpServer || ''}`;
+    let t = '';
+    if (/_googlecast|_airplay|_raop|_spotify-connect|_roku|_sonos|_dial\./i.test(svc) || /\b(tv|roku|chromecast|fire tv|apple tv|sonos|shield|receiver)\b/i.test(nameAll)) t = 'MEDIA';
+    else if (/_printer|_ipp\.|_pdl-datastream/i.test(svc)) t = 'PRINTER';
+    else if (!row.className.match(/\btype-\S+/)) {
+      if (d.onvif || /_rtsp\._tcp|_axis-video/i.test(svc)) t = 'CAMERA';
+      else if (/_workstation|_smb\./i.test(svc)) t = 'WORKSTATION';
+    }
+    const tc = intelTypeClass(t);
+    if (tc) { row.className = row.className.replace(/\btype-\S+/g, '').trim(); row.classList.add('type-' + tc); row.dataset.typeSrc = 'disc'; }
+  }
+  // REACH for link-local, OPEN via the discovered URL when we can route there
+  if (d.linkLocal && !row.querySelector('.scan-action-reach')) {
+    const rb = document.createElement('div');
+    rb.className = 'scan-result-action scan-action-reach';
+    rb.textContent = 'REACH';
+    rb.title = `Add a temporary 169.254 alias to ${document.getElementById('adapter').value.trim() || 'the adapter'} and open http://${d.ip}`;
+    rb.onclick = () => reachLinkLocal(d.ip);
+    meta.appendChild(rb);
+  }
+  scanAddCaptureBtn(row, d.ip);
+}
+function updateScanFoundCount() {
+  const n = document.querySelectorAll('#scan-results .scan-result-row').length;
+  const el = document.getElementById('scan-found-count');
+  if (el) el.textContent = `${n} HOST${n !== 1 ? 'S' : ''} FOUND`;
+}
+
+// ── v7.1.0: REACH — temporary link-local alias ─────────────
+async function reachLinkLocal(ip) {
+  const adapter = document.getElementById('adapter').value.trim();
+  const a = currentAdapterEntry();
+  if (!adapter || !a) { setScanStatus('SELECT AN ADAPTER ON THE ETHER TAB FIRST', 'warn', 3000); return; }
+  if (!window.hud || !hud.reachAdd) return;
+  const go = await hudModal({
+    title: 'REACH ' + ip + '?', tone: 'warn',
+    bodyHtml: `Adds a temporary <span class="hl">169.254.x.x</span> alias to <span class="hl">${escHtml(adapter)}</span> so this box is routable, then opens <span class="hl">http://${escHtml(ip)}</span>.` +
+              (a.isDhcp ? ` <br><br>The adapter is on <span class="hl">DHCP</span> — adding an alias converts it to static first (current lease frozen). Use → DHCP on the ETHER tab when you're done.` : '') +
+              ` <br><br>The alias is removed when you quit, or with REMOVE on the chip that appears.`,
+    buttons: [{ label: 'REACH', style: 'ok', value: true }, { label: 'CANCEL', style: 'cancel', value: null }],
+  });
+  if (!go) return;
+  setScanStatus('ADDING LINK-LOCAL ALIAS...', '');
+  let r;
+  try { r = await hud.reachAdd({ adapter, target: ip }); } catch (err) { r = { ok: false, err: err.message }; }
+  if (!r.ok) {
+    setScanStatus(r.err === 'CANCELLED' ? 'CANCELLED — UAC PROMPT DISMISSED' : 'REACH FAILED: ' + (r.err || 'unknown'), 'err', 6000);
+    return;
+  }
+  setScanStatus(`${r.reused ? 'USING' : 'ADDED'} ${r.alias} — OPENING ${ip}`, 'ok', 5000);
+  reachRefreshChip();
+  if (!r.reused) setTimeout(() => loadAdapters('silent'), 1000);
+  hud.openExternal(`http://${ip}`);
+}
+async function reachRefreshChip() {
+  if (!window.hud || !hud.reachList) return;
+  let list = [];
+  try { list = await hud.reachList() || []; } catch {}
+  const chip = document.getElementById('reach-chip');
+  if (!chip) return;
+  if (!list.length) { chip.classList.remove('show'); return; }
+  document.getElementById('reach-ip').textContent = list.map(t => t.ip).join(', ');
+  document.getElementById('reach-on').textContent = 'on ' + [...new Set(list.map(t => t.adapter))].join(', ');
+  chip.classList.add('show');
+  autoResize();
+}
+async function reachRemove() {
+  if (!window.hud || !hud.reachClear) return;
+  const chip = document.getElementById('reach-chip');
+  chip.classList.add('busy');
+  let r;
+  try { r = await hud.reachClear(); } catch (err) { r = { ok: false, err: err.message }; }
+  chip.classList.remove('busy');
+  setScanStatus(r.ok ? 'LINK-LOCAL ALIAS REMOVED' : `REMOVED ${r.removed || 0}/${r.total || '?'} — SEE DIAGNOSTICS`, r.ok ? 'ok' : 'warn', 4000);
+  reachRefreshChip();
+  setTimeout(() => loadAdapters('silent'), 1000);
+}
+
+// ══════════════════════════════════════════════════════════════
+// RECON TAB (v7.1.0) — listen before you talk
+// ══════════════════════════════════════════════════════════════
+let reconBusy = false, reconSilent = false, reconTimer = null, reconLast = null, reconT0 = 0;
+const RECON_DUR = 65;
+function reconToolsState() {
+  const ok = !!(toolsInfo && toolsInfo.tshark && toolsInfo.tsharkOk);
+  const a = currentAdapterEntry();
+  const adEl = document.getElementById('recon-adapter');
+  if (adEl) { adEl.textContent = a ? `${a.name}${a.ip ? ' · ' + a.ip : ''}` : '— select an adapter on the ETHER tab —'; adEl.classList.toggle('none', !a); }
+  const btn = document.getElementById('recon-btn');
+  if (btn && !reconBusy) {
+    btn.classList.toggle('disabled', !ok || !a || a.admin === 'Disabled');
+    btn.title = !toolsInfo || !toolsInfo.tshark ? 'Needs Wireshark (tshark + npcap) installed'
+              : !toolsInfo.tsharkOk ? `tshark ${toolsInfo.tsharkVersion || '?'} found — Wireshark 4.6 or newer needed`
+              : !a ? 'Select an adapter on the ETHER tab' : '';
+  }
+  const sh = document.getElementById('recon-shark'); if (sh) sh.classList.toggle('hidden', !(toolsInfo && toolsInfo.wireshark));
+  const cp = document.getElementById('recon-copy'); if (cp) cp.classList.toggle('hidden', !reconLast);
+  return ok && !!a && a.admin !== 'Disabled';
+}
+function reconOnTabOpen() {
+  reconToolsState();
+  if (!reconLast && !reconBusy) {
+    const c = document.getElementById('recon-cards');
+    if (c && !c.children.length) c.innerHTML = '<div class="recon-empty">// NOTHING HEARD YET — PLUG IN AND LISTEN</div>';
+  }
+}
+function reconToggleMode() {
+  if (reconBusy) return;
+  reconSilent = !reconSilent;
+  const el = document.getElementById('recon-mode'), lab = document.getElementById('recon-mode-label'), pill = document.getElementById('recon-mode-pill');
+  if (lab) lab.textContent = reconSilent ? 'SILENT' : 'STANDARD';
+  if (pill) { pill.textContent = reconSilent ? 'MUTE' : 'NOISY'; pill.classList.toggle('silent', reconSilent); }
+  if (el) el.classList.toggle('on', true);
+  if (reconSilent) setReconStatus('SILENT: IPV4/IPV6 ARE UNBOUND FOR THE LISTEN, THEN RESTORED', 'warn', 5000);
+}
+async function reconToggle() {
+  if (!window.hud || !hud.reconStart) return;
+  if (reconBusy) { hud.reconStop(); setReconStatus('STOPPING...', ''); return; }
+  if (!reconToolsState()) { setReconStatus(document.getElementById('recon-btn').title.toUpperCase() || 'NOT READY', 'warn', 4000); return; }
+  const a = currentAdapterEntry();
+  if (reconSilent) {
+    const go = await hudModal({
+      title: 'SILENT LISTEN?', tone: 'warn',
+      bodyHtml: `IPv4 and IPv6 are unbound from <span class="hl">${escHtml(a.name)}</span> for up to ${RECON_DUR} s so nothing leaves the port — not even a DHCP request. They're restored when the listen ends, if you stop it, or on the next launch if the app dies. The adapter has no IP during the listen.`,
+      buttons: [{ label: 'LISTEN SILENT', style: 'ok', value: true }, { label: 'CANCEL', style: 'cancel', value: null }],
+    });
+    if (!go) return;
+  }
+  reconBusy = true; reconLast = null; reconT0 = Date.now();
+  const btn = document.getElementById('recon-btn');
+  btn.textContent = '■ STOP'; btn.classList.add('listening'); btn.classList.remove('disabled');
+  document.getElementById('recon-cards').innerHTML = '';
+  const wrap = document.getElementById('recon-progress-wrap'); wrap.classList.add('visible');
+  const tick = () => {
+    const sec = Math.min(RECON_DUR, Math.round((Date.now() - reconT0) / 1000));
+    document.getElementById('recon-progress-count').textContent = `${sec} / ${RECON_DUR} s`;
+    document.getElementById('recon-progress-fill').style.width = (sec / RECON_DUR * 100) + '%';
+    document.getElementById('recon-progress-label').textContent = sec < 30 ? 'LISTENING — LLDP DUE BY 30 S...' : sec < 60 ? 'LISTENING — CDP DUE BY 60 S...' : 'LISTENING — LAST SECONDS...';
+  };
+  tick(); reconTimer = setInterval(tick, 500);
+  setReconStatus(`LISTENING ON ${a.name.toUpperCase()}${reconSilent ? ' — SILENT' : ''}...`, '');
+  autoResize();
+  let r;
+  try { r = await hud.reconStart({ adapter: a.name, durationS: RECON_DUR, silent: reconSilent }); } catch (err) { r = { ok: false, err: err.message }; }
+  clearInterval(reconTimer); reconTimer = null;
+  reconBusy = false;
+  btn.textContent = '▶ LISTEN'; btn.classList.remove('listening');
+  wrap.classList.remove('visible');
+  if (!r.ok && !r.evidence) {
+    const msg = r.err === 'NO_TSHARK' ? 'WIRESHARK (TSHARK) NOT FOUND' : r.err === 'TSHARK_OLD' ? 'WIRESHARK 4.6+ NEEDED' :
+                r.err === 'SILENT_NEEDS_ELEVATION' ? 'SILENT NEEDS THE APP ELEVATED — USE STANDARD' : 'RECON: ' + (r.err || 'failed');
+    setReconStatus(msg, 'err', 6000);
+    document.getElementById('recon-cards').innerHTML = `<div class="recon-empty">// ${escHtml(msg)}</div>`;
+    reconToolsState(); autoResize(); return;
+  }
+  reconLast = r;
+  reconRenderCards(r.verdicts || [], r.evidence);
+  const secs = Math.round(((r.evidence && r.evidence.ms) || 0) / 1000);
+  setReconStatus(r.err ? 'RECON ENDED: ' + r.err.toUpperCase() : `DONE — ${r.evidence.packets} PACKETS IN ${secs} S`, r.err ? 'warn' : 'ok', 6000);
+  reconToolsState();
+  if (reconSilent) { setTimeout(() => loadAdapters('silent'), 1500); setTimeout(() => loadAdapters('silent'), 6500); }
+  autoResize();
+}
+async function reconRenderLive(ev) {
+  if (!window.hud || !hud.reconVerdicts) return;
+  let v = [];
+  try { v = await hud.reconVerdicts(ev, { silent: reconSilent }); } catch {}
+  reconRenderCards(v, ev, true);
+}
+function reconRenderCards(verdicts, ev, live) {
+  const c = document.getElementById('recon-cards'); if (!c) return;
+  c.innerHTML = '';
+  if (!verdicts.length) { c.innerHTML = `<div class="recon-empty">// ${live ? 'LISTENING...' : 'NOTHING HEARD'}</div>`; autoResize(); return; }
+  verdicts.forEach(v => {
+    const card = document.createElement('div');
+    card.className = 'recon-card ' + (v.kind || 'info');
+    card.innerHTML = `<div class="rc-tag">${escHtml(v.tag)}</div><div class="rc-title" title="${escHtml(v.title)}">${escHtml(v.title)}</div>` +
+      (v.action ? `<div class="rc-act" title="Put ${escHtml(v.action.ip)} in the ETHER form">TAKE</div>` : '<div></div>') +
+      `<div class="rc-detail">${escHtml(v.detail || '')}</div>`;
+    if (v.action) card.querySelector('.rc-act').onclick = () => reconTake(v.action);
+    c.appendChild(card);
+  });
+  autoResize();
+}
+function reconTake(act) {
+  const set = (id, val) => { const el = document.getElementById(id); if (el && val) { el.value = val; el.dispatchEvent(new Event('input')); } };
+  switchTab('net');
+  set('ip', act.ip); set('subnet', act.subnet); set('gateway', act.gateway || '');
+  ['ip', 'subnet', 'gateway'].forEach(id => { const el = document.getElementById(id); if (el && el.value) { try { markChanged(el); } catch {} } });
+  setNetStatus(`${act.ip} FROM RECON — CHECK IT, THEN APPLY`, 'ok', 6000);
+}
+function reconCopy() {
+  if (!reconLast) return;
+  const a = currentAdapterEntry();
+  const L = [`NET//ETHER recon — ${a ? a.name : ''} — ${new Date().toLocaleString()}`, ''];
+  (reconLast.verdicts || []).forEach(v => L.push(`${v.tag.padEnd(8)} ${v.title}${v.detail ? ' — ' + v.detail : ''}`));
+  hudCopy(L.join('\n')).then(() => setReconStatus('VERDICTS COPIED', 'ok', 3000)).catch(() => setReconStatus('COPY FAILED', 'err', 2000));
+}
+
+// ── v7.1.0: COPY RESULTS — CSV or markdown for the ticket ──
+function scanCollectRows() {
+  return [...document.querySelectorAll('#scan-results .scan-result-row')].map(row => {
+    const g = sel => { const el = row.querySelector(sel); return el ? el.textContent.trim() : ''; };
+    const ip = g('.scan-result-ip');
+    if (!ip) return null;
+    const vendor = g('.scan-result-vendor');
+    const typeCls = (row.className.match(/\btype-(\S+)/) || [])[1] || '';
+    return {
+      ip, mac: g('.scan-result-mac'), vendor: vendor === 'UNKNOWN' ? '' : vendor,
+      hostname: g('.scan-result-host') || g('.scan-result-model'), type: typeCls.toUpperCase().replace(/-/g, ' '),
+      ms: g('.scan-result-ms'), self: !!row.querySelector('.scan-result-self'),
+      ports: (scanPortMap[ip] || []).map(p => p.port),
+    };
+  }).filter(Boolean);
+}
+async function scanExportClick() {
+  const rows = scanCollectRows();
+  if (!rows.length) { setScanStatus('NOTHING TO COPY — RUN A SCAN FIRST', 'warn', 3000); return; }
+  const fmt = await hudModal({
+    title: 'COPY ' + rows.length + ' RESULT' + (rows.length !== 1 ? 'S' : ''),
+    bodyHtml: 'CSV pastes straight into Excel. Markdown is a table for the ticket or a wiki.',
+    buttons: [{ label: 'CSV', style: 'ok', value: 'csv' }, { label: 'MARKDOWN', style: 'ok', value: 'md' }, { label: 'CANCEL', style: 'cancel', value: null }],
+  });
+  if (!fmt) return;
+  const base = document.getElementById('scan-base').value.trim();
+  const stamp = new Date().toLocaleString();
+  const cols = ['IP', 'HOSTNAME', 'MAC', 'VENDOR', 'TYPE', 'OPEN PORTS', 'RESPONSE'];
+  const cell = r => [r.ip + (r.self ? ' (self)' : ''), r.hostname, r.mac, r.vendor, r.type, r.ports.join(' '), r.ms];
+  let text;
+  if (fmt === 'csv') {
+    const q = v => /[",\n]/.test(v) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v);
+    text = [cols.map(q).join(','), ...rows.map(r => cell(r).map(q).join(','))].join('\r\n');
+  } else {
+    const esc = v => String(v).replace(/\|/g, '\\|');
+    text = [`**NET//ETHER scan — ${base}.0/24 — ${stamp}**`, '',
+      '| ' + cols.join(' | ') + ' |', '|' + cols.map(() => '---').join('|') + '|',
+      ...rows.map(r => '| ' + cell(r).map(esc).join(' | ') + ' |')].join('\n');
+  }
+  const btn = document.getElementById('scan-export-btn');
+  hudCopy(text).then(() => {
+    if (btn) { btn.textContent = '✓ COPIED'; btn.classList.add('copied'); setTimeout(() => { btn.textContent = 'COPY ▾'; btn.classList.remove('copied'); }, 2000); }
+    setScanStatus(`${rows.length} ROW${rows.length !== 1 ? 'S' : ''} COPIED AS ${fmt === 'csv' ? 'CSV' : 'MARKDOWN'}`, 'ok', 3000);
+  }).catch(() => setScanStatus('COPY FAILED', 'err', 2000));
 }
 
 function updateScanFoundCount() {
@@ -7275,6 +8245,11 @@ async function performAliasRemove(ip, statusFn, adapter) {
     updateMultiIpBadge();
     if (gone) statusFn('MULTI-IP REMOVED', 'ok', 4000);
     else      statusFn('COMMAND RAN — IP STILL PRESENT. SEE DIAGNOSTICS (VERSION CHIP)', 'warn', 8000);
+  } else if (/element not found/i.test(res.err || '')) {
+    // v7.1.0: the address was already gone (a switch to DHCP drops every static alias) — the panel was stale
+    await loadAliasTab();
+    updateMultiIpBadge();
+    statusFn(ip + ' WAS ALREADY GONE — LIST REFRESHED', 'ok', 4000);
   } else {
     return res; // caller handles fallback
   }
@@ -7357,7 +8332,9 @@ async function loadAliasTab() {
   listEl.innerHTML = '';
   // Identify primary by matching the main #ip field — do NOT rely on array position;
   // netsh output order is not guaranteed to put the primary IP first.
-  const knownPrimary = (document.getElementById('ip')?.value || '').trim();
+  // v7.1.0: the adapter entry's ip is the gateway-holding address; the #ip field is the fallback
+  const primAdapter = currentAdapterEntry();
+  const knownPrimary = (primAdapter && primAdapter.ip) || (document.getElementById('ip')?.value || '').trim();
   const primaryEntry = res.aliases.find(a => a.ip === knownPrimary) || res.aliases[0];
   const extras = res.aliases.filter(a => a !== primaryEntry);
 
@@ -7714,10 +8691,11 @@ function intelShowList() {
   autoResize();
 }
 
-function intelDeleteSite() {
+async function intelDeleteSite() {
   const site = intelDB[intelActiveSite];
   if (!site) return;
   if (!confirm(`Delete site "${site.name}"? This removes all ${(site.devices||[]).length} device records.`)) return;
+  if (window.hud && hud.intelBackup) { try { await hud.intelBackup('pre-delete'); } catch {} }   // v7.1.0: a backup before anything irreversible
   delete intelDB[intelActiveSite];
   delete intelPendingChanges[intelActiveSite];
   intelPersist();
@@ -7798,6 +8776,11 @@ function intelProcessScanResults(baseIp, scanResults) {
         existing.vendor   = r.vendor || existing.vendor;
         existing.hostname = r.hostname || existing.hostname || '';
         existing.lastSeen = now;
+        if (!existing.firstSeen) existing.firstSeen = now;   // v7.1.0: library-imported devices had none
+        if (r.type && !existing.typeByUser && existing.type !== r.type) existing.type = r.type;   // v7.1.0: announced type beats the vendor guess
+        // a stale MAC-less twin of this device (same IP, no MAC) is a leftover — drop it
+        const twin = site.devices.findIndex(d => d !== existing && !d.mac && d.ip === r.ip);
+        if (twin >= 0) site.devices.splice(twin, 1);
         if (r.ports) existing.ports = r.ports;
       } else {
         // Add new device
@@ -7806,7 +8789,7 @@ function intelProcessScanResults(baseIp, scanResults) {
           ip:        r.ip,
           hostname:  r.hostname || '',
           vendor:    r.vendor   || '',
-          type:      intelGuessType(r.vendor, r.ports),
+          type:      r.type || intelGuessType(r.vendor, r.ports),
           notes:     '',
           creds:     [],
           firstSeen: now,
@@ -7820,7 +8803,7 @@ function intelProcessScanResults(baseIp, scanResults) {
       if (!existingByIp) {
         site.devices.push({
           mac: '', ip: r.ip, hostname: '', vendor: r.vendor || '',
-          type: intelGuessType(r.vendor, r.ports), creds: [], firstSeen: now, lastSeen: now, ports: r.ports || [],
+          type: r.type || intelGuessType(r.vendor, r.ports), creds: [], firstSeen: now, lastSeen: now, ports: r.ports || [],
         });
       } else {
         existingByIp.lastSeen = now;
@@ -7858,6 +8841,7 @@ function scanShowChangesChip(site, parts) {
   scanChangesSiteId = site.id;
   const name = (site.name || site.subnet || 'SITE').toUpperCase();
   text.textContent = parts.length ? `${name} — ${parts.join(' · ')}` : `${name} — NO CHANGES`;
+  if (sessionScans.length) sessionScans[sessionScans.length - 1].changes = `${site.name || site.subnet}: ${parts.length ? parts.join(', ') : 'no changes'}`;   // v7.1.0: site report
   chip.classList.toggle('clean', !parts.length);
   chip.classList.add('visible');
   autoResize();
@@ -7878,9 +8862,13 @@ function scanChangesDismiss() {
   autoResize();
 }
 
-function intelGuessType(vendor, ports) {
-  if (!vendor) return '';
-  const v = vendor.toLowerCase();
+function intelGuessType(vendor, ports, ctx = {}) {
+  // v7.1.0: the vendor block is skipped when there's no vendor, but the port
+  // fallbacks below still run — the old early return made them unreachable.
+  // ctx.self / ctx.nbt: this machine, or a host with a NetBIOS name — a Windows box,
+  // where 554 is WMP sharing rather than a camera.
+  const v = (vendor || '').toLowerCase();
+  if (v) {
 
   // ── CAMERAS ──
   if (/hikvision|dahua|axis|hanwha|bosch|avigilon|vivotek|mobotix|reolink|amcrest|foscam|wyze|arlo|annke|uniview|univision|geovision|pelco|flir|honeywell.*cam|genetec|wisenet|tiandy|milesight|sricam|vstarcam|imou|ctronics|zosi|lorex|swann|night.?owl|alibi|speco|digital.?watchdog|dwc|ipro|arecont|illustra|verint|indigovision|videolabs/.test(v)) return 'CAMERA';
@@ -7904,9 +8892,14 @@ function intelGuessType(vendor, ports) {
 
   // ── PRINTERS ──
   if (/seiko.?epson|epson|hewlett.?packard|hp.*print|canon.*print|brother|lexmark|xerox|ricoh|kyocera|konica|sharp.*print|toshiba.*print|oki.*data|samsung.*print|dell.*print/.test(v)) return 'PRINTER';
+  }
 
   // ── PORT-BASED FALLBACKS ──
+  if (ctx.self) return '';
+  if (ctx.nbt && ports && ports.some(p => p.port === 554 && p.open)) return 'WORKSTATION';
   if (ports && ports.some(p => p.port === 554  && p.open)) return 'CAMERA';
+  if (ports && ports.some(p => (p.port === 37777 || p.port === 1756) && p.open)) return 'CAMERA';   // v7.1.0 Dahua / Bosch RCP+
+  if (ports && ports.some(p => p.port === 5500 && p.open)) return 'SERVER';                           // v7.1.0 Genetec Directory
   if (ports && ports.some(p => p.port === 3389 && p.open)) return 'WORKSTATION';
   if (ports && ports.some(p => p.port === 445  && p.open)) return 'WORKSTATION';
   if (ports && ports.some(p => p.port === 9100 && p.open)) return 'PRINTER';
@@ -8076,8 +9069,22 @@ function intelBuildDrawer(device, siteId) {
     </div>
     <div class="intel-drawer-actions">
       <div class="intel-save-btn" onclick="intelSaveDevice('${deviceKey}','${siteId}')">SAVE</div>
+      ${device.mac ? `<div class="intel-wake-btn" onclick="intelWake('${escHtml(device.mac)}', this)" title="Wake-on-LAN — send a magic packet to this MAC on every connected subnet">WAKE</div>` : ''}
       <div class="intel-del-device-btn" onclick="intelDeleteDevice('${deviceKey}','${siteId}')">REMOVE DEVICE</div>
     </div>`;
+}
+
+// v7.1.0: Wake-on-LAN from the device drawer
+async function intelWake(mac, btn) {
+  if (!window.hud || !hud.wolSend) return;
+  let r;
+  try { r = await hud.wolSend(mac); } catch (err) { r = { ok: false, err: err.message }; }
+  if (r.ok) {
+    if (btn) { btn.textContent = '✓ SENT'; btn.classList.add('sent'); setTimeout(() => { btn.textContent = 'WAKE'; btn.classList.remove('sent'); }, 2500); }
+    intelSetDetailStatus(`MAGIC PACKET SENT TO ${r.mac} — GIVE IT 30 S, THEN SCAN`, 'ok', 6000);
+  } else {
+    intelSetDetailStatus(r.err === 'INVALID_MAC' ? 'NO USABLE MAC ON THIS DEVICE' : 'WAKE FAILED: ' + (r.err || 'unknown'), 'err', 5000);
+  }
 }
 
 function intelToggleDrawer(rowId) {
@@ -8091,7 +9098,7 @@ function intelToggleDrawer(rowId) {
 }
 
 // ── DEVICE TYPE CYCLING ────────────────────────────────────
-const SITE_TYPES = ['', 'CAMERA', 'NVR/DVR', 'NETWORK', 'SERVER', 'WORKSTATION', 'ACCESS CTL', 'PRINTER', 'OTHER'];
+const SITE_TYPES = ['', 'CAMERA', 'NVR/DVR', 'NETWORK', 'SERVER', 'WORKSTATION', 'ACCESS CTL', 'PRINTER', 'MEDIA', 'OTHER'];
 
 function intelTypeClass(type) {
   switch ((type||'').toUpperCase()) {
@@ -8102,6 +9109,7 @@ function intelTypeClass(type) {
     case 'WORKSTATION': return 'workstation';
     case 'ACCESS CTL':  return 'access';
     case 'PRINTER':     return 'printer';
+    case 'MEDIA':       return 'media';
     case 'OTHER':       return 'other';
     default:            return '';
   }
@@ -8114,6 +9122,7 @@ function intelCycleType(deviceKey) {
   if (!device) return;
   const idx = SITE_TYPES.indexOf(device.type || '');
   device.type = SITE_TYPES[(idx + 1) % SITE_TYPES.length];
+  device.typeByUser = true;   // v7.1.0: a hand-set type is never overwritten by a scan
   intelPersist();
   intelRenderDeviceList(site);
 }
@@ -8270,6 +9279,8 @@ function dhcpUpdateSelectedBtn() {
   const n = D.selected.size;
   b.style.display = n ? '' : 'none';
   b.textContent = `▶ SERVE SELECTED (${n})`;
+  const rb = dEl('dhcp-resv-sel-btn');
+  if (rb) { rb.style.display = n ? '' : 'none'; rb.textContent = `★ RESERVE SELECTED (${n})`; }
   const all = dEl('dhcp-check-all');
   if (all) { const askers = D.devices.filter(d => d.state === 'asking' && !d.targeted); all.checked = askers.length > 0 && askers.every(d => D.selected.has(d.mac)); }
 }
@@ -8368,7 +9379,18 @@ function dhcpInitListeners() {
     if (revert) { const r = await hud.dhcp.staticAssistRevert(); setDhcpStatus(r.ok ? 'ADAPTER REVERTED' : 'REVERT FAILED — CHECK ADAPTER SETTINGS', r.ok ? 'ok' : 'err', 5000); loadAdapters(true); }
   });
   hud.dhcp.onAdapters(data => {
-    if (data.event === 'poll' || data.event === 'refresh') dhcpFillAdapterSelect(data.adapters || []);
+    if (data.event === 'poll' || data.event === 'refresh') {
+      // v7.1.0: the selected adapter's address set changed (alias added/removed) → re-run the fill,
+      // which is the only way to reach the serve-from-alias choice with a single adapter
+      const selName = dEl('dhcp-adapter')?.value;
+      const before = selName ? ((D.adapters.find(x => x.name === selName) || {}).ips || []).map(x => x.ip).join(',') : '';
+      dhcpFillAdapterSelect(data.adapters || []);
+      const after = selName ? ((D.adapters.find(x => x.name === selName) || {}).ips || []).map(x => x.ip).join(',') : '';
+      if (selName && before !== after && !dhcpIsServing() && D.started) {
+        setDhcpStatus('ADAPTER ADDRESSES CHANGED — SETTINGS REFILLED', 'warn', 4000);
+        dhcpAdapterChanged();
+      }
+    }
     if (data.event === 'link-up')   setDhcpStatus('⚡ LINK UP — ' + data.name.toUpperCase(), 'ok', 4000);
     if (data.event === 'link-down') setDhcpStatus('LINK DOWN — ' + data.name.toUpperCase(), 'warn', 4000);
   });
@@ -8422,13 +9444,14 @@ function dhcpApplyMode(st) {
   else if (D.mode === 'listen') { badge.className = 'dhcp-mode-badge listen'; txt.textContent = 'LISTENING'; }
   else if (D.mode === 'serve-all') { badge.className = 'dhcp-mode-badge serving'; txt.textContent = 'SERVING ALL'; }
   else if (D.mode === 'serve-targeted') { badge.className = 'dhcp-mode-badge serving'; txt.textContent = `SERVING ${D.targets.length} TARGET${D.targets.length !== 1 ? 'S' : ''}`; }
+  else if (D.mode === 'suspended') { badge.className = 'dhcp-mode-badge suspended'; txt.textContent = 'SUSPENDED'; }
   else { badge.className = 'dhcp-mode-badge off'; txt.textContent = 'OFFLINE'; }
   if (btn) {
     if (D.mode === 'serve-all')           { btn.className = 'serve-btn bracket stop'; btn.textContent = '■ STOP SERVING ALL'; }
     else if (D.mode === 'serve-targeted') { btn.className = 'serve-btn bracket stop'; btn.textContent = `■ STOP · ${D.targets.length} TARGET${D.targets.length !== 1 ? 'S' : ''}`; }
     else                                  { btn.className = 'serve-btn bracket'; btn.textContent = '▶ SERVE ALL DEVICES'; }
   }
-  if (tab) { tab.classList.toggle('serving', dhcpIsServing()); tab.classList.toggle('listening', D.mode === 'listen'); }
+  if (tab) { tab.classList.toggle('serving', dhcpIsServing()); tab.classList.toggle('listening', D.mode === 'listen'); tab.classList.toggle('suspended', D.mode === 'suspended'); }
   updateLiveBarDhcp();
   dhcpRenderDevices();
 }
@@ -8462,7 +9485,8 @@ function dhcpFillAdapterSelect(adapters) {
   for (const a of adapters) {
     const o = document.createElement('option');
     o.value = a.name;
-    o.textContent = a.name + (a.ip ? '  [' + a.ip + (a.apipa ? ' — no address' : '') + ']' : '  [no link]');
+    const extra = (a.ips || []).filter(x => !x.apipa).length - 1;
+    o.textContent = a.name + (a.ip ? '  [' + a.ip + (a.apipa ? ' — no address' : '') + (extra > 0 ? ' +' + extra + ' alias' : '') + ']' : '  [no link]');
     if (a.name === cur) o.selected = true;
     sel.appendChild(o);
   }
@@ -8475,15 +9499,31 @@ function dhcpSyncAdapterFromEther() {
   const etherName = (document.getElementById('adapter') || {}).value;
   if (etherName && [...sel.options].some(o => o.value === etherName)) { sel.value = etherName; dhcpAdapterChanged(); }
 }
-async function dhcpRefreshAdapters() { if (window.hud && hud.dhcp) { try { dhcpFillAdapterSelect(await hud.dhcp.refreshAdapters()); } catch {} } }
+async function dhcpRefreshAdapters() {
+  if (!(window.hud && hud.dhcp)) return;
+  try { dhcpFillAdapterSelect(await hud.dhcp.refreshAdapters()); } catch {}
+  if (dEl('dhcp-adapter')?.value && !dhcpIsServing()) dhcpAdapterChanged();   // v7.1.0: ⟳ also re-runs the pick-and-fill
+}
 async function dhcpAdapterChanged() {
   dhcpUpdateLink();
   const name = dEl('dhcp-adapter').value;
   if (!name || dhcpIsServing()) return;
-  const cfg = await hud.dhcp.getAdapterConfig(name);
+  // v7.1.0: serve-from-alias — an adapter with a MULTI-IP alias can serve either subnet
+  const a = D.adapters.find(x => x.name === name);
+  const choices = a && a.ips ? a.ips.filter(x => !x.apipa) : [];
+  let fromIp = null;
+  if (choices.length > 1) {
+    fromIp = await hudModal({
+      title: 'SERVE FROM WHICH ADDRESS?',
+      bodyHtml: `<span class="hl">${escHtml(name)}</span> has ${choices.length} addresses. The pool is built on the one you pick — use the alias to hand out leases on the camera subnet while the laptop keeps its own.`,
+      buttons: [...choices.slice(0, 4).map((x, i) => ({ label: x.ip + (i ? ' (ALIAS)' : ''), style: 'ok', value: x.ip })), { label: 'CANCEL', style: 'cancel', value: null }],
+    });
+    if (!fromIp) return;
+  }
+  const cfg = await hud.dhcp.getAdapterConfig(name, fromIp);
   if (!cfg) { setDhcpStatus('ADAPTER HAS NO USABLE ADDRESS — QUICK START CAN SET ONE', 'warn', 5000); return; }
   dhcpFill({ ...cfg, adapterIp: cfg.serverIp });
-  setDhcpStatus('SETTINGS FILLED IN FROM ' + name.toUpperCase(), 'ok', 3000);
+  setDhcpStatus('SETTINGS FILLED IN FROM ' + name.toUpperCase() + (fromIp && fromIp !== choices[0].ip ? ' (ALIAS ' + fromIp + ')' : ''), 'ok', 3000);
 }
 
 // ── profiles ──────────────────────────────────────────────
@@ -8641,6 +9681,7 @@ async function dhcpScanWire() {
 }
 async function dhcpEngineToggle() {
   if (D.policyDisabled) return;
+  if (D.mode === 'suspended') { setDhcpStatus('SUSPENDED WHILE RECON SILENT HAS THE ADAPTER — RESUMES BY ITSELF', 'warn', 4000); return; }
   if (D.mode === 'off') {
     setDhcpStatus('STARTING ENGINE — LISTENING ON UDP 67...', '');
     const r = await hud.dhcp.engineStart();
@@ -8779,6 +9820,38 @@ function dhcpWireCard(card, d) {
   const sv = q('[data-resv-save]');   if (sv) sv.onclick = () => dhcpSaveReservation(d.mac);
   const cn = q('[data-resv-cancel]'); if (cn) cn.onclick = () => { D.resvEdits.delete(d.mac); dhcpRenderDevices(); };
 }
+// v7.1.0: batch reservations — ticked devices get consecutive addresses from a start IP,
+// in the order they're listed (asking devices by last-seen). Server, gateway and
+// already-reserved addresses are skipped, so a hole in the range doesn't abort the batch.
+async function dhcpReserveSelected() {
+  const macs = [...D.selected];
+  if (!macs.length) return;
+  const v = id => (dEl('dcfg-' + id)?.value || '').trim();
+  const start = await hudModal({
+    title: `RESERVE ${macs.length} DEVICE${macs.length !== 1 ? 'S' : ''}`,
+    bodyHtml: `First address goes to the first ticked device, then +1 for each. The server IP, gateway and existing reservations are skipped.`,
+    input: v('rangeStart') || '', placeholder: '192.168.1.100',
+    buttons: [{ label: 'RESERVE', style: 'ok', value: '__INPUT__' }, { label: 'CANCEL', style: 'cancel', value: null }],
+  });
+  if (!start) return;
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(start)) { setDhcpStatus('START ADDRESS IS NOT AN IP', 'err', 4000); return; }
+  const taken = new Set([v('adapterIp'), v('gateway'), ...D.devices.map(d => d.reserved).filter(Boolean)]);
+  const order = D.devices.filter(d => macs.includes(d.mac)).sort((a, b) => b.lastSeen - a.lastSeen);   // same order as the list
+  let next = dhcpIpNum(start), done = 0, fail = null;
+  for (const d of order) {
+    let ip;
+    do { ip = dhcpNumIp(next++); } while (taken.has(ip) && (next & 255) !== 0);
+    if ((next & 255) === 0 && taken.has(ip)) { fail = 'ran out of addresses'; break; }
+    const r = await hud.dhcp.setReservation(d.mac, ip);
+    if (!r.ok) { fail = `${d.mac.toUpperCase()}: ${r.msg}`; break; }
+    taken.add(ip); done++;
+  }
+  D.selected.clear();
+  dhcpRenderDevices();
+  if (fail) setDhcpStatus(`${done} RESERVED, THEN STOPPED — ${fail.toUpperCase()}`, 'err', 6000);
+  else setDhcpStatus(`★ ${done} DEVICE${done !== 1 ? 'S' : ''} RESERVED FROM ${start}`, 'ok', 5000);
+}
+const dhcpNumIp = n => [n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join('.');
 async function dhcpSaveReservation(mac) {
   const ip = (D.resvEdits.get(mac) || '').trim();
   if (!ip) { D.resvEdits.delete(mac); dhcpRenderDevices(); return; }
@@ -8813,7 +9886,8 @@ async function dhcpCopyLog() {
     sites: `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><style>.k{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.d{fill:currentColor}</style><path d="M12 21s-6-5.2-6-10a6 6 0 0 1 12 0c0 4.8-6 10-6 10z" class="k"/><circle cx="12" cy="11" r="2.2" class="d"/><path d="M5 20h14" class="k" opacity=".5"/></svg>`,
     dhcp: `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><style>.k{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.d{fill:currentColor}</style><circle cx="12" cy="12" r="8" class="k" opacity=".6"/><rect x="9.5" y="9.5" width="5" height="5" rx="1" class="d"/><circle cx="12" cy="4" r="1.5" class="d"/><circle cx="5.1" cy="16" r="1.5" class="d"/><circle cx="18.9" cy="16" r="1.5" class="d"/></svg>`,
   };
-  const map = { 'ticon-net': 'ethernet', 'ticon-dhcp': 'dhcp', 'ticon-tools': 'ping', 'ticon-scan': 'scan', 'ticon-intel': 'sites' };
+  TAB_SVG.recon = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><style>.k{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.d{fill:currentColor}</style><path d="M4 14a8 8 0 0 1 16 0" class="k"/><path d="M7.5 14a4.5 4.5 0 0 1 9 0" class="k" opacity=".6"/><circle cx="12" cy="14" r="1.6" class="d"/><path d="M12 15.5V20" class="k"/><path d="M3 20h18" class="k" opacity=".4"/></svg>`;
+  const map = { 'ticon-net': 'ethernet', 'ticon-dhcp': 'dhcp', 'ticon-tools': 'ping', 'ticon-scan': 'scan', 'ticon-intel': 'sites', 'ticon-recon': 'recon' };
   document.addEventListener('DOMContentLoaded', () => {
     Object.entries(map).forEach(([id, key]) => {
       const img = document.getElementById(id);

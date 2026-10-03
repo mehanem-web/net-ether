@@ -1,4 +1,16 @@
-# NET//ETHER — roadmap
+# NET//ETHER — Roadmap
+
+## Delivered in 7.1.0 (2026-10-03)
+RECON tab (LLDP/CDP switch identity, 802.1X, STP/trunk, DHCP heard, hosts, free-address suggestion, STANDARD/SILENT), multicast discovery (WS-Discovery/ONVIF, SSDP, mDNS) with REACH for link-local devices, link-speed chip, WI-FI and DISABLE/ENABLE chips, NO ADDRESS/RENEW, `host:port` ping targets, PORT BLINK, toner pitch by latency, hidden-HUD toast, vendor probe ports, scan CSV/markdown, WSHARK per row, MEDIA type, Wake-on-LAN, serve-from-alias, batch reservations, DHCP tab dot, site-visit report, FUNCTIONS.md, Electron fuses, RECON capture filter, CI on Node 22.
+
+## Still open after 7.1.0
+- Bench verification: RESERVE SELECTED, BLINK on a lit switch, REACH on a factory-default camera, RECON on a managed port (SWITCH/STP/TRUNK/802.1X cards). Fixes → 7.1.1.
+- Fleet pre-seeding of a site database from ProgramData; DHCP option 121 (classless static routes).
+- Scanner beyond /24 (link-local /16 needs discovery, not a sweep — DISCOVER covers the camera case).
+- Tutorial video script from FUNCTIONS.md.
+
+---
+
 
 Ideas for the next major, collected during the v7.0.0 field trial (2026-09-28).
 Nothing here is committed to a version. Order is rough value-per-effort for a

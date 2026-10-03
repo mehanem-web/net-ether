@@ -1,4 +1,4 @@
-# NET//ETHER — v7.0.1
+# NET//ETHER — v7.1.0
 **Broman Enterprises**
 
 A cyberpunk-styled always-on-top desktop HUD for Windows network configuration management — static IP, DHCP server, ping, subnet scan and a per-site device knowledge base in one window. Built for field technicians switching between network setups on job sites.
@@ -103,7 +103,9 @@ Continuous connectivity monitor.
 
 - Up to 8 hosts, configurable interval (1s / 2s / 5s / 10s)
 - Tracks latency, packet loss %, and a per-host sparkline history
-- Uses TCP port 80 connect (not ICMP) — works through firewalls that block ping
+- ICMP first; if ping is blocked, a TCP connect to port 80 counts as alive. Add `:port` to a host (`192.168.0.50:554`) to watch that one service instead — CLOSED means the host answered but the port is shut
+- **◉ CAPTURE** on a row opens a live Wireshark capture filtered to that host (only when Wireshark is installed)
+- The toned host pops a Windows toast when it flips state while the HUD is hidden in the tray
 - PAUSE freezes display without clearing data; STOP resets everything
 - Tray icon animates on ping failure
 
@@ -111,12 +113,13 @@ Continuous connectivity monitor.
 Subnet scanner for /24 networks.
 
 - ICMP ping sweep + ARP cache sweep (catches devices that block ping)
-- Port probe on 10 common ports per host: 80, 443, 554, 8080, 8443, 3389, 22, 23, 21, 8888
+- Port probe on 14 ports per host: 80, 443, 554, 8080, 8443, 3389, 22, 23, 21, 8888, plus 8000 (Hikvision), 37777 (Dahua), 1756 (Bosch RCP+), 5500 (Genetec Directory). The vendor ports sharpen the type guess.
 - **Hostnames** — after the sweep, every host is resolved by reverse DNS and, failing that, a NetBIOS name query (UDP 137, done in-process). Your own machine gets a **SELF** badge. Names carry through to SITES.
 - Smart action buttons: OPEN (HTTP/HTTPS), RDP, RTSP (copies URL), SSH (copies command)
 - Vendor lookup from the bundled 57K-entry IEEE OUI table. The **ONLINE VENDOR LOOKUP** toggle controls the macvendors.com fallback for misses (default on, remembered). An HKLM policy can force it off fleet-wide — see POLICY below.
 - **Site Library** — save scan results as named sites; load one before scanning to compare against its known devices
 - **Change chip** — scanning a known site's subnet shows an amber chip with NEW / MISSING / MOVED counts and a **VIEW →** jump. Nothing switches tabs on you.
+- **COPY ▾** — the whole result list as CSV (Excel) or a markdown table (ticket). **CAPTURE** on a row hands the host off to a live Wireshark capture.
 
 ### SITES
 Persistent site knowledge base. Survives across visits.
@@ -206,6 +209,103 @@ NET-ETHER/
 ---
 
 ## CHANGELOG
+
+### v7.1.0 (2026-10-03)
+The v7.1 roadmap, home-tested over ten release candidates. Headline: RECON, multicast discovery, link speed, Wi-Fi/adapter switches, port blinking, Wake-on-LAN, serve-from-alias, batch reservations, site report, Electron fuses. The rc notes below are kept as the record of what changed when.
+
+**rc.10 — Guide**
+- Full Guide rewritten for 7.1 — document version 5.0 (`docs/build-guide.js` → docx → PDF): link speed and adapter states, WI-FI / DISABLE, RENEW, `:port` targets, BLINK, DISCOVER and REACH, WSHARK, MEDIA type, WAKE, serve-from-alias, RESERVE SELECTED, the DHCP tab dot, a new RECON chapter, SITE REPORT, and the data/privacy notes for the new traffic. Both `assets/NET-ETHER-Guide.docx` and `.pdf` updated (plus the repo-root PDF copy).
+
+**rc.9 — one fix**
+- Elevated PowerShell calls (SILENT unbind/rebind, the interface bounce) now pass the script as `-EncodedCommand` instead of `-Command`. `-Command` re-joins and re-parses its arguments, so an adapter named `Johan's Port` broke it (`TerminatorExpectedAtEndOfString`). Encoded, the script is one opaque token; the readable script is logged beside the OP entry.
+
+**rc.8 — one fix**
+- Adapter GUID lookup used a WMI `-Filter` with PowerShell-style quote escaping; WMI wants `\'`, so an adapter named `Johan's Port` returned no GUID — RECON said `NO_GUID`, and the DHCP badge, Wireshark and the registry fallback were silently wrong for it. The GUID now comes from `Get-NetAdapter … .InterfaceGuid` via execFile, no WQL, no shell.
+
+**rc.7 — last home-test round**
+- A wide tab's width is a **minimum, not a target**: SCAN/SITES open at ≥640, DHCP at ≥820, and a window you dragged wider stays wider; DHCP → SCAN keeps 820. Narrow tabs still restore your narrow width.
+- 8 px top margin on the grow-upward move; height capped a little lower so a tall fit lands clear of both edges.
+- One SILENT restore at a time: "listen finished" and "quit" arriving together share a single rebind instead of running two.
+- **DHCP engine SUSPENDED during RECON SILENT** on its adapter: socket closed, firewall rule kept, badge and tab dot amber-grey, resumes to its previous mode after the rebind. Clicking the badge while suspended explains instead of toggling.
+- OFFLINE badge no longer previews green on hover.
+- Adapter names may contain an apostrophe (`Johan's Port`); every write path is execFile-tokenised or PowerShell-escaped, so the old VBS-era ban was refusing legal names.
+
+**rc.6 — hardening, the SILENT race, visible beats small (round two)**
+- **Electron fuses** (package.json `build.electronFuses`, applied by electron-builder before signing, verified in CI): `ELECTRON_RUN_AS_NODE` off, `NODE_OPTIONS` off, inspect args off, asar integrity on, app only from asar. The signed, whitelisted, auto-elevated exe can no longer be used as a Node runtime by anything already on the laptop.
+- **RECON capture filter**: only LLDP, CDP, EAPOL, STP, ARP, 802.1Q, IGMP and the UDP ports we read (67/68/137/5353/5355/1900/123) reach tshark's dissectors.
+- CI: `checkout@v5`, `setup-node@v5`, Node 22.
+- **SILENT rebind made robust.** Quit waits for tshark to exit before touching NetCfg; the rebind retries three times with backoff (error 6800 is the NetCfg lock, and it clears); "restored" now means `Get-NetIPInterface` shows an IPv4 interface, not just that the binding flag flipped — if the flag flipped and the interface didn't come back, the binding is toggled once more and the adapter bounced; a DHCP adapter with no address 3 s later gets `ipconfig /renew`; a failed restore at quit shows a Windows message box with the fix. Launch recovery uses the same path.
+- **NO ADDRESS** is its own adapter state (link up, nothing bound), with a **RENEW** action; DISCONNECTED now means no link. The DHCP/STATIC badge and → DHCP action show without link; `isDhcp` is read from the registry for adapters that have no IPv4 interface yet.
+- **WI-FI chip read `AdminStatus`, which PowerShell emits as a number** — so it said OFF since rc.1 regardless of the radio. It reads `Status` now, and "Not Present" ghosts of a reinstalled card are ignored.
+- **RECON NAMES** only lists what hosts say about themselves (NetBIOS registrations/responses, mDNS answers) — no more `wpad`, `*<00>…` or `_dosvc._tcp` instances. DHCP card in SILENT explains why nothing was heard; acks-only reads "N leases renewed".
+- **Window grows upward** when a content fit would push the bottom past the work area (REVERT and the status bar stay on screen; no more taskbar overlap).
+- **✕ checks for MULTI-IP aliases** like ─ already did (second ✕ within 15 s quits anyway). MULTI-IP panel re-reads after every APPLY / → DHCP / REVERT / alias op and with the LIVE poll; REMOVE on an address Windows already dropped says so instead of "Element not found".
+- APPLY's `set dns` uses `validate=no` (the "DNS server is incorrect" warning on every apply is gone). REVERT is logged as `revert`. BLINK uses a hostname target's resolved IP. SITES → DELETE writes a backup first.
+- **DHCP tab dot is always present**: red OFFLINE, green LISTENING, amber SERVING — engine state from any tab.
+- **SCAN and SITES are 640-wide tabs** (DHCP stays 820): one line per host, MAC beside the IP, vendor and name chips up to 220 px. **DISCOVER is a second big button** beside SCAN SUBNET with one-line hints under both.
+
+**rc.5 — RECON unblocked**
+- Fix: the tools lookup handed the UI `version`/`versionOk` while the UI read `tsharkVersion`/`tsharkOk`, so RECON's LISTEN was always dimmed with "? FOUND — 4.6 or newer needed" even with 4.6.9 installed. Diagnostics STATE was right the whole time; the UI wasn't.
+- BLINK refuses this machine's own address (loopback never reaches the switch) with a clear message.
+
+The v7.1 roadmap, staged: rc.1 is everything you'd notice on the first plug-in at a site; rc.2 is discovery and the switch port; rc.3 is DHCP, toner and the report; rc.4 is RECON and the layout rule "visible beats small".
+
+**rc.4 — RECON, window, primary address**
+- **RECON tab** (sixth tab). One LISTEN, up to 65 s, nothing transmitted: tshark on the ETHER adapter, evidence streamed every ~1.5 s, verdicts as cards — SWITCH (LLDP/CDP name · port · VLAN), 802.1X (EAPOL), STP / TRUNK (BPDUs, PVST VLANs, tagged frames), DHCP (server, gateway, mask, DNS heard; "clients asking, nobody answering"), HOSTS per subnet, NAMES (NetBIOS/mDNS), NTP, and ADDRESS — a free-looking IP with TAKE → ETHER form (APPLY still runs the duplicate check). STANDARD leaves the adapter alone; SILENT unbinds IPv4/IPv6 for the listen (elevated PowerShell) and restores them on finish, stop, quit, and on the next elevated launch after a crash (`recon-silent.json`). WIRESHARK (whole adapter) and COPY live here; the SWITCH? chip and the result line under the ETHER selector are gone. RECON verdicts go into the SITE REPORT. The engine is `reconListen` / `reconVerdicts` in `discover.js` — pure, tested against a generated LLDP/CDP/EAPOL/STP/ARP/DHCP/NBNS/NTP/802.1Q capture.
+- **Window: visible beats small.** Minimum width 430 (every adapter chip fits); the chip group wraps as a unit instead of clipping; height is never restored (the content fit sets it); the saved position is clamped inside the work area so it can't open onto the taskbar; only a narrow-tab width is ever saved — DHCP's 820 no longer leaks into the next launch.
+- **Primary address = the one holding the gateway**, not whichever Windows lists first: ETHER's adapter list, MULTI-IP's PRIMARY tag (REMOVE never appears on it) and the DHCP select all agree. DHCP refills its settings when the selected adapter gains or loses an address, and ⟳ re-runs the pick-and-fill, so the serve-from-alias choice is reachable with a single adapter.
+- **MULTI-IP subnet** defaults to 255.255.255.0; an alias inside the primary's own network inherits the primary's mask; 169.254 gets /16. The classful /8 for 10.x is gone from both forms.
+- **MEDIA** device type. What a device announces (mDNS `_googlecast`/`_airplay`/`_roku`, "TV" in its name) beats what its MAC vendor usually makes; printer announcements override too. SITES: the SELF row is never filed as a site device, a stale MAC-less twin of a known device is dropped, and a type you set by hand is never overwritten by a scan.
+- **PING** status counts DOWN and CLOSED separately (`ALERT — 1 DOWN · 67% LOSS · 1 CLOSED`); BLINK and capture warnings hold the status line 4 s. Report says "0 sent" instead of "not run".
+- **DISCOVER** pulses the rows that answered and lists them in the status when there are six or fewer; a row found by DISCOVER alone shows the source (SSDP / mDNS / ONVIF) where the ms would be.
+- **MAC beside the IP** on rows 600 px and wider (container query); below it on narrower rows.
+
+**rc.3 — DHCP, toner, report**
+- **SERVE FROM ALIAS** (DHCP): an adapter with a MULTI-IP alias asks which address to serve from; the pool is built on the one you pick. The engine's rogue probe now sees every address, not just the primary.
+- **★ RESERVE SELECTED** (DHCP): tick devices, enter a start address, consecutive reservations in list order. Server, gateway and existing reservations are skipped.
+- **⚡ BLINK** (PING): with a host toned, 20 s of tiny UDP packets to its discard port so the switch-port LED strobes. Same subnet only; nothing elevated; logged.
+- **Toner pitch follows latency**: 1250 Hz at ≤5 ms down to ~650 Hz at 300 ms+.
+- **SITE REPORT** (version chip menu): markdown summary of the session — adapter and switch port, scans with site changes and the last result table, DHCP leases, ping stats, every privileged operation from the diagnostics log.
+- **WSHARK** replaces CAPTURE and moves into the IP / MAC / PING group, which now wraps as one unit instead of shedding buttons one at a time. Library-drawn rows get it too.
+- Fixes from the bug scan: standalone DISCOVER now receives its port-probe results (the listener only existed during a sweep); REACH on a DHCP adapter hands the adapter back to DHCP when the alias is removed (it used to leave it static); a dead `:port` PING target no longer stretches the whole cycle to 6 s; LLDP packet parsing ignores braces inside strings; adapter GUIDs must be real GUIDs; the LIVE refresh spawns one PowerShell instead of two (descriptions ride along with link speed); `ONVIF+WSD` collapses to `ONVIF`; the model chip is skipped when it repeats the name; DISCOVER stays quiet about a missing adapter while a sweep is running; the Wi-Fi chip ignores Wi-Fi Direct virtual adapters.
+
+**rc.2 — discovery, REACH, SWITCH?**
+- **◎ DISCOVER** (SCAN): WS-Discovery/ONVIF (UDP 3702), SSDP (1900) and mDNS (5353) probes, 3 s, from every IPv4 on the adapter. Runs alongside each sweep and standalone. Answers merge into the rows: an ONVIF / SSDP / mDNS badge with name, model, URLs and services in the tooltip; the ONVIF name fills the hostname slot; ONVIF → CAMERA, printer services → PRINTER. Hosts outside the scanned /24 get their own amber-ms row — this is how a 169.254 camera out of the box shows up.
+- **REACH** on a link-local row: adds a temporary 169.254.x.x alias (the MULTI-IP path, DHCP→static conversion included), opens http://<ip>, and records the alias in `temp-aliases.json`. An amber LINK-LOCAL chip shows it with REMOVE; it's also removed on quit, and a leftover from a crash is cleaned up on the next elevated launch.
+- **SWITCH?** chip on the ADAPTER line (Wireshark 4.6+): tshark listens for LLDP and CDP on the adapter, up to 65 s, nothing transmitted. Switch name · port · VLAN appear under the selector as they arrive; stops early once both protocols have been heard. "Didn't announce" is a result, not an error.
+- New module `discover.js` (pure dgram + execFile, no shell strings) — listed in `package.json` files.
+- DHCP engine dot is a theme-independent traffic light (red OFFLINE, green LISTENING, amber SERVING, slashed POLICY) with a dark ring.
+- CAPTURE now on every scan row from the moment it appears, open ports or not.
+- PING `:port` targets: a silent drop now runs the normal alive check — host up → CLOSED, host down → FAIL. The LAST cell's tooltip says why.
+- Type guess: SELF never gets a port-based type; a host with a NetBIOS name and 554 open is a WORKSTATION (WMP sharing), not a camera.
+- The ◉ capture button no longer pulses under the cursor (row rebuild replayed its hover transition).
+- SITES: devices with no FIRST SEEN (old library imports) get it on the next scan.
+
+**rc.1 — adapter row, PING port, SCAN export, WAKE**
+
+**Adapter row**
+- **Link speed** replaces CONNECTED on a connected adapter: green 1 Gbps+, amber 100 Mbps, red 10 Mbps. From `Get-NetAdapter`, read alongside the existing netsh calls.
+- **DISABLE / ENABLE** the selected adapter (`netsh interface set interface`, elevated, verified, logged). Refused while the DHCP server is serving on it.
+- **WI-FI** chip: switches every wireless adapter off (or back on) so SCAN, DHCP and PING stay on the wire. Amber while off.
+- **WIRESHARK**: live capture on the adapter. Wireshark is located via App Paths / `%ProgramFiles%\Wireshark`; tshark's version is read once and shown in DIAGNOSTICS STATE (4.6+ is the floor for the LLDP / RECON work in later rcs).
+
+**PING**
+- `host:port` targets do a TCP check against that port instead of ICMP. CLOSED = host answered, port shut.
+- **◉ CAPTURE** column (only when Wireshark is installed).
+- Toast via the tray when the toned host flips state while the HUD is hidden. `backgroundThrottling` is now off so the monitor keeps time from the tray — it used to slow to once a minute after ~5 min hidden, which also weakened the tray flash.
+
+**SCAN**
+- Vendor ports 8000 / 37777 / 1756 / 5500 in the probe, with badges. Dahua / Bosch RCP+ hits classify as CAMERA, Genetec Directory as SERVER.
+- **COPY ▾** exports the result list as CSV or markdown.
+- **CAPTURE** action per row.
+- Fix: port-based type guessing never ran for hosts with no vendor (an early return skipped it). Fix: SITES change detection now sees every open port, not just the badge-only ones — ports with an action button (OPEN / RDP / SSH) were being dropped from the site record.
+
+**SITES**
+- **WAKE** (Wake-on-LAN) in the device drawer. Magic packet to the limited broadcast and every interface's directed broadcast, logged.
+
+**Housekeeping**
+- tracert now refuses a host starting with `-` (ping already did) and strips a `:port`.
+- PING help text said "TCP 80, not ICMP"; the code does ICMP first. Help now matches, and every new control has a help row.
 
 ### v7.0.1
 - Release binaries are code-signed in CI (Azure Artifact Signing, publisher Johan Broman). No functional change. IT can now whitelist by publisher instead of per-version hash — see RELEASING.md.

@@ -158,12 +158,17 @@ module.exports = function initDhcp(deps) {
     const names = knownAdapters.length ? knownAdapters.map(a => a.name) : Object.keys(ifaces);
     return names.map(name => {
       const addrs = ifaces[name] || [];
-      const v4 = addrs.find(a => a.family === 'IPv4' && !a.internal);
+      const v4s = addrs.filter(a => a.family === 'IPv4' && !a.internal);
+      // v7.1.0: the primary is whatever ETHER's adapter list calls primary (the address
+      // holding the gateway) — never just the first one Windows lists. Aliases ride
+      // along in `ips` so the DHCP tab can serve from a MULTI-IP alias's subnet.
       const known = knownAdapters.find(a => a.name === name);
+      const v4 = (known && known.ip && v4s.find(a => a.address === known.ip)) || v4s.find(a => !isApipa(a.address)) || v4s[0];
       return {
         name,
         ip:        v4 ? v4.address : null,
         netmask:   v4 ? v4.netmask : null,
+        ips:       [...(v4 ? [v4] : []), ...v4s.filter(a => a !== v4)].map(a => ({ ip: a.address, netmask: a.netmask, apipa: isApipa(a.address) })),   // primary first
         connected: !!v4,
         apipa:     v4 ? isApipa(v4.address) : false,
         isDhcp:    known ? known.isDhcp : null,
@@ -385,6 +390,30 @@ module.exports = function initDhcp(deps) {
         });
       });
     });
+  }
+
+  // v7.1.0: RECON SILENT unbinds IP from the adapter the engine listens on. A socket
+  // bound to 0.0.0.0 survives that but hears nothing — and may hold the interface back
+  // from being recreated. So the engine steps aside: SUSPENDED (socket closed, firewall
+  // rule left in place), then back to whatever it was doing once the adapter is back.
+  let suspendedFrom = null;
+  async function suspend(reason) {
+    if (mode === 'off' || mode === 'suspended') return false;
+    suspendedFrom = mode;
+    stopSweeper(); stopPoller();
+    if (sock) { try { sock.close(); } catch {} sock = null; }
+    mode = 'suspended';
+    log(`Suspended — ${reason || 'adapter unavailable'}; resumes automatically`, 'warn');
+    diagAdd({ kind: 'app', tag: 'dhcp', ok: true, note: `DHCP engine suspended (${reason || 'adapter unavailable'}) — was ${suspendedFrom}` });
+    announceMode();
+    return true;
+  }
+  async function resume() {
+    if (mode !== 'suspended') return false;
+    const target = suspendedFrom || 'listen';
+    suspendedFrom = null;
+    try { await setMode(target); log(`Resumed — ${target}`, 'ok'); return true; }
+    catch (e) { log('Could not resume: ' + e.message, 'err'); mode = 'off'; announceMode(); return false; }
   }
 
   function announceMode() {
@@ -771,7 +800,7 @@ module.exports = function initDhcp(deps) {
     return { ...r, servers, recentlyHeard, offSubnet };
   }
   function probeSourceIp() {
-    const live = lightAdapters().filter(a => a.connected && a.ip && !a.apipa).map(a => a.ip);
+    const live = lightAdapters().flatMap(a => (a.ips || []).filter(x => !x.apipa).map(x => x.ip));
     if (!live.length) return null;
     if (serveCfg && live.includes(serveCfg.adapterIp))     return serveCfg.adapterIp;
     if (previewCfg && live.includes(previewCfg.adapterIp)) return previewCfg.adapterIp;
@@ -937,10 +966,15 @@ module.exports = function initDhcp(deps) {
   ipcMain.handle('dhcp-get-state', async () => ({ policyDisabled: await policyBlocked(), ...fullState() }));
   ipcMain.handle('dhcp-refresh-adapters', async () => refreshAdapters());
 
-  ipcMain.handle('dhcp-get-adapter-config', async (_e, adapterName) => {
+  ipcMain.handle('dhcp-get-adapter-config', async (_e, adapterName, fromIp) => {
     const safe = sanitizeAdapter(adapterName);
     const a = safe && lightAdapters().find(x => x.name === safe);
     if (!a || !a.ip || !a.netmask || a.apipa) return null;
+    // v7.1.0: serve from a specific address on the adapter (a MULTI-IP alias) when asked
+    if (fromIp && isValidIp(fromIp)) {
+      const alt = (a.ips || []).find(x => x.ip === fromIp && !x.apipa);
+      if (alt) return deriveCfgFromAdapter({ ...a, ip: alt.ip, netmask: alt.netmask });
+    }
     return deriveCfgFromAdapter(a);
   });
   ipcMain.handle('dhcp-validate-config', async (_e, cfg) => validateCfg(cfg));
@@ -1086,6 +1120,7 @@ module.exports = function initDhcp(deps) {
     shutdown,
     getMode: () => mode,
     getState: modeState,
+    suspend, resume,
     isActive: () => mode !== 'off',
     isServing,
     leaseCount: () => Object.values(devices).filter(d => d.state === 'leased').length,

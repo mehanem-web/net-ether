@@ -61,13 +61,13 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Building tag: $TAG"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ steps.resolve.outputs.tag }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -104,6 +104,19 @@ jobs:
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+
+      # Electron fuses are flipped by electron-builder (package.json → build.electronFuses)
+      # before signing: run-as-node off, NODE_OPTIONS off, inspect args off, asar integrity
+      # on, app only from asar. Prove it here — a signed exe that still honours
+      # ELECTRON_RUN_AS_NODE would be a whitelisted admin-elevated Node runtime.
+      - name: Verify fuses
+        shell: pwsh
+        run: |
+          $env:ELECTRON_RUN_AS_NODE = "1"
+          $out = & "dist\win-unpacked\NET-ETHER.exe" -e "console.log('RUN_AS_NODE_WORKED')" 2>&1
+          Remove-Item Env:\ELECTRON_RUN_AS_NODE
+          if ("$out" -match "RUN_AS_NODE_WORKED") { throw "ELECTRON_RUN_AS_NODE is still honoured - fuses not applied" }
+          "run-as-node fuse: OFF (good)"
 
       - name: Verify signatures
         shell: pwsh

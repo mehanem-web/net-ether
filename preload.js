@@ -24,10 +24,28 @@ contextBridge.exposeInMainWorld('hud', {
 
   // ── Network config ───────────────────────────────────────
   applyConfig:      (cfg)     => ipcRenderer.invoke('apply-network-config', cfg),
-  applyDhcp:        (adapter) => ipcRenderer.invoke('apply-dhcp', { adapter }),
+  applyDhcp:        (adapter, tag) => ipcRenderer.invoke('apply-dhcp', { adapter, tag }),
   ping:             (host)    => ipcRenderer.invoke('ping-host', host),
   getAdapters:      ()        => ipcRenderer.invoke('get-adapters'),
   getCurrentIp:     (adapter) => ipcRenderer.invoke('get-current-ip', adapter),
+  // v7.1.0: adapter tools
+  getWifi:          ()        => ipcRenderer.invoke('get-wifi'),
+  adapterSetEnabled:(adapter, enabled) => ipcRenderer.invoke('adapter-set-enabled', { adapter, enabled }),
+  adapterRenew:     (adapter) => ipcRenderer.invoke('adapter-renew', adapter),
+  getTools:         ()        => ipcRenderer.invoke('get-tools'),
+  wiresharkOpen:    (opts)    => ipcRenderer.invoke('wireshark-open', opts),
+  wolSend:          (mac)     => ipcRenderer.invoke('wol-send', mac),
+  notifyHidden:     (opts)    => ipcRenderer.send('notify-hidden', opts),
+  // v7.1.0: discovery, LLDP/CDP, link-local REACH
+  discoverRun:      (opts)    => ipcRenderer.invoke('discover-run', opts),
+  reconStart:       (opts)    => ipcRenderer.invoke('recon-start', opts),
+  reconStop:        ()        => ipcRenderer.send('recon-stop'),
+  onReconUpdate:    (cb)      => ipcRenderer.on('recon-update', (_, d) => cb(d)),
+  reconVerdicts:    (ev, opts) => ipcRenderer.invoke('recon-verdicts', ev, opts),
+  reachAdd:         (opts)    => ipcRenderer.invoke('reach-add', opts),
+  reachList:        ()        => ipcRenderer.invoke('reach-list'),
+  reachClear:       ()        => ipcRenderer.invoke('reach-clear'),
+  portBlink:        (opts)    => ipcRenderer.invoke('port-blink', opts),
   getAdapterConfig: (adapter) => ipcRenderer.invoke('get-adapter-config', adapter),
 
   // ── Snapshot / revert ────────────────────────────────────
@@ -115,7 +133,7 @@ contextBridge.exposeInMainWorld('hud', {
     engineStop:       ()          => ipcRenderer.invoke('dhcp-engine-stop'),
     getState:         ()          => ipcRenderer.invoke('dhcp-get-state'),
     refreshAdapters:  ()          => ipcRenderer.invoke('dhcp-refresh-adapters'),
-    getAdapterConfig: (name)      => ipcRenderer.invoke('dhcp-get-adapter-config', name),
+    getAdapterConfig: (name, ip)  => ipcRenderer.invoke('dhcp-get-adapter-config', name, ip),
     validateConfig:   (cfg)       => ipcRenderer.invoke('dhcp-validate-config', cfg),
     setPreview:       (cfg)       => ipcRenderer.invoke('dhcp-set-preview', cfg),
     saveConfig:       (cfg)       => ipcRenderer.invoke('dhcp-save-config', cfg),

@@ -85,6 +85,82 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 - [ ] Save the scan as a site. Scan again → chip "SITE — NO CHANGES" (green). Unplug a device, scan → amber chip with "1 MISSING", VIEW → opens the site in SITES with the change listed. Start another scan → chip disappears.
 - [ ] SITES → SCAN NOW → scan runs → you stay on SCAN; chip appears; no tab jump.
 
+### v7.1.0 — adapter tools, PING port, SCAN export, WAKE
+- [ ] Connected adapter shows its speed (e.g. `1 GBPS` green) where CONNECTED used to be. Plug into a 100 Mb port or a bad cable → `100 MBPS` amber.
+- [ ] ADAPTER line: DISABLE → modal → link drops, selector shows DISABLED, chip reads ENABLE; LOG has OP adapter-disable + VERIFY. ENABLE brings it back with the same static config.
+- [ ] WI-FI chip visible (laptop) → click → modal → Wi-Fi off, chip amber "WI-FI OFF". Reboot: still off, chip still amber. Click again → back on.
+- [ ] With the DHCP tab serving on the wired adapter, DISABLE is refused with the "stop serving first" message.
+- [ ] WIRESHARK chip present (Wireshark installed) → opens a live capture on the selected adapter. STATE shows the Wireshark path and tshark version. Uninstall / rename Wireshark → chip gone, STATE "not found".
+- [ ] PING: target `x.x.x.x:554` on a camera → green while RTSP answers. `x.x.x.x:5555` → CLOSED (amber), not FAIL. Plain IP still ICMP.
+- [ ] PING ◉ on a row → Wireshark opens with filter `host x.x.x.x`.
+- [ ] Toner on a host, hide the HUD to the tray, pull the cable → toast "host down"; click it → HUD returns. Leave it hidden 10 minutes → sparkline still advances once a second (no throttling).
+- [ ] SCAN a subnet with a Hikvision / Dahua / Bosch / Genetec box → vendor badge on the row. A no-vendor host with 554 open gets the CAMERA colour bar.
+- [ ] SCAN → COPY ▾ → CSV pastes into Excel as columns; MARKDOWN renders as a table. Ports column lists 80 and 554 even though they show as OPEN buttons.
+- [ ] SCAN → CAPTURE on a row → Wireshark with the host filter.
+- [ ] SITES → device drawer → WAKE → "MAGIC PACKET SENT", LOG has OP wol with the broadcast targets. A WoL-capable PC that's asleep wakes.
+
+### v7.1.0 rc.2 — discovery, REACH, SWITCH?
+- [ ] SCAN a subnet: rows gain ONVIF / SSDP / mDNS badges within ~3 s (router shows SSDP, Reolinks ONVIF, printer mDNS). Hover a badge → name, model, URLs.
+- [ ] ◎ DISCOVER alone (no sweep): same badges, status "N DEVICES ANSWERED DISCOVERY". LOG has an APP discover entry with the counts.
+- [ ] Factory-reset a camera (or any box on 169.254) on the bench: ◎ DISCOVER shows it as an amber-ms row with an ONVIF/WSD badge and a REACH button, even though the laptop is on 192.168.x.
+- [ ] REACH → modal → LOG has OP reach_add + VERIFY, amber LINK-LOCAL chip appears, browser opens the camera. REMOVE → OP reach_del, chip gone. REACH again, then quit the app → `netsh interface ip show address` shows no 169.254 alias.
+- [ ] REACH on a DHCP adapter: modal warns about the static conversion; afterwards the ETHER badge reads STATIC; → DHCP restores it.
+- [ ] SWITCH? chip present (Wireshark 4.6+). Click on a managed-switch port → "LISTENING 65s" countdown, result line under the selector within ~30 s (LLDP) or ~60 s (CDP). Click again to stop early. On an unmanaged switch → "didn't announce". LOG has an APP lldp entry.
+- [ ] If tshark is older than 4.6 the chip is amber and the tooltip says so; no listen starts.
+- [ ] DHCP tab: engine dot red OFFLINE / green LISTENING on every theme preset, including the red and amber ones.
+- [ ] PING `x.x.x.x:5555` on a live host that drops → CLOSED (amber), tooltip "no answer on port, host is up". On a dead host → FAIL.
+- [ ] SCAN: your own PC with 554 open is not typed CAMERA; a Windows box with a NetBIOS name and 554 is WORKSTATION.
+- [ ] Every scan row has CAPTURE, including ARP-only rows with no open ports.
+
+### v7.1.0 rc.3 — DHCP, toner, report, fixes
+- [ ] DHCP: add a MULTI-IP alias on the wired adapter, then pick the adapter on the DHCP tab → modal asks which address; pick the alias → SERVER IP and pool are on the alias subnet; the select reads "[ip +1 alias]".
+- [ ] DHCP: tick 3 asking devices → ★ RESERVE SELECTED (3) → start 192.168.x.150 → stars on all three at .150/.151/.152; a start that collides with the server IP skips it.
+- [ ] PING: tone a host → ⚡ BLINK appears → click → "BLINKING" for 20 s, the switch LED for that port flickers hard; LOG has APP blink with the packet count. Toning an off-subnet host → BLINK says it needs your own subnet.
+- [ ] PING: tone a LAN host (~1 ms) then a WAN host (~30–80 ms) — the sonar is audibly lower on the slow one.
+- [ ] Version chip → SITE REPORT → paste into Notepad: adapter line, scans, DHCP, ping, operations all present and in this session's time window only.
+- [ ] SCAN: every row shows IP / MAC / PING / WSHARK together; narrow the window until they can't fit — the four drop to their own line together.
+- [ ] SCAN: CLEAR, ◎ DISCOVER with no sweep → on-subnet rows get real port badges, not "…".
+- [ ] REACH on a DHCP adapter, then REMOVE → ETHER badge is back to DHCP, LOG reach_del note says "back to DHCP".
+- [ ] PING `:5555` on a dead host → cycle still ticks about once a second for the other hosts.
+- [ ] Epson row: one "EPSON ET-8550 Series", not two. A real ONVIF camera shows ONVIF, not ONVIF+WSD.
+
+### v7.1.0 rc.4 — RECON, window, primary address
+- [ ] Six tabs; RECON opens with the ETHER adapter named and "NOTHING HEARD YET". With Wireshark missing the LISTEN button is dimmed with a reason in its tooltip.
+- [ ] RECON → LISTEN at home: progress counts to 65 s; cards: SWITCH "No LLDP/CDP announcement", 802.1X "No challenge", DHCP server 192.168.0.1 with gateway/mask/DNS, HOSTS on 192.168.0.x, NAMES, ADDRESS with TAKE. LOG has APP recon with the summary.
+- [ ] TAKE → ETHER tab, IP/mask/gateway filled and marked changed, status "FROM RECON — CHECK IT, THEN APPLY".
+- [ ] SILENT → modal → during the listen the ETHER badge shows no IP; after it ends the adapter is back (DHCP lease renewed). LOG: OP recon-unbind, OP recon-rebind, VERIFY recon-rebind. Kill the app mid-listen (Task Manager) → relaunch → VERIFY recon-rebind "leftover from previous run", adapter has its IP again.
+- [ ] Managed switch (bench): SWITCH card within ~30 s (LLDP) or ~60 s (CDP); STP card on a port running spanning tree; TRUNK card on a trunk port.
+- [ ] Window can't be narrowed below 430; at 430 WI-FI OFF / DISABLE fit the ADAPTER line. Quit from the DHCP tab → relaunch → ETHER opens at your narrow width, not 820, and fully on screen.
+- [ ] Add a MULTI-IP alias → ETHER still shows 192.168.x as the IP; MULTI-IP marks it PRIMARY (no REMOVE) and the alias as removable; the DHCP select reads `[192.168.x +1 alias]`; the DHCP settings refill with the modal (same adapter, no dropdown change); ⟳ offers the modal again.
+- [ ] MULTI-IP: typing 10.10.10.1 suggests 255.255.255.0, not 255.0.0.0.
+- [ ] SCAN after CLEAR: the Roku/TV row is MEDIA (purple bar), not CAMERA. UPDATE SITE → SITES shows MEDIA, no second 192.168.0.146 entry, and a type you cycled by hand survives the next UPDATE.
+- [ ] PING with `.139:5555` + `.250:5555` + router: status reads `ALERT — 1 DOWN · … · 1 CLOSED`. BLINK on a WAN host → the warning stays ~4 s.
+- [ ] ◎ DISCOVER after a sweep: the rows that answered pulse, status lists their last octets.
+- [ ] SCAN at 760 wide: MAC right of the IP, meta line is hostname/vendor/badges only. Narrow to 430: MAC drops back to the meta line.
+
+### v7.1.0 rc.6 — hardening, SILENT, layout
+- [ ] `build.bat` at home: the fused build runs. Then in PowerShell `$env:ELECTRON_RUN_AS_NODE="1"; & "dist\win-unpacked\NET-ETHER.exe" -e "console.log(1)"` must NOT print 1 (it should just launch the app or do nothing). Remove the variable after.
+- [ ] RECON STANDARD at home: cards as before; NAMES shows real host names only (no wpad, no `*<00>`, no `_tcp`).
+- [ ] RECON SILENT, let it finish: LOG has recon-unbind, recon-rebind OK with "IPv4 interface present", the header shows the IP again within ~8 s. DHCP card reads "No DHCP heard — SILENT".
+- [ ] RECON SILENT, quit mid-listen: either a clean rebind in the log, or the message box — never a dead adapter without a word. Relaunch: adapter has its address; `Get-NetIPInterface -InterfaceAlias Ethernet -AddressFamily IPv4` returns a row.
+- [ ] Unplug the cable → adapter reads DISCONNECTED. Plug in; if it comes up with no address it reads NO ADDRESS with a RENEW action; RENEW gets the lease (LOG: OP renew, VERIFY renew).
+- [ ] WI-FI chip: green "WI-FI" while the radio is enabled, amber "WI-FI OFF" only after you switch it off from the chip. Matches Settings.
+- [ ] ETHER: MULTI-IP open, add an alias, → DHCP from the badge → the panel updates by itself, alias gone, no REMOVE left behind.
+- [ ] ETHER: alias present, ✕ → warning banner; ✕ again → quits.
+- [ ] ETHER: open MULTI-IP with the window near the bottom of the screen → the window moves up, REVERT and the status bar stay visible.
+- [ ] APPLY a static with a DNS: no "DNS server is incorrect" line in the OP apply output. REVERT → OP revert in the log.
+- [ ] DHCP tab dot: red on launch, green once the tab has been opened (engine listening), amber while serving; visible from ETHER.
+- [ ] SCAN tab opens at 640 wide, SITES too; ETHER comes back at your narrow width. DISCOVER sits beside SCAN SUBNET with the hint line under both.
+- [ ] SITES → DELETE a throwaway site → LOG: APP backup "pre-delete" before the delete.
+
+### v7.1.0 rc.7 — final home round
+- [ ] Drag ETHER to 700 wide → SCAN opens at 700 (not 640), DHCP at 820, back to SCAN stays 820, ETHER returns to 700.
+- [ ] Open MULTI-IP with the window parked at the bottom of the screen → it moves up and sits clear of the taskbar and the top edge.
+- [ ] DHCP tab open (LISTENING) → RECON SILENT → badge and tab dot read SUSPENDED (amber-grey) → listen ends → LISTENING again by itself. Engine log: "Suspended …" then "Resumed — listen".
+- [ ] Quit mid-SILENT → exactly one recon-rebind in the log, not two.
+- [ ] Hover the OFFLINE badge → dot stays red.
+- [ ] Rename the adapter to `Johan's Port` → relaunch → APPLY a static, → DHCP, MULTI-IP add/remove, DISABLE/ENABLE, RECON SILENT all work; rename back to `Ethernet`.
+
 ### SITES / credentials / import-export
 - [ ] Open a device drawer, add a credential. Value is masked; eye toggle reveals. Close and reopen the app → still there, masked.
 - [ ] Open `%APPDATA%\net-ether\intel.json` in Notepad: top level is `{ "format": 2, "creds": "safeStorage", "sites": {...} }` and the value is `{ "$enc": "..." }`, not plaintext.
@@ -118,6 +194,42 @@ Everything above is already proven; this is only what the fleet changes.
 - [ ] Two launches in a row during the EPM delay → one window.
 
 ---
+
+## Deployment notes for IT (v7.1.0)
+
+- **Wireshark hand-off.** When Wireshark is installed, the app can launch it on an
+  adapter or with a `host <ip>` capture filter. Because NET//ETHER runs elevated,
+  the Wireshark it launches is elevated too — same binary IT already deploys,
+  just started from our process. Nothing captures unless the technician clicks.
+- **New probe ports.** The subnet scanner now also tries TCP 8000, 37777, 1756
+  and 5500 on hosts it finds (Hikvision, Dahua, Bosch, Genetec service ports).
+- **Wake-on-LAN.** UDP 9 magic packets to 255.255.255.255 and each subnet's
+  directed broadcast, on demand only.
+- **Adapter enable/disable** goes through `netsh interface set interface`, under
+  the same EPM elevation as every other netsh call; each one is in the
+  diagnostics log.
+- **Toasts** use the tray balloon API — no notification registration, no
+  Start-menu dependency, works on the portable build.
+- **Multicast discovery.** With every scan (and on demand) the app sends one
+  WS-Discovery probe (UDP 3702), one SSDP M-SEARCH (UDP 1900) and one mDNS
+  query (UDP 5353) to the standard multicast groups and listens 3 s for
+  unicast replies. Windows Firewall allows those replies by default
+  ("unicast response to multicast"); if a GPO disables that, discovery
+  simply finds nothing.
+- **Link-local alias (REACH).** On request the app adds a temporary
+  169.254.x.x/16 secondary address to the active adapter so a factory-default
+  camera can be configured, and removes it on quit. Logged like every netsh call.
+- **Passive LLDP/CDP listen.** Through the installed Wireshark's `tshark.exe`,
+  capture filter limited to LLDP and CDP frames, up to 65 s, nothing sent.
+  Needs Wireshark 4.6+ and npcap; both are already on the image.
+- **PORT BLINK.** On request, ~25 small UDP datagrams a second to one host's
+  discard port (UDP 9) for 20 s, on the technician's own subnet only. The host
+  ignores them; it exists to strobe a switch-port LED.
+- **RECON.** Passive capture through tshark for up to 65 s (LLDP, CDP, EAPOL,
+  STP, ARP, DHCP, NBNS, mDNS, SSDP, NTP, 802.1Q). Nothing is sent. SILENT mode
+  temporarily disables the IPv4/IPv6 bindings on the adapter
+  (`Disable-NetAdapterBinding`) and re-enables them afterwards; both are logged
+  and the re-enable is retried on the next launch if the app was killed.
 
 ## Deployment notes for IT (v7.0.1 — signed binaries)
 

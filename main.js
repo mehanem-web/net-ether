@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, shell, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, shell, clipboard, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -70,8 +70,10 @@ function sanitizeAdapter(name) {
   if (!s || s.length > 256) return null;
   // Reject anything that could break out of a quoted netsh argument or PowerShell
   // string, plus cmd.exe metacharacters (% env-expansion, ^ escape) that survive
-  // into the elevated cmd /c chain built by runElevated().
-  if (/["';&|`$\\%^]/.test(s)) return null;
+  // into the non-elevated .cmd fallback. v7.1.0: the apostrophe is allowed — every
+  // write path is execFile with tokenised args or PowerShell with the quote escaped,
+  // and "Johan's Port" is a legal adapter name.
+  if (/[";&|`$\\%^]/.test(s)) return null;
   return s;
 }
 
@@ -324,18 +326,30 @@ async function runElevated(cmdString, { tag = 'run', timeoutMs = 30000 } = {}) {
 // All adapter queries now use PowerShell Get-CimInstance / Get-NetAdapter.
 
 // Get adapter GUID by NetConnectionID (replaces: wmic nic where "NetConnectionID='X'" get GUID)
+// v7.1.0: GUIDs don't change for the life of an adapter — cache them so the LIVE poll
+// stops spawning a PowerShell per DHCP adapter every 15 s.
+const guidCache = new Map();
 async function getAdapterGuid(adapterName) {
-  try {
-    // Escape single quotes in adapter name for PowerShell string embedding
-    const safeName = adapterName.replace(/'/g, "''");
-    const out = (await execAsync(
-      `powershell -NoProfile -Command "Get-CimInstance Win32_NetworkAdapter -Filter \\"NetConnectionID='${safeName}'\\" | Select-Object -ExpandProperty GUID"`,
-      { timeout: 5000 }
-    ).catch(() => '')).replace(/\r/g, '').trim();
-    // GUID is returned as {XXXXXXXX-XXXX-...}
-    const m = out.match(/\{[^}]+\}/);
-    return m ? m[0] : null;
-  } catch { return null; }
+  const key = String(adapterName || '').toLowerCase();
+  if (guidCache.has(key)) return guidCache.get(key);
+  const g = await getAdapterGuidUncached(adapterName);
+  if (g) guidCache.set(key, g);
+  return g;
+}
+async function getAdapterGuidUncached(adapterName) {
+  // v7.1.0: InterfaceGuid straight from Get-NetAdapter, name passed as a PowerShell
+  // single-quoted literal ('' escapes the apostrophe) through execFile — no shell, no
+  // WQL. The old Win32_NetworkAdapter -Filter needed WQL escaping (\') and silently
+  // found nothing for names like "Johan's Port".
+  const safe = sanitizeAdapter(adapterName);
+  if (!safe) return null;
+  const script = `(Get-NetAdapter -Name '${safe.replace(/'/g, "''")}' -IncludeHidden -ErrorAction SilentlyContinue).InterfaceGuid`;
+  const out = await new Promise(resolve => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script],
+      { timeout: 8000, windowsHide: true }, (err, stdout) => resolve(err ? '' : String(stdout || '')));
+  });
+  const m = out.match(/\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}/);
+  return m ? m[0] : null;
 }
 
 // Get adapter Name→Description map (replaces: wmic nic get Name,Description /format:csv)
@@ -359,6 +373,48 @@ async function getAdapterDescriptions() {
     });
     return descMap;
   } catch { return {}; }
+}
+
+// v7.1.0: link speed + media type per adapter, one Get-NetAdapter call.
+// Runs in parallel with the netsh reads inside getAdaptersFull(). Also the
+// source of the Wi-Fi adapter list — those are filtered out of the ETHER
+// selector by design, so the WI-FI chip needs its own view of them.
+// Result is cached so get-wifi can answer without another PowerShell spawn.
+let netAdapterCache = { ts: 0, byName: {}, wifi: [] };
+async function getNetAdapterInfo() {
+  const script =
+    "Get-NetAdapter -IncludeHidden | Select-Object Name,InterfaceDescription,Status,AdminStatus,LinkSpeed,ReceiveLinkSpeed,PhysicalMediaType,MediaConnectionState | ConvertTo-Json -Compress";
+  const out = await new Promise(resolve => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script],
+      { timeout: 8000, windowsHide: true }, (err, stdout) => resolve(err ? '' : String(stdout || '')));
+  });
+  const byName = {}, wifi = [];
+  try {
+    let arr = JSON.parse(out.trim() || '[]');
+    if (!Array.isArray(arr)) arr = [arr];
+    for (const a of arr) {
+      if (!a || !a.Name) continue;
+      const media = String(a.PhysicalMediaType || '');
+      const bps   = Number(a.ReceiveLinkSpeed) || 0;
+      const status = String(a.Status || '');        // Up | Disconnected | Disabled | Not Present (text)
+      const rec = {
+        name:   String(a.Name),
+        desc:   String(a.InterfaceDescription || ''),
+        status,
+        // AdminStatus serialises as a number (1 = Up); Status is reliable text. Disabled is the only "off".
+        adminUp: status !== 'Disabled' && status !== 'Not Present',
+        linkSpeed: String(a.LinkSpeed || ''),        // "1 Gbps", "100 Mbps"
+        bps,
+        wifi:   /802\.11|wireless/i.test(media),
+      };
+      byName[rec.name.toLowerCase()] = rec;
+      // real radios only — -IncludeHidden also lists "Wi-Fi Direct Virtual Adapter" entries,
+      // and driver reinstalls leave "Not Present" ghosts of the same card behind
+      if (rec.wifi && status !== 'Not Present' && !/virtual|direct|hosted network/i.test(rec.desc)) wifi.push(rec);
+    }
+  } catch {}
+  netAdapterCache = { ts: Date.now(), byName, wifi };
+  return netAdapterCache;
 }
 
 // Generic JSON file loader — shared by presets-load and sites-load
@@ -497,6 +553,8 @@ function createTray() {
   });
   win.on('show', () => tray.setContextMenu(buildMenu()));
   win.on('hide', () => tray.setContextMenu(buildMenu()));
+  // v7.1.0: a toner toast was clicked — bring the HUD back
+  tray.on('balloon-click', () => showWindow());
 
   startTrayAnimation();
 }
@@ -543,7 +601,8 @@ function assertAlwaysOnTop() {
 // on a multi-monitor dock is not to be trusted.
 const WINDOW_STATE_PATH = path.join(app.getPath('userData'), 'window-state.json');
 let winStateTimer = null;
-let narrowWidth = null;   // set while the wide (DHCP) tab is open — see win-set-width
+let narrowWidth = null;   // the width the user chose on a narrow tab — the only width ever saved
+let wideOpen    = false;  // true while the wide (DHCP) tab holds the window at DHCP_WIDTH
 
 function loadWindowState() {
   try { return JSON.parse(fs.readFileSync(WINDOW_STATE_PATH, 'utf8')); } catch { return null; }
@@ -553,10 +612,11 @@ function saveWindowState() {
   try {
     const b = win.getBounds();
     const d = screen.getDisplayMatching(b);
-    // On the wide tab the window is temporarily 820 px; remember the width the user
-    // actually chose, or ETHER would open wide next launch.
-    const width = (typeof narrowWidth === 'number' && narrowWidth !== null) ? narrowWidth : b.width;
-    fs.writeFileSync(WINDOW_STATE_PATH, JSON.stringify({ x: b.x, y: b.y, width, height: b.height, displayId: d.id }), 'utf8');
+    // v7.1.0: only a narrow-tab width is ever remembered. On the wide tab the window is
+    // temporarily 820 px; that number never reaches the file, however the session ends.
+    if (!wideOpen) narrowWidth = b.width;
+    const width = narrowWidth || b.width;
+    fs.writeFileSync(WINDOW_STATE_PATH, JSON.stringify({ x: b.x, y: b.y, width, displayId: d.id }), 'utf8');
   } catch {}
 }
 function scheduleSaveWindowState() {
@@ -573,8 +633,8 @@ function resolveInitialBounds(initW, initH) {
   const fallback = () => ({ x: Math.round(primary.workArea.x + (primary.workArea.width - initW) / 2), y: primary.workArea.y + 20, width: initW, height: initH });
   const st = loadWindowState();
   if (!st || typeof st.x !== 'number' || typeof st.y !== 'number') return fallback();
-  const w = Math.max(320, Math.min(st.width || initW, 1200));
-  const h = Math.max(300, Math.min(st.height || initH, 2000));
+  const w = Math.max(430, Math.min(st.width || initW, 1200));
+  const h = initH;   // v7.1.0: never restore height — the renderer fits it to content within a second
   // Is the saved spot still on an attached display? Require the titlebar's
   // centre to be inside some work area, so it can always be grabbed.
   const probe = { x: st.x + Math.round(w / 2), y: st.y + 17 };
@@ -583,14 +643,20 @@ function resolveInitialBounds(initW, initH) {
     return probe.x >= a.x && probe.x <= a.x + a.width && probe.y >= a.y && probe.y <= a.y + a.height;
   });
   if (!onScreen) return fallback();
-  return { x: st.x, y: st.y, width: w, height: h };
+  // v7.1.0: clamp the whole window inside that display's work area so a spot saved
+  // while the window was tall can't open it hanging off the bottom onto the taskbar
+  const disp = screen.getDisplayMatching({ x: st.x, y: st.y, width: w, height: h });
+  const a = disp.workArea;
+  const x = Math.max(a.x, Math.min(st.x, a.x + a.width - w));
+  const y = Math.max(a.y, Math.min(st.y, a.y + a.height - Math.min(h, 400)));
+  return { x, y, width: w, height: h };
 }
 
 // ── WINDOW ─────────────────────────────────────────────────
 function createWindow() {
   // Electron on Windows: BrowserWindow width/height/x/y all use LOGICAL pixels.
   // Do NOT multiply by scaleFactor — Electron handles DPI scaling internally.
-  const initW = 390;  // logical CSS px
+  const initW = 430;  // logical CSS px
   const initH = 300;  // logical CSS px — the renderer fits this to content after load
   const b = resolveInitialBounds(initW, initH);
 
@@ -605,7 +671,7 @@ function createWindow() {
     hasShadow: false,
     alwaysOnTop: true,
     resizable: true,
-    minWidth: 340,   // below this the titlebar can't hold logo + controls
+    minWidth: 430,   // v7.1.0: visible beats small — every adapter chip fits at 430
     minHeight: 300,
     skipTaskbar: true,
     show: false,
@@ -613,6 +679,11 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
+      // v7.1.0: the PING monitor and toner keep running from the tray. Without
+      // this, Chromium's intensive throttling slows a hidden page's timers to
+      // once a minute after ~5 min — the tray alert and the hidden toast depend
+      // on the cycle keeping time. The renderer skips its own idle polling while hidden.
+      backgroundThrottling: false,
     },
   });
 
@@ -671,6 +742,13 @@ app.whenReady().then(async () => {
   // "restore to launch state" baseline. Runs async, doesn't block UI.
   takeLaunchSnapshot();
   readPolicy();
+  detectTools();
+  // v7.1.0: a crash can leave a REACH alias behind — clean up once we know we're elevated
+  detectElevation().then(p => {
+    if (!p.elevated) return;
+    if (readTempAliases().length) clearTempAliases('leftover from previous run');
+    if (readSilentState()) restoreSilent('leftover from previous run');
+  }).catch(() => {});
   // Elevation check runs in parallel with window load; runElevated() awaits it.
   detectElevation().then(() => {
     diagAdd({
@@ -708,6 +786,18 @@ async function shutdownAndQuit() {
   try { if (winAlive()) win.hide(); } catch {}
   try { flushVendorCache(); } catch {}
   try { if (DHCP) await Promise.race([DHCP.shutdown(), new Promise(r => setTimeout(r, 6000))]); } catch {}
+  try { if (DISCOVER) { DISCOVER.lldpStop(); DISCOVER.reconStop(); } } catch {}
+  // v7.1.0: tshark holds the adapter through npcap — give it a moment to exit before NetCfg is touched
+  if (PRIV.elevated && readSilentState()) {
+    await new Promise(r => setTimeout(r, 1200));
+    let res = { ok: false };
+    try { res = await Promise.race([restoreSilent('quit'), new Promise(r => setTimeout(() => r({ ok: false, timeout: true }), 12000))]); } catch {}
+    if (!res.ok) {
+      try { dialog.showMessageBoxSync({ type: 'warning', title: 'NET//ETHER', message: 'IP bindings could not be restored on the adapter.', detail: 'Relaunch NET//ETHER and it will fix this on start. If that fails, run in an admin PowerShell:\nEnable-NetAdapterBinding -Name "<adapter>" -ComponentID ms_tcpip,ms_tcpip6', buttons: ['OK'] }); } catch {}
+    }
+  }
+  // v7.1.0: REACH aliases are temporary by contract — drop them on the way out (direct netsh when elevated)
+  try { if (PRIV.elevated && readTempAliases().length) await Promise.race([clearTempAliases('quit'), new Promise(r => setTimeout(r, 4000))]); } catch {}
   try { diagFlush(); } catch {}
   try { tray.destroy(); } catch {}
   clearTimeout(watchdog);
@@ -742,8 +832,23 @@ function maxHeightHere() {
 }
 ipcMain.handle('win-set-size', (e, height) => {
   if (!winAlive()) return;
-  const h = Math.min(Math.max(Math.round(height), 300), maxHeightHere());
-  progResize(win.getBounds().width, h);
+  // v7.1.0: the content fit may grow the window taller than the room below it.
+  // Instead of capping (which hides the bottom of the panel — REVERT, status bar),
+  // move the window up so the whole thing stays inside the work area.
+  const area = currentDisplay().workArea;
+  const cur  = win.getBounds();
+  const want = Math.max(Math.round(height), 300);
+  const h    = Math.min(want, area.height - 24);
+  const bottom = area.y + area.height - 8;
+  if (cur.y + h > bottom) {
+    const y = Math.max(area.y + 8, bottom - h);
+    win._progSize = { w: cur.width, h, ts: Date.now() };
+    const hadFocus = win.isFocused();
+    win.setBounds({ x: cur.x, y, width: cur.width, height: h }, false);
+    if (hadFocus) setTimeout(() => { try { if (winAlive() && !win.isFocused()) win.focus(); win.webContents.focus(); } catch {} }, 30);
+    return;
+  }
+  progResize(cur.width, h);
 });
 
 // Width control for wide tabs (DHCP). Remembers the narrow width so leaving
@@ -753,16 +858,21 @@ ipcMain.handle('win-set-width', (e, { wide, width }) => {
   const area = currentDisplay().workArea;
   const cur  = win.getBounds();
   if (wide) {
-    if (narrowWidth === null) narrowWidth = cur.width;
-    const target = Math.min(Math.max(Math.round(width) || 760, 560), area.width - 16);
+    if (!wideOpen) narrowWidth = cur.width;
+    wideOpen = true;
+    // v7.1.0: a wide tab's width is a minimum, never a target — a window the user dragged
+    // wider stays wider; switching DHCP → SCAN keeps 820 rather than snapping to 640
+    const minW = Math.max(Math.round(width) || 760, 560);
+    const target = Math.min(Math.max(minW, cur.width), area.width - 16);
     if (target === cur.width) return;
     // keep the window on-screen if it grows past the right edge
     const x = Math.max(area.x, Math.min(cur.x, area.x + area.width - target - 8));
     win._progSize = { w: target, h: cur.height, ts: Date.now() };
     win.setBounds({ x, y: cur.y, width: target, height: cur.height }, false);
   } else {
-    if (narrowWidth === null) return;
-    const target = narrowWidth; narrowWidth = null;
+    if (!wideOpen) return;
+    wideOpen = false;
+    const target = narrowWidth || cur.width;
     if (target === cur.width) return;
     win._progSize = { w: target, h: cur.height, ts: Date.now() };
     win.setBounds({ x: cur.x, y: cur.y, width: target, height: cur.height }, false);
@@ -773,7 +883,7 @@ ipcMain.handle('win-set-width', (e, { wide, width }) => {
 
 // Work-area height of the window's own display — the renderer caps its
 // content-fit height with this so the HUD never grows off the bottom.
-ipcMain.handle('win-get-max-height', () => winAlive() ? maxHeightHere() : 980);
+ipcMain.handle('win-get-max-height', () => winAlive() ? Math.max(300, currentDisplay().workArea.height - 24) : 980);
 
 // ── IPC: opacity ───────────────────────────────────────────
 // FIX v5.22: changed from ipcMain.on → ipcMain.handle so renderer's
@@ -846,6 +956,8 @@ async function getAdaptersFull() {
   try {
     const ifaces = os.networkInterfaces();
 
+    // v7.1.0: link speed / media inventory — one PowerShell; descriptions ride along (see getNetAdapterInfo)
+    const netInfoP = getNetAdapterInfo().catch(() => netAdapterCache);
     const netshOutput = (await execAsync('netsh interface show interface', { timeout: 4000 }).catch(() => '')).replace(/\r/g, '');
 
     // Build statusMap from netsh — this has ALL adapters regardless of IP
@@ -905,14 +1017,23 @@ async function getAdaptersFull() {
     } catch {}
 
     // Build an IP lookup from os.networkInterfaces (only has adapters with IPs)
+    // v7.1.0: the PRIMARY address is the one whose subnet holds the gateway, not
+    // whichever Windows lists first — a freshly added MULTI-IP alias often sorts
+    // first and used to be shown (and offered for REMOVE) as the primary.
+    const toNum = ipStr => ipStr.split('.').reduce((n, o) => ((n << 8) + (+o)) >>> 0, 0);
     const ipMap = {};
     Object.entries(ifaces).forEach(([name, addrs]) => {
-      const v4 = addrs.find(a => a.family === 'IPv4' && !a.internal);
+      const v4s = addrs.filter(a => a.family === 'IPv4' && !a.internal);
       const v6 = addrs.find(a => a.family === 'IPv6' && !a.internal);
+      const gw = gwMap[name.toLowerCase()];
+      let v4 = null;
+      if (gw && isValidIp(gw)) v4 = v4s.find(a => ((toNum(a.address) & toNum(a.netmask)) >>> 0) === ((toNum(gw) & toNum(a.netmask)) >>> 0)) || null;
+      if (!v4) v4 = v4s.find(a => !/^169\.254\./.test(a.address)) || v4s[0] || null;
       ipMap[name] = {
         ip:     v4 ? v4.address : null,
         subnet: v4 ? v4.netmask : null,
         mac:    v4 ? v4.mac     : (v6 ? v6.mac : (addrs[0]?.mac || null)),
+        ips:    v4s.map(a => ({ ip: a.address, subnet: a.netmask })),
       };
     });
 
@@ -923,6 +1044,8 @@ async function getAdaptersFull() {
         name,
         ip:        ip.ip,
         subnet:    ip.subnet,
+        ips:       ip.ips || [],
+        noAddress: status.state === 'Connected' && !ip.ip,   // v7.1.0: link up, nothing bound yet (after a rebind, or a dead DHCP)
         mac:       ip.mac,
         state:     status.state,
         admin:     status.admin,
@@ -955,7 +1078,14 @@ async function getAdaptersFull() {
     // Build a name->description map via PowerShell so we can filter on description too.
     // Catches VPN/virtual adapters with generic names like "Ethernet 4" (e.g. SonicWall).
     try {
-      const descMap = await getAdapterDescriptions();
+      // v7.1.0: descriptions come from the same Get-NetAdapter call as the link speed —
+      // one PowerShell per refresh instead of two. Win32_NetworkAdapter stays as the fallback.
+      let descMap = {};
+      try {
+        const info = await netInfoP;
+        for (const [k, rec] of Object.entries(info.byName)) if (rec.desc) descMap[k] = rec.desc.toLowerCase();
+      } catch {}
+      if (!Object.keys(descMap).length) descMap = await getAdapterDescriptions();
       if (Object.keys(descMap).length > 0) {
         adapters = adapters.filter(a => {
           const desc = descMap[a.name.toLowerCase()] || '';
@@ -979,6 +1109,29 @@ async function getAdaptersFull() {
       return a;
     });
 
+    // v7.1.0: an adapter with no IPv4 interface (after a rebind, or a dead stack) has no
+    // show-config block, so isDhcp would be null and the → DHCP action would hide — exactly
+    // when it's needed. The registry still knows; read it for those.
+    for (const a of adapters) {
+      if (a.isDhcp !== null || a.admin === 'Disabled') continue;
+      try {
+        const guid = await getAdapterGuid(a.name);
+        if (!guid) continue;
+        const regOut = (await execAsync(`reg query "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\${guid}" /v EnableDHCP`, { timeout: 3000 }).catch(() => '')).replace(/\r/g, '');
+        const m = regOut.match(/EnableDHCP\s+REG_DWORD\s+(0x\w+)/i);
+        if (m) a.isDhcp = parseInt(m[1], 16) !== 0;
+      } catch {}
+    }
+
+    // v7.1.0: attach negotiated link speed (bps + display string)
+    try {
+      const info = await netInfoP;
+      adapters = adapters.map(a => {
+        const rec = info.byName[a.name.toLowerCase()];
+        return rec ? { ...a, linkSpeed: rec.linkSpeed || null, linkBps: rec.bps || 0 } : { ...a, linkSpeed: null, linkBps: 0 };
+      });
+    } catch {}
+
     // Sort: connected first, then disconnected, then disabled — alpha within each group
     adapters.sort((a, b) => {
       const rank = x => x.connected ? 0 : (x.admin === 'Disabled' ? 2 : 1);
@@ -1001,6 +1154,497 @@ async function getAdaptersFull() {
   }
 }
 ipcMain.handle('get-adapters', async () => getAdaptersFull());
+
+// ── IPC: Wi-Fi adapters (v7.1.0) ───────────────────────────
+// The ETHER selector hides wireless on purpose; the WI-FI chip needs them.
+// Served from the Get-NetAdapter cache that getAdaptersFull() refreshes;
+// re-read only when the cache is older than 20 s.
+ipcMain.handle('get-wifi', async () => {
+  if (Date.now() - netAdapterCache.ts > 20000) { try { await getNetAdapterInfo(); } catch {} }
+  return netAdapterCache.wifi.map(w => ({ name: w.name, status: w.status, adminUp: w.adminUp, desc: w.desc }));
+});
+
+// ── IPC: enable / disable an adapter (v7.1.0) ──────────────
+// netsh interface set interface "<name>" admin=enabled|disabled, elevated,
+// then verified against `netsh interface show interface`. Standard-user techs
+// have no other way to kill Wi-Fi on the bench. Name must match a real
+// adapter exactly — wired (selector list) or wireless (WI-FI chip).
+async function readAdminStates() {
+  const out = (await execAsync('netsh interface show interface', { timeout: 4000 }).catch(() => '')).replace(/\r/g, '');
+  const map = {};
+  out.split('\n').forEach(line => {
+    const m = line.match(/^(Enabled|Disabled)\s+(Connected|Disconnected|Not Present)\s+\S+\s+(.+)$/i);
+    if (m) map[m[3].trim().toLowerCase()] = m[1].trim().toLowerCase();
+  });
+  return map;
+}
+
+ipcMain.handle('adapter-set-enabled', async (e, { adapter, enabled }) => {
+  const safe = sanitizeAdapter(adapter);
+  if (!safe) return { ok: false, err: 'INVALID_ADAPTER' };
+  const states = await readAdminStates();
+  const key = safe.toLowerCase();
+  if (!(key in states)) return { ok: false, err: 'UNKNOWN_ADAPTER' };
+  const want = enabled ? 'enabled' : 'disabled';
+  if (states[key] === want) return { ok: true, verified: true, already: true };
+  // Never pull the wire out from under the DHCP engine.
+  try {
+    const st = DHCP ? DHCP.getState() : null;
+    if (!enabled && st && st.mode !== 'off' && st.mode !== 'listen' && st.serveCfg && st.serveCfg.adapterName &&
+        st.serveCfg.adapterName.toLowerCase() === key) {
+      return { ok: false, err: 'DHCP_SERVING' };
+    }
+  } catch {}
+  const r = await runElevated(`netsh interface set interface "${safe}" admin=${want}`, { tag: enabled ? 'adapter-enable' : 'adapter-disable' });
+  if (!r.ok) return { ok: false, err: r.err, mode: r.mode };
+  // Verify: poll the admin state for up to 6 s (Wi-Fi radios can take a moment)
+  let verified = false;
+  for (let i = 0; i < 10 && !verified; i++) {
+    await new Promise(res => setTimeout(res, 600));
+    const now = await readAdminStates();
+    if (now[key] === want) verified = true;
+  }
+  diagVerify(enabled ? 'adapter-enable' : 'adapter-disable', verified,
+    `${safe}: ${verified ? 'now ' + want : 'netsh ok but state still ' + (states[key] || 'unknown') + ' after 6 s'}`);
+  try { await getNetAdapterInfo(); } catch {}
+  return { ok: true, verified, mode: r.mode };
+});
+
+// ── IPC: DHCP renew (v7.1.0) ───────────────────────────────
+// For the "link up, no address" state: ask the DHCP server again. Harmless on an
+// adapter that already has a lease; refused by Windows on a static one.
+ipcMain.handle('adapter-renew', async (e, adapter) => {
+  const safe = sanitizeAdapter(adapter);
+  if (!safe) return { ok: false, err: 'INVALID_ADAPTER' };
+  const r = await runElevated(`ipconfig /renew "${safe}"`, { tag: 'renew', timeoutMs: 25000 });
+  if (!r.ok) return { ok: false, err: r.err };
+  const got = await new Promise(res => setTimeout(() => res(adapterIpv4s(safe).some(ip => !/^169\.254\./.test(ip))), 3000));
+  diagVerify('renew', got, `${safe}: ${got ? 'lease obtained' : 'no address 3 s after renew — server slow, or none on this segment'}`);
+  return { ok: true, verified: got };
+});
+
+// ── WIRESHARK / TSHARK DETECTION (v7.1.0) ──────────────────
+// Looked up once per launch: App Paths in the registry first (the Wireshark
+// installer writes it), then the default install folder. tshark's version is
+// read once and cached — the LLDP chip and RECON need 4.6+, and a renamed
+// dissector field makes tshark refuse to start rather than return blanks.
+const TOOLS = { checked: false, wireshark: null, tshark: null, dir: null, version: null, versionOk: false, err: null };
+const TSHARK_MIN = [4, 6];
+let toolsReady = null;
+function detectTools() {
+  if (toolsReady) return toolsReady;
+  toolsReady = (async () => {
+    const candidates = [];
+    try {
+      const reg = await new Promise(resolve => {
+        execFile('reg.exe', ['query', 'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\Wireshark.exe', '/ve'],
+          { timeout: 4000, windowsHide: true }, (err, stdout) => resolve(err ? '' : String(stdout || '')));
+      });
+      const m = reg.match(/REG_SZ\s+(.+\.exe)\s*$/im);
+      if (m) candidates.push(m[1].trim());
+    } catch {}
+    for (const base of [process.env.ProgramW6432, process.env.ProgramFiles, process.env['ProgramFiles(x86)']]) {
+      if (base) candidates.push(path.join(base, 'Wireshark', 'Wireshark.exe'));
+    }
+    const exe = candidates.find(p => { try { return fs.existsSync(p); } catch { return false; } });
+    if (!exe) { TOOLS.checked = true; TOOLS.err = 'Wireshark not found'; return TOOLS; }
+    TOOLS.wireshark = exe;
+    TOOLS.dir = path.dirname(exe);
+    const tshark = path.join(TOOLS.dir, 'tshark.exe');
+    if (fs.existsSync(tshark)) {
+      TOOLS.tshark = tshark;
+      try {
+        const out = await new Promise(resolve => {
+          execFile(tshark, ['--version'], { timeout: 8000, windowsHide: true }, (err, stdout) => resolve(String(stdout || '')));
+        });
+        const vm = out.match(/\b(\d+)\.(\d+)\.(\d+)\b/);
+        if (vm) {
+          TOOLS.version = `${vm[1]}.${vm[2]}.${vm[3]}`;
+          const maj = +vm[1], min = +vm[2];
+          TOOLS.versionOk = maj > TSHARK_MIN[0] || (maj === TSHARK_MIN[0] && min >= TSHARK_MIN[1]);
+        }
+      } catch {}
+    }
+    TOOLS.checked = true;
+    diagAdd({ kind: 'app', tag: 'tools', ok: true,
+      note: `Wireshark at ${exe}${TOOLS.tshark ? ` · tshark ${TOOLS.version || '?'}${TOOLS.versionOk ? '' : ' (need ' + TSHARK_MIN.join('.') + '+)'}` : ' · tshark missing'}` });
+    return TOOLS;
+  })();
+  return toolsReady;
+}
+// The renderer reads tsharkVersion / tsharkOk — the same names diagnostics STATE uses.
+// (an earlier build handed over the raw object with `version` / `versionOk`, so the UI never saw a version.)
+ipcMain.handle('get-tools', async () => {
+  await detectTools();
+  return { wireshark: TOOLS.wireshark, tshark: TOOLS.tshark, dir: TOOLS.dir, tsharkVersion: TOOLS.version, tsharkOk: TOOLS.versionOk, err: TOOLS.err };
+});
+
+// Which adapter carries traffic to this IPv4? The one whose subnet contains it.
+function adapterForIp(ip) {
+  if (!isValidIp(ip)) return null;
+  const toNum = s => s.split('.').reduce((n, o) => ((n << 8) + (+o)) >>> 0, 0);
+  const t = toNum(ip);
+  for (const [name, addrs] of Object.entries(os.networkInterfaces())) {
+    for (const a of addrs) {
+      if (a.family !== 'IPv4' || a.internal || !a.netmask) continue;
+      const m = toNum(a.netmask);
+      if (((toNum(a.address) & m) >>> 0) === ((t & m) >>> 0)) return name;
+    }
+  }
+  return null;
+}
+
+// ── IPC: open a live Wireshark capture (v7.1.0) ────────────
+// Hands off to the tool the fleet already has: whole adapter from the
+// adapter row, `host <ip>` from a SCAN / PING row. The adapter is addressed
+// by its NPF GUID so friendly-name quirks never matter. Wireshark inherits
+// our elevation — expected, and noted in TESTING.md.
+ipcMain.handle('wireshark-open', async (e, { adapter, host }) => {
+  await detectTools();
+  if (!TOOLS.wireshark) return { ok: false, err: 'NOT_FOUND' };
+  let name = null;
+  const ip = (typeof host === 'string' && isValidIp(host.trim())) ? host.trim() : null;
+  if (ip) name = adapterForIp(ip);
+  if (!name) name = sanitizeAdapter(adapter);
+  if (!name) return { ok: false, err: 'NO_ADAPTER' };
+  const guid = await getAdapterGuid(name);
+  if (!guid) return { ok: false, err: 'NO_GUID' };
+  const args = ['-i', `\\Device\\NPF_${guid}`, '-k'];
+  if (ip) args.push('-f', `host ${ip}`);
+  try {
+    const child = execFile(TOOLS.wireshark, args, { detached: true, windowsHide: false, stdio: 'ignore' });
+    child.unref();
+  } catch (err) {
+    diagAdd({ kind: 'error', tag: 'wireshark', ok: false, note: err.message });
+    return { ok: false, err: err.message };
+  }
+  diagAdd({ kind: 'app', tag: 'wireshark', ok: true, note: `Opened on ${name}${ip ? ' · host ' + ip : ''}` });
+  return { ok: true, adapter: name };
+});
+
+// ── IPC: Wake-on-LAN (v7.1.0) ──────────────────────────────
+// Magic packet: 6×FF then the MAC 16 times, UDP 9. Sent to the limited
+// broadcast and to every interface's directed broadcast — Windows only puts
+// 255.255.255.255 out one interface, and that's rarely the bench wire.
+ipcMain.handle('wol-send', async (e, mac) => {
+  const hex = String(mac || '').replace(/[^0-9a-fA-F]/g, '').toUpperCase();
+  if (hex.length !== 12) return { ok: false, err: 'INVALID_MAC' };
+  const macBuf = Buffer.from(hex, 'hex');
+  const pkt = Buffer.concat([Buffer.alloc(6, 0xff), ...Array.from({ length: 16 }, () => macBuf)]);
+  const toNum = s => s.split('.').reduce((n, o) => ((n << 8) + (+o)) >>> 0, 0);
+  const toIp  = n => [n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join('.');
+  const targets = new Set(['255.255.255.255']);
+  for (const addrs of Object.values(os.networkInterfaces())) {
+    for (const a of addrs) {
+      if (a.family !== 'IPv4' || a.internal || !a.netmask) continue;
+      const m = toNum(a.netmask);
+      if (m === 0xffffffff) continue;
+      targets.add(toIp(((toNum(a.address) & m) | (~m >>> 0)) >>> 0));
+    }
+  }
+  const dgram = require('dgram');
+  const sent = [];
+  await new Promise(resolve => {
+    const sock = dgram.createSocket('udp4');
+    sock.on('error', () => { try { sock.close(); } catch {} resolve(); });
+    sock.bind(0, () => {
+      try { sock.setBroadcast(true); } catch {}
+      let pending = targets.size;
+      for (const t of targets) {
+        sock.send(pkt, 0, pkt.length, 9, t, err => { if (!err) sent.push(t); if (--pending === 0) { try { sock.close(); } catch {} resolve(); } });
+      }
+    });
+    setTimeout(() => { try { sock.close(); } catch {} resolve(); }, 2000);
+  });
+  const pretty = hex.match(/../g).join(':');
+  diagAdd({ kind: 'op', tag: 'wol', ok: sent.length > 0, mode: 'udp', note: `${pretty} → ${sent.join(', ') || 'nothing sent'}` });
+  return { ok: sent.length > 0, targets: sent, mac: pretty };
+});
+
+// ── IPC: toast while hidden (v7.1.0) ───────────────────────
+// Only fires when the HUD isn't on screen — the renderer already shows the
+// state change itself. Tray balloons render as toasts on Win10+ and, unlike
+// Notification, need no Start-menu shortcut, so the portable build gets them too.
+// ── DISCOVERY + LLDP (v7.1.0) — see discover.js ─────────────
+let DISCOVER = null;
+try {
+  DISCOVER = require('./discover')({ diagAdd, lookupVendor, execFile, execAsync, isValidIp });
+} catch (err) {
+  diagAdd({ kind: 'error', tag: 'discover', ok: false, note: 'discover module failed to load: ' + err.message });
+}
+
+function adapterIpv4s(name) {
+  const safe = sanitizeAdapter(name);
+  if (!safe) return [];
+  const key = Object.keys(os.networkInterfaces()).find(k => k.toLowerCase() === safe.toLowerCase());
+  if (!key) return [];
+  return os.networkInterfaces()[key].filter(a => a.family === 'IPv4' && !a.internal).map(a => a.address);
+}
+
+ipcMain.handle('discover-run', async (e, { adapter, baseIp }) => {
+  if (!DISCOVER) return { ok: false, err: 'NOT_LOADED', results: [] };
+  const sources = adapterIpv4s(adapter);
+  if (!sources.length) return { ok: false, err: 'NO_IP', results: [] };
+  const base = (typeof baseIp === 'string' && /^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(baseIp)) ? baseIp : '';
+  try {
+    const results = await DISCOVER.discover({ sources, baseIp: base });
+    return { ok: true, results, sources };
+  } catch (err) {
+    diagAdd({ kind: 'error', tag: 'discover', ok: false, note: err.message });
+    return { ok: false, err: err.message, results: [] };
+  }
+});
+
+// ── RECON (v7.1.0) ─────────────────────────────────────────
+// tshark listens on the adapter for up to 65 s; evidence streams to the
+// renderer every ~1.5 s and the verdicts are computed in discover.js.
+// SILENT mode unbinds IPv4/IPv6 from the adapter first so Windows itself
+// can't chatter (DHCP, LLMNR, NetBIOS); the bindings are restored after,
+// on quit, and — via recon-silent.json — on the next elevated launch if we
+// crashed in between. A tech never gets left with a dead NIC.
+const RECON_SILENT_FILE = path.join(app.getPath('userData'), 'recon-silent.json');
+function readSilentState() { try { return JSON.parse(fs.readFileSync(RECON_SILENT_FILE, 'utf8')); } catch { return null; } }
+function writeSilentState(obj) { try { if (obj) fs.writeFileSync(RECON_SILENT_FILE, JSON.stringify(obj)); else if (fs.existsSync(RECON_SILENT_FILE)) fs.unlinkSync(RECON_SILENT_FILE); } catch {} }
+// Elevated PowerShell with the script passed as -EncodedCommand (base64 UTF-16LE).
+// -Command re-joins and re-parses its arguments, so an adapter name with an apostrophe
+// or odd quoting breaks it ("Johan's Port" → TerminatorExpectedAtEndOfString).
+// Encoded, the script is one opaque token: nothing is re-parsed, nothing can break out.
+// The readable script is logged beside the OP entry so diagnostics stay legible.
+function psElevated(script, opts) {
+  const b64 = Buffer.from(script, 'utf16le').toString('base64');
+  diagAdd({ kind: 'app', tag: (opts && opts.tag) || 'ps', ok: true, note: 'PS> ' + script });
+  return runElevated(`powershell -NoProfile -NonInteractive -EncodedCommand ${b64}`, opts);
+}
+const psQuote = s => "'" + String(s).replace(/'/g, "''") + "'";
+async function setIpBindings(safeAdapter, enabled) {
+  const verb = enabled ? 'Enable-NetAdapterBinding' : 'Disable-NetAdapterBinding';
+  return psElevated(`${verb} -Name ${psQuote(safeAdapter)} -ComponentID ms_tcpip,ms_tcpip6`, { tag: enabled ? 'recon-rebind' : 'recon-unbind', timeoutMs: 20000 });
+}
+// Does Windows actually have an IPv4 interface on this adapter? The binding flag can
+// say "enabled" while the interface object was never recreated (seen after a 6800
+// transaction conflict). This is the real test, not Get-NetAdapterBinding.
+async function ipv4InterfaceExists(safeAdapter) {
+  const script = `(Get-NetIPInterface -InterfaceAlias '${safeAdapter.replace(/'/g, "''")}' -AddressFamily IPv4 -ErrorAction SilentlyContinue | Measure-Object).Count`;
+  const out = await new Promise(resolve => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: 8000, windowsHide: true }, (err, stdout) => resolve(err ? '' : String(stdout || '')));
+  });
+  return parseInt(out.trim(), 10) > 0;
+}
+async function adapterIsDhcp(safeAdapter) {
+  try {
+    const guid = await getAdapterGuid(safeAdapter);
+    if (!guid) return false;
+    const out = await execAsync(`reg query "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\${guid}" /v EnableDHCP`, { timeout: 4000 }).catch(() => '');
+    return /EnableDHCP\s+REG_DWORD\s+0x1/i.test(out);
+  } catch { return false; }
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Rebind with retries, then prove it: the interface must exist. If the flag flipped
+// but the interface didn't come back, toggle once more and bounce the adapter. If the
+// adapter is DHCP and still has no address afterwards, ask for a lease ourselves.
+let silentRestoring = null;
+function restoreSilent(reason) {
+  if (silentRestoring) return silentRestoring;            // listen-finished + quit at the same moment → one run
+  silentRestoring = restoreSilentOnce(reason).finally(() => { silentRestoring = null; });
+  return silentRestoring;
+}
+async function restoreSilentOnce(reason) {
+  const st = readSilentState();
+  if (!st || !st.adapter) return { ok: true, skipped: true };
+  const safe = sanitizeAdapter(st.adapter);
+  if (!safe) { writeSilentState(null); return { ok: true, skipped: true }; }
+  let r = null, ok = false;
+  for (let attempt = 1; attempt <= 3 && !ok; attempt++) {
+    r = await setIpBindings(safe, true);
+    ok = r.ok;
+    if (!ok) await sleep(attempt * 1500);          // 6800 = NetCfg lock held by someone else; it clears
+  }
+  let exists = ok && await ipv4InterfaceExists(safe);
+  if (ok && !exists) {
+    diagAdd({ kind: 'app', tag: 'recon-rebind', ok: false, note: `${safe}: bindings enabled but no IPv4 interface — toggling once more and bouncing the adapter` });
+    await psElevated(`Disable-NetAdapterBinding -Name ${psQuote(safe)} -ComponentID ms_tcpip`, { tag: 'recon-rebind', timeoutMs: 20000 });
+    await sleep(800);
+    await psElevated(`Enable-NetAdapterBinding -Name ${psQuote(safe)} -ComponentID ms_tcpip`, { tag: 'recon-rebind', timeoutMs: 20000 });
+    await psElevated(`Restart-NetAdapter -Name ${psQuote(safe)} -Confirm:$false`, { tag: 'recon-rebind', timeoutMs: 20000 });
+    await sleep(2500);
+    exists = await ipv4InterfaceExists(safe);
+  }
+  const good = ok && exists;
+  diagVerify('recon-rebind', good, `${safe}: ${good ? 'IP bindings restored, IPv4 interface present' : ok ? 'bindings enabled but IPv4 interface still missing — reboot restores it' : 'bindings NOT restored — ' + ((r && r.err) || 'unknown')} (${reason})`);
+  if (good) {
+    writeSilentState(null);
+    // a DHCP adapter doesn't always re-ask after a rebind — give it 3 s, then ask for it
+    setTimeout(async () => {
+      try {
+        if (!(await adapterIsDhcp(safe))) return;
+        if (adapterIpv4s(safe).some(ip => !/^169\.254\./.test(ip))) return;
+        const rr = await runElevated(`ipconfig /renew "${safe}"`, { tag: 'recon-renew', timeoutMs: 25000 });
+        diagAdd({ kind: 'app', tag: 'recon-renew', ok: rr.ok, note: `${safe}: no address after rebind — DHCP renew ${rr.ok ? 'sent' : 'failed: ' + (rr.err || '')}` });
+      } catch {}
+    }, 3000);
+  }
+  return { ok: good };
+}
+
+ipcMain.handle('recon-start', async (e, { adapter, durationS, silent }) => {
+  if (!DISCOVER) return { ok: false, err: 'NOT_LOADED' };
+  await detectTools();
+  if (!TOOLS.tshark)    return { ok: false, err: 'NO_TSHARK' };
+  if (!TOOLS.versionOk) return { ok: false, err: 'TSHARK_OLD' };
+  const safe = sanitizeAdapter(adapter);
+  if (!safe) return { ok: false, err: 'INVALID_ADAPTER' };
+  const guid = await getAdapterGuid(safe);
+  if (!guid) return { ok: false, err: 'NO_GUID' };
+  const dur = Math.max(10, Math.min(180, parseInt(durationS, 10) || 65));
+  const sender = e.sender;
+  let unbound = false, dhcpSuspended = false;
+  if (silent) {
+    if (!PRIV.elevated) return { ok: false, err: 'SILENT_NEEDS_ELEVATION' };
+    // the DHCP engine listens on this stack — step it aside for the duration
+    try { if (DHCP && DHCP.suspend) dhcpSuspended = await DHCP.suspend('RECON SILENT on ' + safe); } catch {}
+    const r = await setIpBindings(safe, false);
+    if (!r.ok) { if (dhcpSuspended) { try { await DHCP.resume(); } catch {} } return { ok: false, err: 'UNBIND_FAILED: ' + (r.err || 'unknown') }; }
+    writeSilentState({ adapter: safe, ts: Date.now() });
+    unbound = true;
+  }
+  diagAdd({ kind: 'app', tag: 'recon', ok: true, note: `listening on ${safe} for ${dur}s${silent ? ' (SILENT — IP unbound)' : ''}` });
+  const ev = await DISCOVER.reconListen({
+    tshark: TOOLS.tshark, npf: `\\Device\\NPF_${guid}`, durationS: dur,
+    onUpdate: u => { try { if (!sender.isDestroyed()) sender.send('recon-update', u); } catch {} },
+  });
+  if (unbound) await restoreSilent('listen finished');
+  if (dhcpSuspended) { try { await DHCP.resume(); } catch {} }
+  const sw = ev.lldp || ev.cdp;
+  diagAdd({ kind: ev.err ? 'error' : 'app', tag: 'recon', ok: !ev.err,
+    note: ev.err ? `${safe}: ${ev.err}` : `${safe}: ${ev.packets} pkt in ${Math.round(ev.ms / 1000)}s · switch ${sw ? (sw.sysName || '?') + '/' + (sw.port || '?') : 'none'} · 802.1X ${ev.eapol.count ? 'yes' : 'no'} · dhcp ${ev.dhcp.servers.join(',') || 'none'} · ${Object.keys(ev.ipCount).length} hosts` });
+  const verdicts = DISCOVER.reconVerdicts(ev, { silent: !!silent });
+  return { ok: !ev.err, evidence: ev, verdicts, err: ev.err };
+});
+ipcMain.on('recon-stop', () => { if (DISCOVER) DISCOVER.reconStop(); });
+ipcMain.handle('recon-verdicts', (e, ev, opts) => (DISCOVER && ev && typeof ev === 'object') ? DISCOVER.reconVerdicts(ev, opts && typeof opts === 'object' ? opts : {}) : []);
+
+// ── REACH: temporary link-local alias (v7.1.0) ─────────────
+// A camera at 169.254.x.x can be *found* by discovery but not *reached*
+// without a 169.254 address of our own. REACH adds one as a normal alias
+// (same path as MULTI-IP, including the DHCP→static conversion), records it
+// in temp-aliases.json, and removes it on quit or on request. A crash leaves
+// the file behind; the next elevated launch cleans up and logs it.
+const TEMP_ALIAS_FILE = path.join(app.getPath('userData'), 'temp-aliases.json');
+function readTempAliases() { try { const j = JSON.parse(fs.readFileSync(TEMP_ALIAS_FILE, 'utf8')); return Array.isArray(j) ? j : []; } catch { return []; } }
+function writeTempAliases(list) { try { if (list.length) fs.writeFileSync(TEMP_ALIAS_FILE, JSON.stringify(list)); else if (fs.existsSync(TEMP_ALIAS_FILE)) fs.unlinkSync(TEMP_ALIAS_FILE); } catch {} }
+
+async function addAliasCore(safeAdapter, ip, subnet, tag = 'alias_add') {
+  let cmd = `netsh interface ip add address "${safeAdapter}" ${ip} ${subnet}`;
+  let converted = false;
+  try {
+    const cfg = await execAsync('netsh interface ip show config', { timeout: 5000 }).catch(() => '');
+    const blocks = cfg.split(/\r?\n(?=Configuration for interface)/i);
+    const block  = findAdapterBlock(blocks, safeAdapter);
+    if (block && /DHCP enabled:\s+Yes/i.test(block)) {
+      const currentIp  = (block.match(/IP Address:\s+([\d.]+)/i)         || [])[1];
+      const currentSn  = (block.match(/Subnet Prefix[^(]+\(mask\s+([\d.]+)\)/i) || [])[1] || '255.255.255.0';
+      const currentGw  = (block.match(/Default Gateway:\s+([\d.]+)/i)    || [])[1];
+      if (!currentIp) return { ok: false, err: 'DHCP adapter has no current IP — apply a static IP first', converted };
+      const setStatic = currentGw
+        ? `netsh interface ip set address "${safeAdapter}" static ${currentIp} ${currentSn} ${currentGw}`
+        : `netsh interface ip set address "${safeAdapter}" static ${currentIp} ${currentSn}`;
+      cmd = `${setStatic}; ${cmd}`;
+      converted = true;
+    }
+  } catch {}
+  const result = await runElevated(cmd, { tag, timeoutMs: 25000 });
+  if (!result.ok) return { ...result, converted };
+  const verified = await pollAliasState(safeAdapter, ip, true, 5000);
+  diagVerify(tag, verified, verified
+    ? `${ip}/${subnet} present on ${safeAdapter}${converted ? ' (adapter converted DHCP→static)' : ''}`
+    : `${ip} not seen on ${safeAdapter} after 5s${converted ? ' (conversion chain ran)' : ''}`);
+  return { ...result, verified, converted };
+}
+
+ipcMain.handle('reach-add', async (e, { adapter, target }) => {
+  const safe = sanitizeAdapter(adapter);
+  if (!safe) return { ok: false, err: 'Invalid adapter name' };
+  if (!isValidIp(target) || !/^169\.254\./.test(target)) return { ok: false, err: 'Target is not link-local' };
+  // already have one on this adapter? reuse it
+  const have = adapterIpv4s(safe).find(ip => /^169\.254\./.test(ip));
+  if (have) return { ok: true, alias: have, reused: true };
+  // RFC 3927: 169.254.1.0 – 169.254.254.255, never the target itself
+  let alias;
+  do {
+    alias = `169.254.${1 + Math.floor(Math.random() * 254)}.${1 + Math.floor(Math.random() * 254)}`;
+  } while (alias === target);
+  const r = await addAliasCore(safe, alias, '255.255.0.0', 'reach_add');
+  if (!r.ok) return r;
+  const list = readTempAliases().filter(t => !(t.adapter === safe && t.ip === alias));
+  list.push({ adapter: safe, ip: alias, ts: Date.now(), target, converted: !!r.converted });
+  writeTempAliases(list);
+  diagAdd({ kind: 'app', tag: 'reach', ok: true, note: `link-local alias ${alias} on ${safe} for ${target}${r.converted ? ' (adapter converted DHCP→static)' : ''}` });
+  return { ok: true, alias, verified: r.verified, converted: r.converted };
+});
+ipcMain.handle('reach-list', () => readTempAliases());
+
+// ── IPC: PORT BLINK (v7.1.0) ───────────────────────────────
+// ~25 small UDP datagrams a second to the host's discard port for N seconds.
+// The host ignores them; the switch's port LED doesn't. Only for hosts on one
+// of our subnets — off-subnet traffic would blink the uplink, not the port.
+let blinkTimer = null, blinkStop = null;
+ipcMain.handle('port-blink', async (e, { host, seconds }) => {
+  if (blinkStop) { blinkStop(); blinkStop = null; }   // a new call (or seconds:0) ends the previous burst
+  const secs = Math.max(0, Math.min(60, parseInt(seconds, 10) || 0));
+  if (!secs) return { ok: true, stopped: true };
+  const ip = (typeof host === 'string' && isValidIp(host.trim())) ? host.trim() : null;
+  if (!ip) return { ok: false, err: 'INVALID_HOST' };
+  if (!adapterForIp(ip)) return { ok: false, err: 'OFF_SUBNET' };
+  if (localIpv4s().includes(ip)) return { ok: false, err: 'SELF' };   // loopback never reaches the switch
+  const dgram = require('dgram');
+  const sock = dgram.createSocket('udp4');
+  const pkt = Buffer.from('NET-ETHER BLINK');
+  const until = Date.now() + secs * 1000;
+  let sent = 0;
+  await new Promise(resolve => {
+    sock.on('error', () => {});
+    const finish = () => { if (blinkTimer) clearInterval(blinkTimer); blinkTimer = null; blinkStop = null; try { sock.close(); } catch {} resolve(); };
+    blinkStop = finish;
+    blinkTimer = setInterval(() => {
+      if (Date.now() >= until) return finish();
+      try { sock.send(pkt, 0, pkt.length, 9, ip); sent++; } catch {}
+    }, 40);
+  });
+  diagAdd({ kind: 'app', tag: 'blink', ok: true, note: `${ip}: ${sent} packets over ${secs}s` });
+  return { ok: true, sent };
+});
+async function clearTempAliases(reason) {
+  const list = readTempAliases();
+  if (!list.length) return { ok: true, removed: 0 };
+  let removed = 0, restored = 0;
+  for (const t of list) {
+    const safe = sanitizeAdapter(t.adapter);
+    if (!safe || !isValidIp(t.ip)) continue;
+    // The alias add converted a DHCP adapter to static — we were the only reason, so hand it back.
+    // One chain: drop the alias, then DHCP for address and DNS.
+    const cmd = t.converted
+      ? `netsh interface ip delete address "${safe}" ${t.ip}; netsh interface ip set address "${safe}" dhcp; netsh interface ip set dns "${safe}" dhcp`
+      : `netsh interface ip delete address "${safe}" ${t.ip}`;
+    const r = await runElevated(cmd, { tag: 'reach_del', timeoutMs: 20000 });
+    if (r.ok) { removed++; if (t.converted) restored++; }
+    else if (t.converted && r.steps && r.steps[0] && r.steps[0].code === 0) removed++;   // alias went, DHCP step failed
+  }
+  writeTempAliases([]);
+  diagAdd({ kind: 'app', tag: 'reach', ok: removed === list.length, note: `${reason}: removed ${removed}/${list.length} link-local alias(es)${restored ? `, ${restored} adapter(s) back to DHCP` : ''}` });
+  return { ok: removed === list.length, removed, total: list.length };
+}
+ipcMain.handle('reach-clear', async () => clearTempAliases('REMOVE clicked'));
+
+ipcMain.on('notify-hidden', (e, { title, body, warn }) => {
+  try {
+    if (!winAlive() || win.isVisible() || !tray) return;
+    tray.displayBalloon({
+      title:   String(title || 'NET//ETHER').slice(0, 60),
+      content: String(body  || '').slice(0, 200),
+      iconType: warn ? 'warning' : 'info',
+    });
+  } catch {}
+});
 // ── IPC: subnet scanner ────────────────────────────────────
 
 // ── OUI VENDOR TABLE ──────────────────────────────────────
@@ -1526,8 +2170,9 @@ let tracertProc = null; // global ref so tracert-stop can kill it
 
 ipcMain.on('tracert-start', async (e, { host }) => {
   if (!host || typeof host !== 'string') return;
-  const safeHost = host.trim().replace(/[^a-zA-Z0-9.\-:]/g, '');
-  if (!safeHost) return;
+  // v7.1.0: strip a PING-style :port, and refuse a leading '-' (would read as a tracert flag)
+  const safeHost = stripHostPort(host.trim()).host.replace(/[^a-zA-Z0-9.\-:]/g, '');
+  if (!safeHost || safeHost.startsWith('-')) return;
 
   // Kill any previous tracert still running
   if (tracertProc) { try { tracertProc.kill(); } catch {} tracertProc = null; }
@@ -1708,7 +2353,8 @@ ipcMain.handle('resolve-hosts', async (e, ips) => {
 // ── IPC: per-host port probe ───────────────────────────────
 // Fired after a host is found — checks a fixed set of service ports
 // and streams results back so the UI can update incrementally.
-const PROBE_PORTS = [80, 443, 554, 8080, 8443, 3389, 22, 23, 21, 8888];
+// v7.1.0: vendor ports — 8000 Hikvision SDK, 37777 Dahua, 1756 Bosch RCP+, 5500 Genetec Directory
+const PROBE_PORTS = [80, 443, 554, 8080, 8443, 3389, 22, 23, 21, 8888, 8000, 37777, 1756, 5500];
 const PROBE_TIMEOUT_MS = 1200;
 
 ipcMain.on('port-probe-start', async (e, { host, ports }) => {
@@ -2457,10 +3103,59 @@ ipcMain.handle('presets-save', async (e, presets) => {
 // ── IPC: ping ──────────────────────────────────────────────
 // Uses ICMP via ping.exe — consistent with scanner behaviour.
 // Falls back to TCP port 80 probe if ICMP is blocked (e.g. some VPNs / cloud VMs).
+// v7.1.0: "host:port" (exactly one colon) means a TCP check against that port
+// instead of ICMP — cameras with no web server and HTTPS-only devices used to
+// read FAIL while alive. IPv6 literals have more than one colon and are left alone.
+// ICMP, then TCP 80 — the same test the plain ping path uses
+// Kept short: the PING cycle waits for its slowest host, so a dead :port
+// target must not stretch everyone else's second.
+async function hostAlive(safeHost) {
+  const ok = await execAsync(`ping -n 1 -w 600 ${safeHost}`, { timeout: 1500 }).then(o => /TTL=/i.test(o)).catch(() => false);
+  if (ok) return true;
+  return new Promise(resolve => {
+    const socket = new net.Socket();
+    socket.setTimeout(800);
+    socket.connect(80, safeHost, () => { socket.destroy(); resolve(true); });
+    socket.on('error', err => { socket.destroy(); resolve(err.code === 'ECONNREFUSED'); });
+    socket.on('timeout', () => { socket.destroy(); resolve(false); });
+  });
+}
+
+function stripHostPort(raw) {
+  const m = String(raw || '').match(/^([^:]+):(\d{1,5})$/);
+  if (!m) return { host: String(raw || ''), port: null };
+  const port = parseInt(m[2], 10);
+  if (port < 1 || port > 65535) return { host: m[1], port: null };
+  return { host: m[1], port };
+}
+
 ipcMain.handle('ping-host', async (e, host) => {
   if (!host || typeof host !== 'string') return { ok: false, err: 'INVALID_HOST' };
-  const safeHost = host.trim().replace(/[^a-zA-Z0-9.\-:]/g, '');
+  const parsed = stripHostPort(host.trim());
+  const safeHost = parsed.host.replace(/[^a-zA-Z0-9.\-:]/g, '');
   if (!safeHost || safeHost.startsWith('-')) return { ok: false, err: 'INVALID_HOST' };   // "-t" would become a ping flag
+
+  if (parsed.port) {
+    // Explicit port: this is a service check. Connect = up. Refused = CLOSED.
+    // A silent drop (most embedded stacks and every firewalled Windows box)
+    // gets the normal alive check — if the host answers ICMP or TCP 80 the
+    // port reads CLOSED (box up, service down); if nothing answers, FAIL.
+    const portRes = await new Promise((resolve) => {
+      const socket = new net.Socket();
+      const t0 = Date.now();
+      socket.setTimeout(1500);
+      socket.connect(parsed.port, safeHost, () => { socket.destroy(); resolve({ ok: true, ms: Date.now() - t0, note: 'tcp-port' }); });
+      socket.on('error', (err) => {
+        socket.destroy();
+        resolve({ ok: false, err: err.code === 'ECONNREFUSED' ? 'REFUSED' : (err.code || 'ERR') });
+      });
+      socket.on('timeout', () => { socket.destroy(); resolve({ ok: false, err: 'TIMEOUT' }); });
+    });
+    if (portRes.ok || portRes.err === 'REFUSED') return portRes;
+    const alive = await hostAlive(safeHost);
+    return alive ? { ok: false, err: 'REFUSED', why: portRes.err === 'TIMEOUT' ? 'no answer on port, host is up' : portRes.err }
+                 : { ok: false, err: 'DOWN', why: 'host not answering' };
+  }
 
   const start = Date.now();
   try {
@@ -2502,7 +3197,8 @@ function findAdapterBlock(blocks, adapterName) {
   }) || null;
 }
 
-async function applyNetworkConfig({ adapter, ip, subnet, gateway, dns }) {
+async function applyNetworkConfig({ adapter, ip, subnet, gateway, dns, tag }) {
+  const opTag = tag === 'revert' ? 'revert' : 'apply';   // v7.1.0: REVERT is logged as what it is
   const safeAdapter = sanitizeAdapter(adapter);
   if (!safeAdapter)           return { ok: false, err: 'Invalid adapter name' };
   if (!isValidIp(ip))         return { ok: false, err: 'Invalid IP address' };
@@ -2516,10 +3212,10 @@ async function applyNetworkConfig({ adapter, ip, subnet, gateway, dns }) {
 
   const cmdLines = [
     addrCmd,
-    dns && dns.trim() ? `netsh interface ip set dns "${safeAdapter}" static ${dns.trim()}` : null,
+    dns && dns.trim() ? `netsh interface ip set dns "${safeAdapter}" static ${dns.trim()} validate=no` : null,
   ].filter(Boolean).join('; ');
 
-  const result = await runElevated(cmdLines, { tag: 'apply', timeoutMs: 30000 });
+  const result = await runElevated(cmdLines, { tag: opTag, timeoutMs: 30000 });
   if (!result.ok) return { ...result, err: explainNetshError(result.err, ip) };
 
   // Verify the change took — poll netsh up to 3x, but also check registry
@@ -2532,7 +3228,7 @@ async function applyNetworkConfig({ adapter, ip, subnet, gateway, dns }) {
       const blocks = cfg.split(/\r?\n(?=Configuration for interface)/i);
       const block = findAdapterBlock(blocks, safeAdapter);
       if (block && block.includes(ip)) {
-        diagVerify('apply', true, `${safeAdapter} now ${ip}/${subnet}${gateway && gateway.trim() ? ' gw ' + gateway.trim() : ''} (netsh)`);
+        diagVerify(opTag, true, `${safeAdapter} now ${ip}/${subnet}${gateway && gateway.trim() ? ' gw ' + gateway.trim() : ''} (netsh)`);
         return { ...result, ok: true, verified: true };
       }
       // Fallback: registry (works for disconnected static adapters)
@@ -2543,13 +3239,13 @@ async function applyNetworkConfig({ adapter, ip, subnet, gateway, dns }) {
           { timeout: 3000 }
         ).catch(() => '')).replace(/\r/g, '');
         if (regOut.includes(ip)) {
-          diagVerify('apply', true, `${safeAdapter} now ${ip}/${subnet} (registry — netsh view not updated yet, or adapter disconnected)`);
+          diagVerify(opTag, true, `${safeAdapter} now ${ip}/${subnet} (registry — netsh view not updated yet, or adapter disconnected)`);
           return { ...result, ok: true, verified: true };
         }
       }
     } catch {}
   }
-  diagVerify('apply', false, `${safeAdapter} expected ${ip} — not seen in netsh or registry after 4.5s`);
+  diagVerify(opTag, false, `${safeAdapter} expected ${ip} — not seen in netsh or registry after 4.5s`);
   return { ...result, ok: false, verified: false, err: 'Command ran but IP did not change — check adapter name or admin rights' };
 }
 // netsh's "The object already exists." means the address is already on the adapter (a DHCP
@@ -2561,14 +3257,15 @@ function explainNetshError(err, ip) {
 ipcMain.handle('apply-network-config', async (e, args) => applyNetworkConfig(args || {}));
 
 // ── IPC: apply DHCP (elevated) ────────────────────────────
-async function applyDhcpConfig({ adapter }) {
+async function applyDhcpConfig({ adapter, tag }) {
+  const opTag = tag === 'revert' ? 'revert' : 'dhcp';
   const safeAdapter = sanitizeAdapter(adapter);
   if (!safeAdapter) return { ok: false, err: 'Invalid adapter name' };
   const psLines = [
     `netsh interface ip set address "${safeAdapter}" dhcp`,
     `netsh interface ip set dns "${safeAdapter}" dhcp`,
   ].join('; ');
-  const result = await runElevated(psLines, { tag: 'dhcp', timeoutMs: 30000 });
+  const result = await runElevated(psLines, { tag: opTag, timeoutMs: 30000 });
   if (!result.ok) return result;
 
   // Verify the change actually took by polling netsh up to 3 times with a short delay
@@ -2579,7 +3276,7 @@ async function applyDhcpConfig({ adapter }) {
       const blocks = cfg.split(/\r?\n(?=Configuration for interface)/i);
       const block = findAdapterBlock(blocks, safeAdapter);
       if (block && /DHCP enabled:\s+Yes/i.test(block)) {
-        diagVerify('dhcp', true, `${safeAdapter} DHCP enabled (netsh)`);
+        diagVerify(opTag, true, `${safeAdapter} DHCP enabled (netsh)`);
         return { ...result, ok: true, verified: true };
       }
     } catch {}
@@ -2595,7 +3292,7 @@ async function applyDhcpConfig({ adapter }) {
       ).catch(() => '')).replace(/\r/g, '');
       const enableMatch = regOut.match(/EnableDHCP\s+REG_DWORD\s+(0x\w+)/i);
       if (enableMatch && parseInt(enableMatch[1], 16) !== 0) {
-        diagVerify('dhcp', true, `${safeAdapter} EnableDHCP=1 (registry — netsh view not updated yet, or adapter disconnected)`);
+        diagVerify(opTag, true, `${safeAdapter} EnableDHCP=1 (registry — netsh view not updated yet, or adapter disconnected)`);
         return { ...result, ok: true, verified: true };
       }
     }
@@ -2603,7 +3300,7 @@ async function applyDhcpConfig({ adapter }) {
   // netsh exited 0 but DHCP didn't take — adapter name mismatch, policy block, or
   // a netsh message that came back on stdout with a zero exit code. The captured
   // output is in the diagnostics log either way.
-  diagVerify('dhcp', false, `${safeAdapter} still static after 4.5s`);
+  diagVerify(opTag, false, `${safeAdapter} still static after 4.5s`);
   return { ...result, ok: false, verified: false, err: 'DHCP command ran but adapter is still static — check adapter name and run as admin' };
 }
 ipcMain.handle('apply-dhcp', async (e, args) => applyDhcpConfig(args || {}));
@@ -2803,6 +3500,7 @@ async function buildDiagState() {
     creds:      credStatus(),
     policy:     { ...POLICY },
     dhcp:       DHCP ? DHCP.getState() : null,
+    tools:      { wireshark: TOOLS.wireshark, tshark: TOOLS.tshark, tsharkVersion: TOOLS.version, tsharkOk: TOOLS.versionOk, err: TOOLS.err },
     files: {
       'presets.json':         fileStat(path.join(ud, 'presets.json')),
       'sites.json':           fileStat(path.join(ud, 'sites.json')),
@@ -3047,7 +3745,7 @@ ipcMain.handle('restore-launch-state', async (e, adapterNames) => {
             ? `netsh interface ip set address "${safeAdapter}" static ${snap.ip} ${snap.subnet || '255.255.255.0'} ${snap.gateway}`
             : `netsh interface ip set address "${safeAdapter}" static ${snap.ip} ${snap.subnet || '255.255.255.0'}`;
           const dnsCmd = snap.dns && isValidIp(snap.dns)
-            ? `netsh interface ip set dns "${safeAdapter}" static ${snap.dns}`
+            ? `netsh interface ip set dns "${safeAdapter}" static ${snap.dns} validate=no`
             : `netsh interface ip set dns "${safeAdapter}" dhcp`;
           cmdLines = `${addrCmd}; ${dnsCmd}`;
         }
