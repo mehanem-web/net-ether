@@ -7907,6 +7907,15 @@ function updateScanRowPorts(host, ports) {
   autoResize();
 }
 
+// v7.2.2: open a device's page on whichever of http/https it answers (AXIS OS 12 = https only)
+async function openDevicePage(ip) {
+  if (window.hud && hud.openDevice) {
+    try { const r = await hud.openDevice(ip); if (r && r.ok) return r.url; } catch {}
+  }
+  const url = 'http://' + ip;
+  if (window.hud) hud.openExternal(url); else window.open(url, '_blank');
+  return url;
+}
 function scanOpenWeb(ip, port) {
   const scheme = (port === 443 || port === 8443) ? 'https' : 'http';
   const portSuffix = (scheme === 'http' && port === 80) || (scheme === 'https' && port === 443) ? '' : `:${port}`;
@@ -8070,7 +8079,7 @@ function applyDiscovery(d) {
     const rb = document.createElement('div');
     rb.className = 'scan-result-action scan-action-reach';
     rb.textContent = 'REACH';
-    rb.title = `Add a temporary 169.254 alias to ${document.getElementById('adapter').value.trim() || 'the adapter'} and open http://${d.ip}`;
+    rb.title = `Add a temporary 169.254 alias to ${document.getElementById('adapter').value.trim() || 'the adapter'} and open ${d.ip} in the browser`;
     rb.onclick = () => reachLinkLocal(d.ip);
     meta.appendChild(rb);
   }
@@ -8090,7 +8099,7 @@ async function reachLinkLocal(ip) {
   if (!window.hud || !hud.reachAdd) return;
   const go = await hudModal({
     title: 'REACH ' + ip + '?', tone: 'warn',
-    bodyHtml: `Adds a temporary <span class="hl">169.254.x.x</span> alias to <span class="hl">${escHtml(adapter)}</span> so this box is routable, then opens <span class="hl">http://${escHtml(ip)}</span>.` +
+    bodyHtml: `Adds a temporary <span class="hl">169.254.x.x</span> alias to <span class="hl">${escHtml(adapter)}</span> so this box is routable, then opens <span class="hl">${escHtml(ip)}</span> in the browser (http or https, whichever it answers).` +
               (a.isDhcp ? ` <br><br>The adapter is on <span class="hl">DHCP</span> — adding an alias converts it to static first (current lease frozen). Use → DHCP on the IP tab when you're done.` : '') +
               ` <br><br>The alias is removed when you quit, or with REMOVE on the chip that appears.`,
     buttons: [{ label: 'REACH', style: 'ok', value: true }, { label: 'CANCEL', style: 'cancel', value: null }],
@@ -8106,7 +8115,7 @@ async function reachLinkLocal(ip) {
   setScanStatus(`${r.reused ? 'USING' : 'ADDED'} ${r.alias} — OPENING ${ip}`, 'ok', 5000);
   reachRefreshChip();
   if (!r.reused) setTimeout(() => loadAdapters('silent'), 1000);
-  hud.openExternal(`http://${ip}`);
+  openDevicePage(ip);
 }
 async function reachRefreshChip() {
   if (!window.hud || !hud.reachList) return;
@@ -10210,7 +10219,7 @@ function dhcpBuildCard(d, taken) {
 function dhcpWireCard(card, d) {
   const q = sel => card.querySelector(sel);
   const cb = q('[data-check]'); if (cb) cb.onchange = () => { if (cb.checked) D.selected.add(d.mac); else D.selected.delete(d.mac); dhcpUpdateSelectedBtn(); };
-  const open = q('[data-open]');   if (open) open.onclick = () => { hud.openExternal('http://' + open.dataset.open); setDhcpStatus('↗ OPENING ' + open.dataset.open + ' — THE DEVICE REDIRECTS TO HTTPS ITSELF IF IT WANTS', 'ok', 4000); };
+  const open = q('[data-open]');   if (open) open.onclick = async () => { const ip = open.dataset.open; setDhcpStatus('↗ OPENING ' + ip + '…', 'ok', 4000); const url = await openDevicePage(ip); setDhcpStatus('↗ OPENED ' + url.toUpperCase() + (/^https/i.test(url) ? ' — A CERTIFICATE WARNING IS NORMAL ON A NEW DEVICE' : ''), 'ok', 6000); };
   const serve = q('[data-serve]'); if (serve) serve.onclick = () => { const inp = q('[data-ask]'); dhcpServeDevice(serve.dataset.serve, inp ? inp.value : undefined); };
   const ask = q('[data-ask]');
   if (ask) {
@@ -10246,7 +10255,7 @@ async function dhcpReachSitting(ip) {
   loadAdapters(true);
   dhcpRefreshAdapters();
   setDhcpStatus(`✓ LAPTOP IS ALSO ${r.alias} (TEMPORARY) — OPENING ${ip}`, 'ok', 6000);
-  setTimeout(() => hud.openExternal('http://' + ip), r.reused ? 200 : 1500);
+  setTimeout(() => openDevicePage(ip), r.reused ? 200 : 1500);
 }
 // v7.1.0: batch reservations — ticked devices get consecutive addresses from a start IP,
 // in the order they're listed (asking devices by last-seen). Server, gateway and

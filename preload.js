@@ -119,6 +119,7 @@ contextBridge.exposeInMainWorld('hud', {
 
   // ── External / clipboard ─────────────────────────────────
   openExternal:  (url) => ipcRenderer.send('open-external', url),
+  openDevice:    (ip) => ipcRenderer.invoke('open-device', ip),
   openGuide:     ()    => ipcRenderer.invoke('open-guide'),
   openRdp:       (ip)  => ipcRenderer.send('open-external', `rdp://${ip}`),
   clipboardWrite: (text) => ipcRenderer.invoke('clipboard-write', text),

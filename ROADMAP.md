@@ -1,13 +1,16 @@
 # NET//ETHER — Roadmap
 
+## Delivered in 7.2.2 (2026-10-24)
+OPEN / REACH choose http or https by asking the device first (AXIS OS 12 ships https-only, so http:// looked like a dead device).
+
 ## Delivered in 7.2.1 (2026-10-24)
 DHCP replies (OFFER/ACK/NAK) and the SCAN WIRE probes go to the serving card's subnet broadcast instead of 255.255.255.255, so they leave by that card even with Wi-Fi or a dock holding the default route (A1210 stuck on OFFERED with Wi-Fi up). LAUNCHES label fix for paths with spaces.
 
 ## Delivered in 7.2.0 (2026-10-24)
 DHCP tab rework (① card / ② laptop address, plain wording, lease in plain time, one-device flow with the address typed on the row, ↗ OPEN, ✓ STATIC detection, model + firmware from the DHCP request, SERVE EVERYONE… confirm-first, QUICK START folded into SET LAPTOP IP… / + ALIAS), stale-settings guard, passive wire watch (mDNS from 5353 + announcements, SSDP NOTIFY, ARP and device LLDP via tshark) with ◇ SITTING rows and REACH to any subnet, wrong-address warning with HEAR THE WIRE on the IP tab, link-local SCAN note, ETHER tab renamed IP, spawn-latency work (launch instrumentation, `cmd /c ver` self-check in DIAGNOSTICS, persistent PowerShell worker, parallel + batched adapter reads, dev latency injector `dev-slow.bat`). Details and reasoning below.
 
-## Still open after 7.2.1
-- Bench: everything in TESTING.md § 7.2.0 and § 7.2.1 on the work laptop — especially the PowerShell worker under EPM/CLM, ◇ SITTING for a camera on a fallback static, and ✓ STATIC on a real Axis/Bosch.
+## Still open after 7.2.2
+- Bench: everything in TESTING.md § 7.2.0, § 7.2.1 and § 7.2.2 on the work laptop — especially the PowerShell worker under EPM/CLM, ◇ SITTING for a camera on a fallback static, and ✓ STATIC on a real Axis/Bosch.
 - Spawn latency, the rest: SCAN still launches one `ping.exe` per address (ICMP needs a raw socket Node doesn't have) and the DHCP engine pings each candidate before an offer; both are bounded and parallel, but they are the next things to measure with the injector. Async UI: a full pass over every tab for anything that waits on a launch before drawing.
 - DHCP listen side still hears every card (the socket is on 0.0.0.0; Node can't say which card a broadcast arrived on). With Wi-Fi up, a phone or laptop on the Wi-Fi asking for DHCP shows as a row and, under SERVE EVERYONE, gets an offer that goes out the cable and never reaches it — harmless, noisy. Options: drop rows whose MAC is in the Wi-Fi side's ARP table, or tshark on the card when it's installed.
 - Elevated PowerShell (RECON SILENT rebind) still launches one-shot — correctness first, it's rare.

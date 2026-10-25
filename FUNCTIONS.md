@@ -2,7 +2,7 @@
 
 *What every control does, in order, with its side effects. Not a guide — the
 Guide tells you how to use the app; this says what the app does when you press
-something. Current as of **v7.2.1**. Update the row when the behaviour
+something. Current as of **v7.2.2**. Update the row when the behaviour
 changes; the diagnostics `tag` column is the link to COPY DIAGNOSTICS output.*
 
 Columns: **Elevated** = runs through `runElevated()` (direct netsh when the app
@@ -97,7 +97,7 @@ log (OP = privileged command with full output, VERIFY = result check, APP = even
 | ONLINE VENDOR LOOKUP | Toggle for macvendors.com fallback; greyed when policy `DisableOnlineVendorLookup` is set | — | — | — |
 | Row: IP / MAC / PING / WSHARK | Copy IP; copy MAC; add to PING and start; Wireshark with `host <ip>`. The four wrap as one unit. On rows ≥600 px wide the MAC shows beside the IP | no | — | APP `wireshark` |
 | Row: smart actions | OPEN (http/https in the browser), RDP (`mstsc`), RTSP (URL copied), SSH (`ssh <ip>` copied), FTP (URL copied) — from the probe; vendor ports show as badges | no | — | — |
-| Row: REACH | 169.254 rows. Modal (warns about DHCP→static) → `reach-add`: picks a free 169.254.x.y, adds it as a MULTI-IP alias /16 (7.2.0: for any other subnet — from the DHCP tab's ◇ SITTING rows — the first of .250→.230 on the target's /24 that nobody was heard on, mask /24), records it in `temp-aliases.json`, opens `http://<ip>`. Amber LINK-LOCAL chip with REMOVE; removed on quit or next launch, adapter returned to DHCP if REACH converted it | yes | nothing (then the browser's HTTP) | OP `reach_add`, VERIFY, APP `reach` |
+| Row: REACH | 169.254 rows. Modal (warns about DHCP→static) → `reach-add`: picks a free 169.254.x.y, adds it as a MULTI-IP alias /16 (7.2.0: for any other subnet — from the DHCP tab's ◇ SITTING rows — the first of .250→.230 on the target's /24 that nobody was heard on, mask /24), records it in `temp-aliases.json`, opens the device via `open-device` (http or https, 7.2.2). Amber LINK-LOCAL chip with REMOVE; removed on quit or next launch, adapter returned to DHCP if REACH converted it | yes | nothing (then the browser's HTTP) | OP `reach_add`, VERIFY, APP `reach` |
 | LINK-LOCAL chip → REMOVE | `reach-clear`: delete the alias (+ `set address dhcp` if converted) | yes | nothing | OP `reach_del`, APP `reach` |
 | COPY ▾ | CSV or markdown of every row (IP, hostname, MAC, vendor, type, open ports, response) to clipboard | — | — | — |
 | SAVE SITE / UPDATE SITE | Writes rows into the site library (`sites.json`) and the SITES knowledge base (`intel.json`): devices anchored by MAC, first/last seen, ports, announced type; SELF row skipped; MAC-less twins dropped | — | — | APP `sitekb-save` |
@@ -138,7 +138,7 @@ log (OP = privileged command with full output, VERIFY = result check, APP = even
 | ADDRESSES TO HAND OUT / profiles | First, last, mask, gateway (blank = laptop), lease dropdown (60 / 120 / 300 / 900 / 3600 / 86400 s; other saved values get their own option), advanced (DNS, options, idle). Validated in main. Profiles saved in `dhcp-config.json`; loading one runs the guard | — | — | — |
 | ▶ SERVE (row) with address box | ASKING row: address box pre-filled (typed value → after the last row served → engine's next free); SERVE / Enter → `dhcp-serve-device(mac, opts, ip)`: ip must be on the laptop's subnet, not the laptop/network/broadcast/gateway, not in use or reserved for another MAC → held for that MAC this session, offered first. Ping-before-offer; OFFER/ACK/NAK go to the card's subnet broadcast (7.2.1 — 255.255.255.255 leaves by the default-route card on Windows); DECLINEs quarantine; NAK only for leases that are ours; own MAC ignored | no | ICMP before the offer, OFFER/ACK | APP `dhcp` |
 | ▶ SERVE TICKED | Ticked ASKING rows, each with its typed address if any | no | as SERVE | APP `dhcp` |
-| ↗ OPEN | `http://<ip>` in the default browser (served, static and on-subnet sitting rows) | — | the browser's HTTP | — |
+| ↗ OPEN | `open-device` (7.2.2): TCP 80 + 443 checked (1.2 s); one open → that scheme; both → one GET / on 80, redirect-to-https / empty / reset → https, else http; neither → http. Opens in the default browser (served, static and on-subnet sitting rows) | — | 2 TCP connects, maybe 1 HTTP GET, then the browser | — |
 | ✓ STATIC (automatic) | A served device past T1 + 15 s without renewing, or 4 s after a RELEASE: ping its address, else `arp -a <ip>` for the same MAC. Answers → row STATIC, lease freed, address kept out of the pool, status "WENT STATIC". No answer → expires normally (RELEASE: row removed). A STATIC device that asks again becomes ASKING. Rows age out after 2 h | no | 1 ICMP | engine log |
 | DEVICE column | DHCP option 60 parsed (Axis `AXIS,<type>,<model>,<fw>` → model + firmware; generic stack strings ignored), mDNS instance/TXT, LLDP system name/description; else OUI vendor. Full detail in the tooltip | — | — | — |
 | ◇ SITTING rows | From the wire watch: devices heard via mDNS (answers/announcements), SSDP NOTIFY, ARP or device LLDP that are not in the DHCP table. ARP-only hosts on the laptop's own subnet are left out (SCAN covers those); ≤30 rows; aged out after 5 min unheard. ↗ OPEN if on the laptop's subnet, ⇢ REACH otherwise | — | as wire watch | — |

@@ -1,4 +1,4 @@
-# NET//ETHER — v7.2.1
+# NET//ETHER — v7.2.2
 **Broman Enterprises**
 
 A cyberpunk-styled always-on-top desktop HUD for Windows network configuration management — static IP, DHCP server, ping, subnet scan and a per-site device knowledge base in one window. Built for field technicians switching between network setups on job sites.
@@ -217,6 +217,11 @@ NET-ETHER/
 ---
 
 ## CHANGELOG
+
+### v7.2.2 (2026-10-24)
+Same bench, same night: the A1210 leased, OPEN landed on a page that wouldn't load.
+
+- **OPEN and REACH pick http or https.** AXIS OS 12 ships with plain HTTP off, so `http://` looked like a dead device. ETHER now checks ports 80 and 443 first: only one answers → that one; both → a plain request on 80, and a redirect to https (or an empty reply) means https. A certificate warning on a brand-new device is normal and the status line says so.
 
 ### v7.2.1 (2026-10-24)
 Found on the bench the night 7.2.0 shipped: an A1210 on a USB card, the laptop's Wi-Fi up, the row stuck on OFFERED.

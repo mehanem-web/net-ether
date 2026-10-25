@@ -161,6 +161,10 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 - [ ] Hover the OFFLINE badge → dot stays red.
 - [ ] Rename the adapter to `Johan's Port` → relaunch → APPLY a static, → DHCP, MULTI-IP add/remove, DISABLE/ENABLE, RECON SILENT all work; rename back to `Ethernet`.
 
+### v7.2.2 — OPEN picks http or https
+- [ ] A1210 (AXIS OS 12) → OPEN lands on `https://<ip>` (cert warning expected), not a dead http page. A device with http only still opens on http. REACH on a ◇ SITTING Axis → https too.
+- [ ] An old device with http only (or a panel whose https a browser rejects) → OPEN still lands on http.
+
 ### v7.2.1 — DHCP replies out the right card
 Bench: the A1210 (or any DHCP device) on a USB/dock card, **Wi-Fi connected** (or a second wired network with the default gateway).
 - [ ] Wi-Fi ON, serve the device from its row → OFFERED → LEASED within a few seconds (7.2.0 sat on OFFERED). Log shows `offering … (via <card subnet>.255)`.

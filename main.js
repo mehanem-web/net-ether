@@ -920,6 +920,49 @@ ipcMain.on('open-external', (e, url) => {
   if (/^(https?|rdp):\/\//i.test(url)) shell.openExternal(url);
 });
 
+// ── IPC: open a device's web page, http or https (v7.2.2) ──
+// Field lesson (2026-10-24): AXIS OS 12 ships with plain HTTP off — port 80 refuses and
+// only 443 answers, so OPEN / REACH on http:// landed on "can't reach this page". Ask the
+// device first: only one of 80/443 open → that one. Both open → one plain GET on 80: a
+// redirect to https, an empty reply or a reset → https; anything else (200/401/403…) →
+// http, which keeps old boxes whose TLS a modern browser rejects on the page that works.
+// Neither answers yet (device still booting) → http, as before.
+function tcpOpen(host, port, ms) {
+  return new Promise(resolve => {
+    const s = new net.Socket(); let done = false;
+    const fin = v => { if (done) return; done = true; try { s.destroy(); } catch {} resolve(v); };
+    s.setTimeout(ms); s.once('connect', () => fin(true)); s.once('error', () => fin(false)); s.once('timeout', () => fin(false));
+    s.connect(port, host);
+  });
+}
+function httpVerdict(host, ms) {
+  return new Promise(resolve => {
+    let done = false; const fin = v => { if (!done) { done = true; resolve(v); } };
+    const req = require('http').get({ host, port: 80, path: '/', timeout: ms, headers: { 'User-Agent': 'NET-ETHER' } }, res => {
+      const loc = String(res.headers.location || '');
+      res.resume();
+      fin((res.statusCode >= 300 && res.statusCode < 400 && /^https:/i.test(loc)) ? 'https' : 'http');
+    });
+    req.on('timeout', () => { req.destroy(); fin('https'); });
+    req.on('error', () => fin('https'));
+  });
+}
+async function deviceScheme(ip) {
+  const [p80, p443] = await Promise.all([tcpOpen(ip, 80, 1200), tcpOpen(ip, 443, 1200)]);
+  if (p443 && !p80) return 'https';
+  if (p80 && !p443) return 'http';
+  if (p80 && p443)  return httpVerdict(ip, 1500);
+  return 'http';
+}
+ipcMain.handle('open-device', async (e, ip) => {
+  if (typeof ip !== 'string' || !isValidIp(ip)) return { ok: false, err: 'INVALID_IP' };
+  let scheme = 'http';
+  try { scheme = await deviceScheme(ip); } catch {}
+  const url = `${scheme}://${ip}`;
+  shell.openExternal(url);
+  return { ok: true, url, scheme };
+});
+
 // ── IPC: open user guide ───────────────────────────────────
 ipcMain.handle('open-guide', async () => {
   // PDF first — opens in the default viewer on any Windows box. The .docx is a

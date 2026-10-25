@@ -1,4 +1,4 @@
-// NET//ETHER User Guide — v7.2.1 (document version 5.2)
+// NET//ETHER User Guide — v7.2.2 (document version 5.3)
 // node build-guide.js → NET-ETHER-Guide.docx ; then soffice → PDF
 const fs = require('fs');
 const {
@@ -52,7 +52,7 @@ const doc = new Document({
       new Paragraph({ spacing: { before: 2400, after: 200 }, children: [new TextRun({ text: 'NET//ETHER', font: FONT, size: 72, bold: true, color: ACCENT })] }),
       new Paragraph({ spacing: { after: 100 }, children: [new TextRun({ text: 'Field Network Management Tool', font: FONT, size: 32, color: GREY })] }),
       new Paragraph({ spacing: { after: 600 }, children: [new TextRun({ text: 'User Guide', font: FONT, size: 28, color: GREY })] }),
-      P('Application version 7.2.1 · Document version 5.2', { run: { color: GREY } }),
+      P('Application version 7.2.2 · Document version 5.3', { run: { color: GREY } }),
       P('Broman Enterprises, SSP Division', { run: { color: GREY } }),
       P('© 2026 Broman Enterprises. All rights reserved.', { run: { color: GREY, size: 18 } }),
       new Paragraph({ children: [new PageBreak()] }),
@@ -156,7 +156,7 @@ const doc = new Document({
         ['SERVE EVERYONE…', 'Answer every device on the cable. Asks first, scans the wire, warns about another live server or a second network.'],
         ['SCAN WIRE', 'Active check for other DHCP servers, about six seconds. No serving, no changes.'],
         ['SELF-TEST', 'Adapter, port, firewall rule, other servers, policy — in plain language.'],
-        ['Device rows', 'Status (ASKING · SERVED · ✓ STATIC · ◇ SITTING), address, MAC, device (model / vendor), hostname, activity. ▶ SERVE with the typed address, ↗ OPEN (web UI), ⇢ REACH, ★ pin, ✕ take the address back. Tick several rows and ★ RESERVE TICKED gives them consecutive fixed addresses from a start you type — twenty cameras in one go; the server, gateway and existing reservations are skipped.'],
+        ['Device rows', 'Status (ASKING · SERVED · ✓ STATIC · ◇ SITTING), address, MAC, device (model / vendor), hostname, activity. ▶ SERVE with the typed address, ↗ OPEN (web UI — http or https, whichever the device answers; a certificate warning on a brand-new device is normal), ⇢ REACH, ★ pin, ✕ take the address back. Tick several rows and ★ RESERVE TICKED gives them consecutive fixed addresses from a start you type — twenty cameras in one go; the server, gateway and existing reservations are skipped.'],
         ['CSV · LOG', 'Lease table or activity log to the clipboard. The bar between the table and the log drags to resize.'],
       ], [2600, TEXT_W - 2600]),
       gap(),
