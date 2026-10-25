@@ -1,4 +1,4 @@
-// NET//ETHER User Guide — v7.2.0 (document version 5.1)
+// NET//ETHER User Guide — v7.2.1 (document version 5.2)
 // node build-guide.js → NET-ETHER-Guide.docx ; then soffice → PDF
 const fs = require('fs');
 const {
@@ -52,7 +52,7 @@ const doc = new Document({
       new Paragraph({ spacing: { before: 2400, after: 200 }, children: [new TextRun({ text: 'NET//ETHER', font: FONT, size: 72, bold: true, color: ACCENT })] }),
       new Paragraph({ spacing: { after: 100 }, children: [new TextRun({ text: 'Field Network Management Tool', font: FONT, size: 32, color: GREY })] }),
       new Paragraph({ spacing: { after: 600 }, children: [new TextRun({ text: 'User Guide', font: FONT, size: 28, color: GREY })] }),
-      P('Application version 7.2.0 · Document version 5.1', { run: { color: GREY } }),
+      P('Application version 7.2.1 · Document version 5.2', { run: { color: GREY } }),
       P('Broman Enterprises, SSP Division', { run: { color: GREY } }),
       P('© 2026 Broman Enterprises. All rights reserved.', { run: { color: GREY, size: 18 } }),
       new Paragraph({ children: [new PageBreak()] }),
@@ -142,7 +142,7 @@ const doc = new Document({
       H2('How it behaves'),
       bullet([B('Off at launch.'), T(' Nothing listens on the DHCP port until you open the tab. Opening it starts LISTEN: every device asking for an address appears in the table as ASKING, with the address it would be given.')]),
       bullet([B('Serving is opt-in, per device.'), T(' SERVE on a row answers only that device. Tick several rows and press SERVE TICKED to answer just those. This is the right choice on a customer network that has DHCP of its own.')]),
-      bullet([B('SERVE EVERYONE…'), T(' (the small amber button) answers everyone. It asks first, then scans the wire for other DHCP servers and stops to ask if it finds one — or if one was heard in the last two minutes, even if it didn\'t answer this time. It also warns when the laptop is connected to another network at the same time (Wi-Fi, usually), because serving everyone would answer that side too.')]),
+      bullet([B('SERVE EVERYONE…'), T(' (the small amber button) answers everyone. It asks first, then scans the wire for other DHCP servers and stops to ask if it finds one — or if one was heard in the last two minutes, even if it didn\'t answer this time. It also warns when the laptop is connected to another network at the same time (Wi-Fi, usually): requests from that side show up in the list too. The answers themselves always go out the card you picked in step ①, Wi-Fi or not.')]),
       bullet('Before offering an address the server pings it; anything that answers is skipped. A device reporting a conflict has that address quarantined.'),
       bullet('The server never interferes with another server\'s clients. A device reconfirming a lease it got from the site\'s router gets silence, not a refusal.'),
       bullet('A device that comes back gets the address it had before, for up to an hour. ★ on a row pins a device to a fixed address permanently.'),

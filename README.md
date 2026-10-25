@@ -1,4 +1,4 @@
-# NET//ETHER — v7.2.0
+# NET//ETHER — v7.2.1
 **Broman Enterprises**
 
 A cyberpunk-styled always-on-top desktop HUD for Windows network configuration management — static IP, DHCP server, ping, subnet scan and a per-site device knowledge base in one window. Built for field technicians switching between network setups on job sites.
@@ -217,6 +217,14 @@ NET-ETHER/
 ---
 
 ## CHANGELOG
+
+### v7.2.1 (2026-10-24)
+Found on the bench the night 7.2.0 shipped: an A1210 on a USB card, the laptop's Wi-Fi up, the row stuck on OFFERED.
+
+- **DHCP answers go out the right card.** Windows sends a 255.255.255.255 broadcast out one interface only — the one holding the default route (the Wi-Fi, the dock) — not the card the request arrived on. OFFER, ACK and NAK now go to the serving card's subnet broadcast (e.g. 192.168.1.255), which Windows routes out that card and which still reaches the device as an ordinary broadcast frame. The bug was as old as the DHCP engine; it only shows with a second connection up. Side effect, a good one: SERVE EVERYONE can no longer put offers onto the Wi-Fi's network.
+- **SCAN WIRE probes the right card** for the same reason — before, with Wi-Fi up, it asked the Wi-Fi's network whether a DHCP server was there.
+- Log: `DISCOVER from … → offering … (via 192.168.1.255)` and the SCAN lines name where they were sent.
+- DIAGNOSTICS: the LAUNCHES row no longer labels programs under `C:\Program Files\` as `program` (tshark).
 
 ### v7.2.0 (2026-10-24)
 Built from two weeks of field notes: a coworker's laptop that felt frozen (process launches at 2–4 s each), the DHCP tab being hard for people who weren't there when it was made, and AXIS IP Utility seeing devices ETHER didn't. One release, all of it.

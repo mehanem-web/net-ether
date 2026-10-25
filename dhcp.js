@@ -143,6 +143,28 @@ module.exports = function initDhcp(deps) {
   const uint32Bytes = n => [(n >> 24) & 0xff, (n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
   const ipToNum = ip => ip.split('.').reduce((acc, o) => (acc << 8) + parseInt(o, 10), 0) >>> 0;
   const numToIp = n => [(n >>> 24), (n >>> 16 & 255), (n >>> 8 & 255), n & 255].join('.');
+  // v7.2.1 field lesson (2026-10-24, A1210 on a USB card with Wi-Fi up): Windows puts a
+  // 255.255.255.255 send out ONE interface — the one holding the default route — not the
+  // card the request came in on. The OFFER left on the Wi-Fi, the camera never saw it, the
+  // row sat on OFFERED. A subnet-directed broadcast (192.168.1.255) is routed out the card
+  // that owns that subnet and still goes on the wire as an ff:ff:ff:ff:ff:ff frame, which
+  // every DHCP client accepts. Same lesson as WAKE in main.js. It also means a SERVE
+  // EVERYONE can no longer leak offers onto the corporate Wi-Fi.
+  function bcastFor(ip, mask) {
+    if (!ip || !mask || !isValidIp(ip) || !isValidIp(mask)) return '255.255.255.255';
+    const m = ipToNum(mask);
+    if (m >= 0xfffffffe) return '255.255.255.255';
+    return numToIp(((ipToNum(ip) & m) | (~m >>> 0)) >>> 0);
+  }
+  const replyDest = () => serveCfg ? bcastFor(serveCfg.adapterIp, serveCfg.subnet) : '255.255.255.255';
+  // The probe's source address and its mask — from the serve/preview config when it's that
+  // address, otherwise from the live adapter list.
+  function probeDest(srcIp) {
+    if (!srcIp) return '255.255.255.255';
+    for (const c of [serveCfg, previewCfg]) if (c && c.adapterIp === srcIp && c.subnet) return bcastFor(srcIp, c.subnet);
+    for (const a of lightAdapters()) for (const x of (a.ips || [])) if (x.ip === srcIp) return bcastFor(srcIp, x.netmask);
+    return '255.255.255.255';
+  }
   const isApipa = ip => /^169\.254\./.test(ip || '');
   function buildIpPool(start, end) {
     const pool = [];
@@ -631,9 +653,10 @@ module.exports = function initDhcp(deps) {
       if (!d) return;
       if (!chosen) { log('Pool exhausted — cannot offer', 'err'); return; }
       d.state = 'offered'; d.ip = chosen; d.offerExpires = Date.now() + OFFER_HOLD_MS;
-      log(`DISCOVER from ${mac} → offering ${chosen}`);
+      const dest = replyDest();
+      log(`DISCOVER from ${mac} → offering ${chosen}  (via ${dest})`);
       const offer = buildDhcpPacket(2, probing[mac].xid, macToChaddr(mac), chosen, serveCfg);
-      sock && sock.send(offer, 0, offer.length, 68, '255.255.255.255');
+      sock && sock.send(offer, 0, offer.length, 68, dest);
       lastServeAction = Date.now();
     } finally { delete probing[mac]; }
   }
@@ -664,7 +687,7 @@ module.exports = function initDhcp(deps) {
       const wrongNet = requestedIp && isValidIp(requestedIp) && ((ipToNum(requestedIp) & maskNum) !== (ipToNum(serveCfg.adapterIp) & maskNum));
       if (ours || wrongNet) {
         const nak = buildNakPacket(d.lastXid, chaddr, serveCfg.adapterIp);
-        sock && sock.send(nak, 0, nak.length, 68, '255.255.255.255');
+        sock && sock.send(nak, 0, nak.length, 68, replyDest());
         log(`REQUEST from ${mac} → NAK${requestedIp ? ' (' + requestedIp + (wrongNet ? ' is not on our subnet' : ' unavailable') + ')' : ''}`, 'warn');
       } else {
         log(`REQUEST from ${mac} for ${requestedIp || '?'} — not ours, staying silent`, 'info');
@@ -678,7 +701,7 @@ module.exports = function initDhcp(deps) {
     rememberIp(mac, ip);
     log(`REQUEST from ${mac} → ACK ${ip}  [${d.vendor}]${d.hostname ? '  ' + d.hostname : ''}`, 'ok');
     const ack = buildDhcpPacket(5, d.lastXid, chaddr, ip, serveCfg);
-    sock && sock.send(ack, 0, ack.length, 68, '255.255.255.255');
+    sock && sock.send(ack, 0, ack.length, 68, replyDest());
     lastServeAction = Date.now();
     send('dhcp-lease', { mac, ip, vendor: d.vendor, hostname: d.hostname, expires: d.expires, time: new Date().toLocaleTimeString() });
     announceTray();
@@ -908,12 +931,13 @@ module.exports = function initDhcp(deps) {
       probeXids.add(xidA.toString('hex')); probeXids.add(xidB.toString('hex'));
 
       const giaddr = probeSourceIp();
+      const pdest  = probeDest(giaddr);
       if (giaddr) {
         relayCollector = { xid: xidA, found };
         try {
           const pktA = buildProbeDiscover(xidA, giaddr, false);
-          sock.send(pktA, 0, pktA.length, 67, '255.255.255.255', err =>
-            log(err ? `SCAN · relay send FAILED: ${err.code || err.message}` : `SCAN · relay DISCOVER sent (${pktA.length}b, giaddr=${giaddr}, src :67)`, err ? 'err' : 'info'));
+          sock.send(pktA, 0, pktA.length, 67, pdest, err =>
+            log(err ? `SCAN · relay send FAILED: ${err.code || err.message}` : `SCAN · relay DISCOVER sent (${pktA.length}b, giaddr=${giaddr}, src :67, to ${pdest})`, err ? 'err' : 'info'));
         } catch (e) { notes.push('relay probe failed: ' + e.message); }
       } else notes.push('no usable local IP — relay probe skipped');
 
@@ -932,8 +956,8 @@ module.exports = function initDhcp(deps) {
           try {
             clientSock.setBroadcast(true);
             const pktB = buildProbeDiscover(xidB, null, true);
-            clientSock.send(pktB, 0, pktB.length, 67, '255.255.255.255', err =>
-              log(err ? `SCAN · client send FAILED: ${err.code || err.message}` : `SCAN · client DISCOVER sent (${pktB.length}b, from :68, bcast flag)`, err ? 'err' : 'info'));
+            clientSock.send(pktB, 0, pktB.length, 67, pdest, err =>
+              log(err ? `SCAN · client send FAILED: ${err.code || err.message}` : `SCAN · client DISCOVER sent (${pktB.length}b, from :68, bcast flag, to ${pdest})`, err ? 'err' : 'info'));
           } catch (e) { notes.push('client probe failed: ' + e.message); }
         });
       } catch (e) { notes.push('client probe unavailable: ' + e.message); }

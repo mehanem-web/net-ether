@@ -9933,7 +9933,7 @@ async function dhcpRogueGate() {
   if (!probe.servers.length) { setDhcpStatus(probe.reused ? 'RECENT SCAN WAS CLEAR — NO OTHER DHCP SERVER' : 'NO OTHER DHCP SERVER ANSWERED', 'ok', 3000); return true; }
   D.foreign = probe.servers.slice();
   let heard = probe.recentlyHeard && probe.recentlyHeard.length ? `<br><br><span style="font-size:11px;color:var(--label-dim)">${probe.recentlyHeard.map(escHtml).join(', ')} didn't answer this probe but was heard on the wire in the last two minutes — routers often ignore a second DISCOVER a few seconds after the first.</span>` : '';
-  if (probe.offSubnet && probe.offSubnet.length) heard += `<br><br><span style="font-size:11px;color:var(--amber)">${probe.offSubnet.map(escHtml).join(', ')} is not on the subnet you'd serve — this laptop reaches it through another card (Wi-Fi?). Serving everyone would answer that side too. Disable that card, or serve devices one at a time.</span>`;
+  if (probe.offSubnet && probe.offSubnet.length) heard += `<br><br><span style="font-size:11px;color:var(--amber)">${probe.offSubnet.map(escHtml).join(', ')} is not on the subnet you'd serve — this laptop reaches it through another card (Wi-Fi?). ETHER's answers only go out this cable, so that side won't be served — but its requests can show up in the list.</span>`;
   const go = await hudModal({
     title: '⚠ ANOTHER DHCP SERVER IS LIVE', tone: 'warn',
     bodyHtml: `Something already answered at <span class="hl">${probe.servers.map(escHtml).join(', ')}</span>.${heard}<br><br>Serving <b>everyone</b> on a network that already has DHCP can knock devices offline. If you only need one device, use the <span class="hl">SERVE</span> button on its row instead.`,

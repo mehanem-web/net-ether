@@ -2,7 +2,7 @@
 
 *What every control does, in order, with its side effects. Not a guide — the
 Guide tells you how to use the app; this says what the app does when you press
-something. Current as of **v7.2.0**. Update the row when the behaviour
+something. Current as of **v7.2.1**. Update the row when the behaviour
 changes; the diagnostics `tag` column is the link to COPY DIAGNOSTICS output.*
 
 Columns: **Elevated** = runs through `runElevated()` (direct netsh when the app
@@ -136,7 +136,7 @@ log (OP = privileged command with full output, VERIFY = result check, APP = even
 | + ALIAS | Prompt → `reach-add` with an explicit alias /24 → temporary MULTI-IP alias (DHCP→static conversion as MULTI-IP), recorded in `temp-aliases.json`, removed on quit | yes | nothing | OP `reach_add`, VERIFY, APP `reach` |
 | Guard line (stale settings) | Shown when the laptop IP isn't on the card (profile load, serve attempt, card with no address): REFILL FROM CARD / SET LAPTOP IP… / + ADD <ip> AS ALIAS. The engine independently refuses to serve (code `NOT_ON_CARD`) | — | — | — |
 | ADDRESSES TO HAND OUT / profiles | First, last, mask, gateway (blank = laptop), lease dropdown (60 / 120 / 300 / 900 / 3600 / 86400 s; other saved values get their own option), advanced (DNS, options, idle). Validated in main. Profiles saved in `dhcp-config.json`; loading one runs the guard | — | — | — |
-| ▶ SERVE (row) with address box | ASKING row: address box pre-filled (typed value → after the last row served → engine's next free); SERVE / Enter → `dhcp-serve-device(mac, opts, ip)`: ip must be on the laptop's subnet, not the laptop/network/broadcast/gateway, not in use or reserved for another MAC → held for that MAC this session, offered first. Ping-before-offer; DECLINEs quarantine; NAK only for leases that are ours; own MAC ignored | no | ICMP before the offer, OFFER/ACK | APP `dhcp` |
+| ▶ SERVE (row) with address box | ASKING row: address box pre-filled (typed value → after the last row served → engine's next free); SERVE / Enter → `dhcp-serve-device(mac, opts, ip)`: ip must be on the laptop's subnet, not the laptop/network/broadcast/gateway, not in use or reserved for another MAC → held for that MAC this session, offered first. Ping-before-offer; OFFER/ACK/NAK go to the card's subnet broadcast (7.2.1 — 255.255.255.255 leaves by the default-route card on Windows); DECLINEs quarantine; NAK only for leases that are ours; own MAC ignored | no | ICMP before the offer, OFFER/ACK | APP `dhcp` |
 | ▶ SERVE TICKED | Ticked ASKING rows, each with its typed address if any | no | as SERVE | APP `dhcp` |
 | ↗ OPEN | `http://<ip>` in the default browser (served, static and on-subnet sitting rows) | — | the browser's HTTP | — |
 | ✓ STATIC (automatic) | A served device past T1 + 15 s without renewing, or 4 s after a RELEASE: ping its address, else `arp -a <ip>` for the same MAC. Answers → row STATIC, lease freed, address kept out of the pool, status "WENT STATIC". No answer → expires normally (RELEASE: row removed). A STATIC device that asks again becomes ASKING. Rows age out after 2 h | no | 1 ICMP | engine log |
@@ -147,7 +147,7 @@ log (OP = privileged command with full output, VERIFY = result check, APP = even
 | ■ STOP SERVING (N) | Shown only while serving ticked/row devices: back to LISTENING, typed addresses dropped | no | nothing | APP `dhcp` |
 | ★ PIN / ✕ | Reservation for a MAC / take the address back (STATIC rows: forget) | — | — | — |
 | ★ RESERVE TICKED | Start address prompt → consecutive reservations for the ticked devices in list order (first plugged in first); laptop IP, gateway and existing reservations skipped | — | — | — |
-| ◎ SCAN WIRE | The rogue-server probe on its own | no | 1 DHCP DISCOVER | APP `dhcp-scan` |
+| ◎ SCAN WIRE | The rogue-server probe on its own, sent to the card's subnet broadcast (7.2.1) | no | 1 DHCP DISCOVER | APP `dhcp-scan` |
 | ⚕ SELF-TEST | Checks: card, socket bound, firewall rule, adapter address, other servers, policy | no | nothing | — |
 | ✕ RELEASE ALL | Clears every lease from memory | — | — | — |
 | ⎘ CSV / ⎘ LOG | Device table / engine log to clipboard | — | — | — |

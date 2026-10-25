@@ -161,6 +161,14 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 - [ ] Hover the OFFLINE badge → dot stays red.
 - [ ] Rename the adapter to `Johan's Port` → relaunch → APPLY a static, → DHCP, MULTI-IP add/remove, DISABLE/ENABLE, RECON SILENT all work; rename back to `Ethernet`.
 
+### v7.2.1 — DHCP replies out the right card
+Bench: the A1210 (or any DHCP device) on a USB/dock card, **Wi-Fi connected** (or a second wired network with the default gateway).
+- [ ] Wi-Fi ON, serve the device from its row → OFFERED → LEASED within a few seconds (7.2.0 sat on OFFERED). Log shows `offering … (via <card subnet>.255)`.
+- [ ] Same with the lease at 1 min: the renewal ACKs (row stays LEASED past 2 minutes, expiry keeps moving).
+- [ ] SCAN WIRE with Wi-Fi on → `relay DISCOVER sent (… to <card subnet>.255)`; the home/office router on the Wi-Fi is NOT reported as a server on this cable.
+- [ ] Wi-Fi OFF → still leases (single-card case unchanged).
+- [ ] DIAGNOSTICS → LAUNCHES never shows `program ×…`.
+
 ### v7.2.0 — DHCP rework, wire watch, IP tab, spawn latency
 Bench: a dumb switch, the Axis A1210 (or any Axis on AXIS OS 10+), a Bosch or other DHCP camera, the laptop's dock NIC. Run the DHCP part from the portable build (elevated) and once from `dev-slow.bat`.
 
