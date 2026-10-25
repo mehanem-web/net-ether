@@ -4,6 +4,10 @@ const fs = require('fs');
 const os = require('os');
 const net = require('net');
 const https = require('https');
+// v7.2.0: spawn.js wraps child_process before anything destructures it — every
+// process launch is timed (diagnostics), the dev latency injector applies to all
+// of them, and read-only PowerShell queries go through one persistent worker.
+const SPAWN = require('./spawn');
 const { execFile, exec } = require('child_process');
 
 // ── USERDATA PIN ───────────────────────────────────────────
@@ -344,10 +348,7 @@ async function getAdapterGuidUncached(adapterName) {
   const safe = sanitizeAdapter(adapterName);
   if (!safe) return null;
   const script = `(Get-NetAdapter -Name '${safe.replace(/'/g, "''")}' -IncludeHidden -ErrorAction SilentlyContinue).InterfaceGuid`;
-  const out = await new Promise(resolve => {
-    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script],
-      { timeout: 8000, windowsHide: true }, (err, stdout) => resolve(err ? '' : String(stdout || '')));
-  });
+  const out = (await SPAWN.psRun(script, { timeoutMs: 8000 })).stdout || '';   // v7.2.0: persistent worker
   const m = out.match(/\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}/);
   return m ? m[0] : null;
 }
@@ -355,10 +356,7 @@ async function getAdapterGuidUncached(adapterName) {
 // Get adapter Name→Description map (replaces: wmic nic get Name,Description /format:csv)
 async function getAdapterDescriptions() {
   try {
-    const out = (await execAsync(
-      'powershell -NoProfile -Command "Get-CimInstance Win32_NetworkAdapter | Where-Object { $_.NetConnectionID } | Select-Object NetConnectionID, Description | ConvertTo-Csv -NoTypeInformation"',
-      { timeout: 8000 }
-    ).catch(() => '')).replace(/\r/g, '');
+    const out = String((await SPAWN.psRun('Get-CimInstance Win32_NetworkAdapter | Where-Object { $_.NetConnectionID } | Select-Object NetConnectionID, Description | ConvertTo-Csv -NoTypeInformation', { timeoutMs: 8000 })).stdout || '').replace(/\r/g, '');
     const descMap = {};
     // CSV output: "NetConnectionID","Description"
     out.split('\n').forEach((line, i) => {
@@ -383,11 +381,9 @@ async function getAdapterDescriptions() {
 let netAdapterCache = { ts: 0, byName: {}, wifi: [] };
 async function getNetAdapterInfo() {
   const script =
-    "Get-NetAdapter -IncludeHidden | Select-Object Name,InterfaceDescription,Status,AdminStatus,LinkSpeed,ReceiveLinkSpeed,PhysicalMediaType,MediaConnectionState | ConvertTo-Json -Compress";
-  const out = await new Promise(resolve => {
-    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script],
-      { timeout: 8000, windowsHide: true }, (err, stdout) => resolve(err ? '' : String(stdout || '')));
-  });
+    "Get-NetAdapter -IncludeHidden | Select-Object Name,InterfaceDescription,InterfaceGuid,Status,AdminStatus,LinkSpeed,ReceiveLinkSpeed,PhysicalMediaType,MediaConnectionState | ConvertTo-Json -Compress";
+  // v7.2.0: through the persistent PowerShell worker — this runs on every adapter refresh
+  const out = String((await SPAWN.psRun(script, { timeoutMs: 8000 })).stdout || '');
   const byName = {}, wifi = [];
   try {
     let arr = JSON.parse(out.trim() || '[]');
@@ -408,6 +404,9 @@ async function getNetAdapterInfo() {
         wifi:   /802\.11|wireless/i.test(media),
       };
       byName[rec.name.toLowerCase()] = rec;
+      // v7.2.0: GUIDs ride along — fills the cache so no per-adapter PowerShell is ever needed
+      const g = String(a.InterfaceGuid || '').match(/\{[0-9A-Fa-f-]{36}\}/);
+      if (g) guidCache.set(rec.name.toLowerCase(), g[0]);
       // real radios only — -IncludeHidden also lists "Wi-Fi Direct Virtual Adapter" entries,
       // and driver reinstalls leave "Not Present" ghosts of the same card behind
       if (rec.wifi && status !== 'Not Present' && !/virtual|direct|hosted network/i.test(rec.desc)) wifi.push(rec);
@@ -738,6 +737,16 @@ app.whenReady().then(async () => {
   createWindow();
   createTray();
   initDhcpEngine();
+  // v7.2.0: start the PowerShell worker now (its start-up cost is paid once, in the
+  // background), and time one bare process launch for the diagnostics overlay.
+  SPAWN.warmWorker();
+  setTimeout(() => {
+    SPAWN.selfCheck().then(ms => {
+      const st = SPAWN.stats();
+      diagAdd({ kind: 'app', tag: 'spawn-check', ok: ms < 1500,
+        note: `cmd /c ver took ${ms} ms — ${st.verdict}${SPAWN.DELAY_MS ? ` · DEV latency injector ON (+${SPAWN.DELAY_MS} ms per launch)` : ''}` });
+    }).catch(() => {});
+  }, 1500);
   // Snapshot all connected adapters immediately at launch — this is the
   // "restore to launch state" baseline. Runs async, doesn't block UI.
   takeLaunchSnapshot();
@@ -787,6 +796,8 @@ async function shutdownAndQuit() {
   try { flushVendorCache(); } catch {}
   try { if (DHCP) await Promise.race([DHCP.shutdown(), new Promise(r => setTimeout(r, 6000))]); } catch {}
   try { if (DISCOVER) { DISCOVER.lldpStop(); DISCOVER.reconStop(); } } catch {}
+  try { wireWatchStop(); } catch {}
+  try { await Promise.race([removeDiscoveryRule(), new Promise(r => setTimeout(r, 3000))]); } catch {}
   // v7.1.0: tshark holds the adapter through npcap — give it a moment to exit before NetCfg is touched
   if (PRIV.elevated && readSilentState()) {
     await new Promise(r => setTimeout(r, 1200));
@@ -798,6 +809,7 @@ async function shutdownAndQuit() {
   }
   // v7.1.0: REACH aliases are temporary by contract — drop them on the way out (direct netsh when elevated)
   try { if (PRIV.elevated && readTempAliases().length) await Promise.race([clearTempAliases('quit'), new Promise(r => setTimeout(r, 4000))]); } catch {}
+  try { SPAWN.stopWorker(); } catch {}
   try { diagFlush(); } catch {}
   try { tray.destroy(); } catch {}
   clearTimeout(watchdog);
@@ -951,13 +963,60 @@ ipcMain.handle('get-current-ip', (e, adapterName) => {
   return null;
 });
 
+// v7.2.0: Windows' duplicate-address detection result for an address on this machine
+// (Preferred / Tentative / Duplicate / …). Read through the PowerShell worker.
+async function ipAddrState(ip) {
+  if (!isValidIp(ip)) return null;
+  let st = '';
+  for (let i = 0; i < 4; i++) {
+    st = String((await SPAWN.psRun(`(Get-NetIPAddress -IPAddress '${ip}' -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -First 1).AddressState`, { timeoutMs: 6000 })).stdout || '').trim();
+    if (!/tentative/i.test(st)) break;
+    await new Promise(r => setTimeout(r, 700));
+  }
+  return st || null;
+}
+
+// v7.2.0: EnableDHCP for every interface in ONE reg.exe launch (was one per DHCP adapter,
+// each at up to 2 s on a locked-down laptop). Keyed by lower-case GUID.
+async function readEnableDhcpAll() {
+  const out = (await execAsync('reg query "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces" /s /v EnableDHCP', { timeout: 6000 }).catch(() => '')).replace(/\r/g, '');
+  const map = {};
+  let cur = null;
+  out.split('\n').forEach(line => {
+    if (/^HKEY_/i.test(line)) {
+      const k = line.match(/\\Interfaces\\(\{[0-9A-Fa-f-]{36}\})\s*$/);   // direct children only — sub-keys don't count
+      cur = k ? k[1].toLowerCase() : null;
+      return;
+    }
+    const v = line.match(/EnableDHCP\s+REG_DWORD\s+(0x[0-9a-f]+)/i);
+    if (v && cur) map[cur] = parseInt(v[1], 16) !== 0;
+  });
+  return map;
+}
+
 // ── IPC: get-adapters (full, with netsh status) ────────────
-async function getAdaptersFull() {
+// v7.2.0: one refresh at a time — the IP tab, the DHCP tab and the LIVE poll often ask
+// within the same second; they now share one set of launches instead of three.
+// A caller arriving mid-run (APPLY during the LIVE poll) must not get the pre-change answer:
+// it waits for ONE fresh run after the current one, shared with anyone else who arrives meanwhile.
+let adaptersInFlight = null, adaptersQueued = null;
+function getAdaptersFull() {
+  if (!adaptersInFlight) {
+    adaptersInFlight = getAdaptersFullOnce().finally(() => { adaptersInFlight = null; });
+    return adaptersInFlight;
+  }
+  if (!adaptersQueued) adaptersQueued = adaptersInFlight.catch(() => {}).then(() => { adaptersQueued = null; return getAdaptersFull(); });
+  return adaptersQueued;
+}
+async function getAdaptersFullOnce() {
   try {
     const ifaces = os.networkInterfaces();
 
     // v7.1.0: link speed / media inventory — one PowerShell; descriptions ride along (see getNetAdapterInfo)
+    // v7.2.0: every read starts at once — netsh ×2, reg ×1, PowerShell worker ×1 — instead of in series
     const netInfoP = getNetAdapterInfo().catch(() => netAdapterCache);
+    const ipCfgP   = execAsync('netsh interface ip show config', { timeout: 5000 }).catch(() => '');
+    const regAllP  = readEnableDhcpAll().catch(() => ({}));
     const netshOutput = (await execAsync('netsh interface show interface', { timeout: 4000 }).catch(() => '')).replace(/\r/g, '');
 
     // Build statusMap from netsh — this has ALL adapters regardless of IP
@@ -974,7 +1033,7 @@ async function getAdaptersFull() {
     const dhcpMap = {};
     const gwMap = {}, dnsMap = {};   // v7.0.0: gateway + DNS per adapter, DHCP-assigned or static
     try {
-      const ipCfg = await execAsync('netsh interface ip show config', { timeout: 5000 }).catch(() => '');
+      const ipCfg = await ipCfgP;
       const blocks = ipCfg.split(/\r?\n(?=Configuration for interface)/i);
       blocks.forEach(block => {
         const nameMatch = block.match(/Configuration for interface "(.+?)"/i);
@@ -997,21 +1056,15 @@ async function getAdaptersFull() {
         .filter(([, v]) => v === true)
         .map(([k]) => k);
 
+      // v7.2.0: GUIDs come from the Get-NetAdapter call (cached), EnableDHCP from the one bulk reg read
+      await netInfoP;
+      const regAll = await regAllP;
       for (const name of dhcpNames) {
         try {
-          // Get adapter GUID via PowerShell (wmic removed in Win 11 24H2+)
           const guid = await getAdapterGuid(name);
           if (!guid) continue;
-          const regOut = (await execAsync(
-            `reg query "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\${guid}" /v EnableDHCP`,
-            { timeout: 3000 }
-          ).catch(() => '')).replace(/\r/g, '');
-          // EnableDHCP 0x0 = static, 0x1 = DHCP
-          const enableMatch = regOut.match(/EnableDHCP\s+REG_DWORD\s+(0x\w+)/i);
-          if (enableMatch) {
-            const regIsDhcp = parseInt(enableMatch[1], 16) !== 0;
-            dhcpMap[name] = regIsDhcp;
-          }
+          const v = regAll[guid.toLowerCase()];
+          if (v !== undefined) dhcpMap[name] = v;   // EnableDHCP 0 = static, 1 = DHCP
         } catch { /* skip — leave show config result */ }
       }
     } catch {}
@@ -1112,14 +1165,14 @@ async function getAdaptersFull() {
     // v7.1.0: an adapter with no IPv4 interface (after a rebind, or a dead stack) has no
     // show-config block, so isDhcp would be null and the → DHCP action would hide — exactly
     // when it's needed. The registry still knows; read it for those.
+    const regAllLate = await regAllP;
     for (const a of adapters) {
       if (a.isDhcp !== null || a.admin === 'Disabled') continue;
       try {
         const guid = await getAdapterGuid(a.name);
         if (!guid) continue;
-        const regOut = (await execAsync(`reg query "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\${guid}" /v EnableDHCP`, { timeout: 3000 }).catch(() => '')).replace(/\r/g, '');
-        const m = regOut.match(/EnableDHCP\s+REG_DWORD\s+(0x\w+)/i);
-        if (m) a.isDhcp = parseInt(m[1], 16) !== 0;
+        const v = regAllLate[guid.toLowerCase()];
+        if (v !== undefined) a.isDhcp = v;
       } catch {}
     }
 
@@ -1128,7 +1181,7 @@ async function getAdaptersFull() {
       const info = await netInfoP;
       adapters = adapters.map(a => {
         const rec = info.byName[a.name.toLowerCase()];
-        return rec ? { ...a, linkSpeed: rec.linkSpeed || null, linkBps: rec.bps || 0 } : { ...a, linkSpeed: null, linkBps: 0 };
+        return rec ? { ...a, linkSpeed: rec.linkSpeed || null, linkBps: rec.bps || 0, desc: rec.desc || '' } : { ...a, linkSpeed: null, linkBps: 0, desc: '' };   // v7.2.0: desc for the DHCP tab's card line
       });
     } catch {}
 
@@ -1383,6 +1436,7 @@ function adapterIpv4s(name) {
 
 ipcMain.handle('discover-run', async (e, { adapter, baseIp }) => {
   if (!DISCOVER) return { ok: false, err: 'NOT_LOADED', results: [] };
+  await ensureDiscoveryRule();   // v7.2.0: multicast mDNS answers need an inbound rule
   const sources = adapterIpv4s(adapter);
   if (!sources.length) return { ok: false, err: 'NO_IP', results: [] };
   const base = (typeof baseIp === 'string' && /^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(baseIp)) ? baseIp : '';
@@ -1393,6 +1447,93 @@ ipcMain.handle('discover-run', async (e, { adapter, baseIp }) => {
     diagAdd({ kind: 'error', tag: 'discover', ok: false, note: err.message });
     return { ok: false, err: err.message, results: [] };
   }
+});
+
+// ── WIRE WATCH (v7.2.0) — see discover.js wireWatch() ──────
+// Runs while the DHCP tab's engine is on (and for the IP tab's subnet hint). One at a
+// time; a new start on another card replaces the old one.
+const WIRE = { watch: null, adapter: null, last: [], sender: null, gen: 0 };
+// Inbound multicast answers (mDNS 5353, SSDP 1900) aren't covered by Windows Firewall's
+// response exception — a program-scoped rule lets them reach the app. Added once (elevated),
+// removed on quit, like the DHCP engine's UDP 67 rule.
+const FW_DISC_RULE = 'NET-ETHER-DISCOVERY-UDP';
+let discRuleState = null;   // null | Promise
+function fwDiscRuleExists() {
+  return new Promise(resolve => execFile('netsh', ['advfirewall', 'firewall', 'show', 'rule', `name=${FW_DISC_RULE}`], { timeout: 8000, windowsHide: true },
+    (err, stdout) => resolve(!err && /Enabled/i.test(stdout || ''))));
+}
+function ensureDiscoveryRule() {
+  if (discRuleState) return discRuleState;
+  discRuleState = (async () => {
+    await detectElevation();
+    if (!PRIV.elevated || process.platform !== 'win32') return false;
+    if (await fwDiscRuleExists()) return true;
+    const exe = process.execPath;
+    if (/["]/.test(exe)) return false;
+    // whole token quoted — runDirect's tokenizer splits on spaces outside quotes
+    const r = await runElevated(`netsh advfirewall firewall add rule name=${FW_DISC_RULE} dir=in action=allow protocol=UDP localport=5353,1900 "program=${exe}"`, { tag: 'disc-fw-add', timeoutMs: 15000 });
+    return r.ok;
+  })().catch(() => false);
+  return discRuleState;
+}
+async function removeDiscoveryRule() {
+  if (!discRuleState) return;
+  try { if (await fwDiscRuleExists()) await runElevated(`netsh advfirewall firewall delete rule name=${FW_DISC_RULE}`, { tag: 'disc-fw-del', timeoutMs: 15000 }); } catch {}
+}
+async function wireWatchStart(adapter, sender) {
+  const safe = sanitizeAdapter(adapter);
+  if (!DISCOVER || !safe) return { ok: false, err: !DISCOVER ? 'NOT_LOADED' : 'INVALID_ADAPTER' };
+  if (WIRE.watch && WIRE.adapter === safe) { WIRE.sender = sender || WIRE.sender; return { ok: true, adapter: safe, list: WIRE.last, reused: true }; }
+  wireWatchStop();
+  const gen = ++WIRE.gen;          // a second start while this one awaits wins; this one then gives up
+  WIRE.adapter = safe; WIRE.sender = sender || null; WIRE.last = [];
+  await ensureDiscoveryRule();
+  await detectTools();
+  let npf = null;
+  if (TOOLS.tshark && TOOLS.versionOk) { const guid = await getAdapterGuid(safe); if (guid) npf = `\\Device\\NPF_${guid}`; }
+  if (gen !== WIRE.gen) return { ok: false, err: 'SUPERSEDED' };
+  WIRE.watch = DISCOVER.wireWatch({
+    ifaceIps: adapterIpv4s(safe), tshark: npf ? TOOLS.tshark : null, npf,
+    onUpdate: list => {
+      WIRE.last = list;
+      try { if (WIRE.sender && !WIRE.sender.isDestroyed()) WIRE.sender.send('wire-watch', { adapter: safe, list }); } catch {}
+    },
+  });
+  diagAdd({ kind: 'app', tag: 'wire-watch', ok: true, note: `listening on ${safe} — mDNS/SSDP${npf ? ' + ARP/LLDP via tshark' : ' (no tshark: ARP/LLDP off)'}` });
+  return { ok: true, adapter: safe, tshark: !!npf };
+}
+function wireWatchStop() {
+  WIRE.gen++;
+  if (WIRE.watch) { try { WIRE.watch.stop(); } catch {} }
+  WIRE.watch = null; WIRE.adapter = null;
+}
+ipcMain.handle('wire-watch-start', (e, adapter) => wireWatchStart(adapter, e.sender));
+ipcMain.handle('wire-watch-stop', () => { wireWatchStop(); return { ok: true }; });
+ipcMain.handle('wire-watch-list', () => ({ adapter: WIRE.adapter, list: WIRE.last }));
+// IP tab: listen N seconds on a card with no usable address, return what subnets were heard
+ipcMain.handle('wire-hint', async (e, { adapter, seconds }) => {
+  const safe = sanitizeAdapter(adapter);
+  if (!DISCOVER || !safe) return { ok: false };
+  const secs = Math.max(4, Math.min(30, parseInt(seconds, 10) || 10));
+  // the DHCP tab may be watching another card — borrow the watch, then give it back
+  const prev = WIRE.watch && WIRE.adapter !== safe && WIRE.sender ? { adapter: WIRE.adapter, sender: WIRE.sender } : null;
+  const shared = WIRE.watch && WIRE.adapter === safe;
+  if (!shared) await wireWatchStart(safe, null);
+  await new Promise(r => setTimeout(r, secs * 1000));
+  const list = WIRE.watch && WIRE.watch.list ? WIRE.watch.list() : WIRE.last;
+  if (!shared) {
+    if (WIRE.adapter === safe) wireWatchStop();
+    if (prev && !prev.sender.isDestroyed()) wireWatchStart(prev.adapter, prev.sender).catch(() => {});
+  }
+  const by24 = {};
+  for (const r of list) { if (/^169\.254\./.test(r.ip)) continue; const k = r.ip.split('.').slice(0, 3).join('.'); (by24[k] ||= []).push(r.ip); }
+  const nets = Object.entries(by24).sort((a, b) => b[1].length - a[1].length).map(([net, ips]) => {
+    const used = new Set(ips);
+    let free = null;
+    for (const last of [250, 249, 248, 247, 246, 245, 244, 243, 242, 241, 240]) { const ip = `${net}.${last}`; if (!used.has(ip)) { free = ip; break; } }
+    return { net, count: ips.length, free };
+  });
+  return { ok: true, nets, linkLocal: list.filter(r => /^169\.254\./.test(r.ip)).length, total: list.length };
 });
 
 // ── RECON (v7.1.0) ─────────────────────────────────────────
@@ -1425,9 +1566,7 @@ async function setIpBindings(safeAdapter, enabled) {
 // transaction conflict). This is the real test, not Get-NetAdapterBinding.
 async function ipv4InterfaceExists(safeAdapter) {
   const script = `(Get-NetIPInterface -InterfaceAlias '${safeAdapter.replace(/'/g, "''")}' -AddressFamily IPv4 -ErrorAction SilentlyContinue | Measure-Object).Count`;
-  const out = await new Promise(resolve => {
-    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: 8000, windowsHide: true }, (err, stdout) => resolve(err ? '' : String(stdout || '')));
-  });
+  const out = String((await SPAWN.psRun(script, { timeoutMs: 8000 })).stdout || '');
   return parseInt(out.trim(), 10) > 0;
 }
 async function adapterIsDhcp(safeAdapter) {
@@ -1561,24 +1700,64 @@ async function addAliasCore(safeAdapter, ip, subnet, tag = 'alias_add') {
   return { ...result, verified, converted };
 }
 
-ipcMain.handle('reach-add', async (e, { adapter, target }) => {
+// v7.2.0: REACH works for any device the wire watch hears, not just link-local ones —
+// a camera on its fallback 192.168.0.90 gets the laptop a temporary 192.168.0.250 next to
+// it. `alias` (+ `mask`) lets the DHCP tab's "+ ALIAS" chip add a chosen temporary address.
+// Either way the address is temporary by contract: recorded in temp-aliases.json, removed
+// on quit or REMOVE, cleaned up on the next launch after a crash.
+ipcMain.handle('reach-add', async (e, { adapter, target, alias: wantAlias, mask: wantMask }) => {
   const safe = sanitizeAdapter(adapter);
   if (!safe) return { ok: false, err: 'Invalid adapter name' };
-  if (!isValidIp(target) || !/^169\.254\./.test(target)) return { ok: false, err: 'Target is not link-local' };
-  // already have one on this adapter? reuse it
-  const have = adapterIpv4s(safe).find(ip => /^169\.254\./.test(ip));
-  if (have) return { ok: true, alias: have, reused: true };
-  // RFC 3927: 169.254.1.0 – 169.254.254.255, never the target itself
-  let alias;
-  do {
-    alias = `169.254.${1 + Math.floor(Math.random() * 254)}.${1 + Math.floor(Math.random() * 254)}`;
-  } while (alias === target);
-  const r = await addAliasCore(safe, alias, '255.255.0.0', 'reach_add');
-  if (!r.ok) return r;
+  const have = adapterIpv4s(safe);
+  let altAliases = null;
+  const toNum = ipStr => ipStr.split('.').reduce((n, o) => ((n << 8) + (+o)) >>> 0, 0);
+  let alias, mask;
+  if (wantAlias !== undefined && wantAlias !== null && String(wantAlias).trim()) {
+    alias = String(wantAlias).trim();
+    mask = (wantMask && isValidSubnet(wantMask)) ? wantMask : '255.255.255.0';
+    if (!isValidIp(alias)) return { ok: false, err: 'Not an IP address' };
+    if (have.includes(alias)) return { ok: true, alias, reused: true };
+  } else if (isValidIp(target) && /^169\.254\./.test(target)) {
+    // already have one on this adapter? reuse it
+    const ll = have.find(ip => /^169\.254\./.test(ip));
+    if (ll) return { ok: true, alias: ll, reused: true };
+    // RFC 3927: 169.254.1.0 – 169.254.254.255, never the target itself
+    do {
+      alias = `169.254.${1 + Math.floor(Math.random() * 254)}.${1 + Math.floor(Math.random() * 254)}`;
+    } while (alias === target);
+    mask = '255.255.0.0';
+  } else if (isValidIp(target)) {
+    // already on that /24? nothing to add
+    const base = target.split('.').slice(0, 3).join('.');
+    const onIt = have.find(ip => ip.startsWith(base + '.'));
+    if (onIt) return { ok: true, alias: onIt, reused: true };
+    const heard = new Set((WIRE.last || []).map(r => r.ip));
+    for (const last of [250, 249, 248, 247, 246, 245, 244, 243, 242, 241, 240, 239, 238, 237, 236, 235, 234, 233, 232, 231, 230]) {
+      const ip = `${base}.${last}`;
+      if (ip !== target && !heard.has(ip)) { if (!alias) alias = ip; else { (altAliases ||= []).push(ip); if (altAliases.length >= 2) break; } }
+    }
+    if (!alias) return { ok: false, err: 'No free address on that subnet' };
+    mask = '255.255.255.0';
+    if ((toNum(alias) & toNum(mask)) !== (toNum(target) & toNum(mask))) return { ok: false, err: 'Alias not on target subnet' };
+  } else return { ok: false, err: 'Invalid target' };
+  // v7.2.0: add, then ask Windows whether the address is a duplicate on the wire (an NVR or
+  // switch already on .250). Duplicate → take it off again and try the next candidate.
+  let r = null;
+  for (const cand of [alias, ...(altAliases || [])]) {
+    alias = cand;
+    r = await addAliasCore(safe, alias, mask, 'reach_add');
+    if (!r.ok) return r;
+    const st = await ipAddrState(alias).catch(() => null);
+    if (!st || !/duplicate/i.test(st)) break;
+    diagAdd({ kind: 'app', tag: 'reach', ok: false, note: `${alias} is already used on the wire (duplicate) — removing it` });
+    await runElevated(`netsh interface ip delete address "${safe}" ${alias}`, { tag: 'reach_del', timeoutMs: 20000 });
+    r = { ok: false, err: `${alias} is already used by another device on this wire` };
+  }
+  if (!r || !r.ok) return r || { ok: false, err: 'Could not add an address' };
   const list = readTempAliases().filter(t => !(t.adapter === safe && t.ip === alias));
   list.push({ adapter: safe, ip: alias, ts: Date.now(), target, converted: !!r.converted });
   writeTempAliases(list);
-  diagAdd({ kind: 'app', tag: 'reach', ok: true, note: `link-local alias ${alias} on ${safe} for ${target}${r.converted ? ' (adapter converted DHCP→static)' : ''}` });
+  diagAdd({ kind: 'app', tag: 'reach', ok: true, note: `temporary alias ${alias}/${mask} on ${safe}${target ? ' for ' + target : ''}${r.converted ? ' (adapter converted DHCP→static)' : ''}` });
   return { ok: true, alias, verified: r.verified, converted: r.converted };
 });
 ipcMain.handle('reach-list', () => readTempAliases());
@@ -3451,6 +3630,9 @@ function initDhcpEngine() {
       },
       getPolicy: () => readPolicy(),
       onStateChange: (state) => { dhcpTrayNote = dhcpTrayLabel(state); updateTrayTooltip(); },
+      // v7.2.0: Windows' duplicate-address detection result for a freshly applied address
+      // (Preferred / Tentative / Duplicate). Read through the PowerShell worker.
+      ipAddressState: ipAddrState,
     });
   } catch (err) {
     diagAdd({ kind: 'error', tag: 'dhcp', ok: false, note: 'DHCP engine failed to load: ' + err.message });
@@ -3500,6 +3682,7 @@ async function buildDiagState() {
     creds:      credStatus(),
     policy:     { ...POLICY },
     dhcp:       DHCP ? DHCP.getState() : null,
+    spawn:      SPAWN.stats(),
     tools:      { wireshark: TOOLS.wireshark, tshark: TOOLS.tshark, tsharkVersion: TOOLS.version, tsharkOk: TOOLS.versionOk, err: TOOLS.err },
     files: {
       'presets.json':         fileStat(path.join(ud, 'presets.json')),
@@ -3517,6 +3700,8 @@ async function buildDiagState() {
 }
 
 ipcMain.handle('diag-get', async () => ({ state: await buildDiagState(), log: diagLog.slice() }));
+// v7.2.0: re-run the process-launch self-check from the diagnostics overlay
+ipcMain.handle('spawn-check', async () => { await SPAWN.selfCheck(); return SPAWN.stats(); });
 ipcMain.handle('diag-clear', () => {
   diagLog = [];
   diagFlush();

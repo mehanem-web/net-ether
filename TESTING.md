@@ -22,7 +22,7 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 - [ ] LOG has an APP launch entry. Quit, relaunch → previous entries still there.
 - [ ] CLEAR LOG leaves one "log-cleared" entry. COPY DIAGNOSTICS pastes STATE + LOG into Notepad.
 
-### ETHER — every write op, watch the LOG after each
+### IP tab — every write op, watch the LOG after each
 - [ ] APPLY a static config → OP apply (direct) exit 0, VERIFY apply OK. Adapter shows STATIC. (The VERIFY note usually says "registry" — the registry updates before netsh's own view does; either source is a confirmed apply.)
 - [ ] REVERT → OP apply + VERIFY OK, config back to previous.
 - [ ] DHCP → OP dhcp + VERIFY OK.
@@ -67,7 +67,7 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 - [ ] SELF-TEST → five rows, all green on the bench; port 67 "Bound by NET//ETHER".
 - [ ] Profiles: ⊕ SAVE "BENCH" → appears in the dropdown → change a field → pick BENCH → field restored. ✕ deletes after confirm.
 - [ ] ADVANCED → AUTO-STOP 1 → serve a device → wait a minute with nothing renewing → status "AUTO-STOPPED", badge back to LISTENING.
-- [ ] QUICK START on an adapter with no address (bench switch, no server) → modal offers a static IP → SET STATIC IP → LOG has OP apply + VERIFY (static assist), ETHER tab shows the adapter STATIC at 192.168.100.1 → serving starts. Quit → LOG shows the revert apply/dhcp; adapter back to DHCP.
+- [ ] (7.2.0: QUICK START is gone — see § v7.2.0, SET LAPTOP IP….)
 - [ ] Kill the app from Task Manager while a static assist is active → relaunch, open DHCP → "LEFTOVER STATIC IP" modal → REVERT ADAPTER works.
 - [ ] Tick two ASKING rows → SERVE SELECTED (2) appears beside CSV → click → both go LEASED, badge says 2 TARGETS, live bar "DHCP: 2 TARGETS".
 - [ ] Let a lease expire → device re-asks → preview shows its OLD address (1 h memory), not the next pool slot.
@@ -127,7 +127,7 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 ### v7.1.0 rc.4 — RECON, window, primary address
 - [ ] Six tabs; RECON opens with the ETHER adapter named and "NOTHING HEARD YET". With Wireshark missing the LISTEN button is dimmed with a reason in its tooltip.
 - [ ] RECON → LISTEN at home: progress counts to 65 s; cards: SWITCH "No LLDP/CDP announcement", 802.1X "No challenge", DHCP server 192.168.0.1 with gateway/mask/DNS, HOSTS on 192.168.0.x, NAMES, ADDRESS with TAKE. LOG has APP recon with the summary.
-- [ ] TAKE → ETHER tab, IP/mask/gateway filled and marked changed, status "FROM RECON — CHECK IT, THEN APPLY".
+- [ ] TAKE → IP tab, IP/mask/gateway filled and marked changed, status "FROM RECON — CHECK IT, THEN APPLY".
 - [ ] SILENT → modal → during the listen the ETHER badge shows no IP; after it ends the adapter is back (DHCP lease renewed). LOG: OP recon-unbind, OP recon-rebind, VERIFY recon-rebind. Kill the app mid-listen (Task Manager) → relaunch → VERIFY recon-rebind "leftover from previous run", adapter has its IP again.
 - [ ] Managed switch (bench): SWITCH card within ~30 s (LLDP) or ~60 s (CDP); STP card on a port running spanning tree; TRUNK card on a trunk port.
 - [ ] Window can't be narrowed below 430; at 430 WI-FI OFF / DISABLE fit the ADAPTER line. Quit from the DHCP tab → relaunch → ETHER opens at your narrow width, not 820, and fully on screen.
@@ -161,6 +161,34 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 - [ ] Hover the OFFLINE badge → dot stays red.
 - [ ] Rename the adapter to `Johan's Port` → relaunch → APPLY a static, → DHCP, MULTI-IP add/remove, DISABLE/ENABLE, RECON SILENT all work; rename back to `Ethernet`.
 
+### v7.2.0 — DHCP rework, wire watch, IP tab, spawn latency
+Bench: a dumb switch, the Axis A1210 (or any Axis on AXIS OS 10+), a Bosch or other DHCP camera, the laptop's dock NIC. Run the DHCP part from the portable build (elevated) and once from `dev-slow.bat`.
+
+**Spawn latency**
+- [ ] DIAGNOSTICS → STATE: PROCESS LAUNCH shows `cmd /c ver N ms — <verdict>` within ~2 s of launch; LAUNCHES counts climb as you use the app; PS WORKER reaches `ready · start-up N ms` and its job count climbs on every adapter refresh. LOG has APP `spawn-check`.
+- [ ] `dev-slow.bat`: STATE shows LATENCY INJECTOR ON; the app is slow but never frozen; adapter refresh completes in roughly one delay (the four reads run together), not four or more.
+- [ ] Work laptop (EPM, CLM if enforced): PS WORKER `ready`, not `disabled`. If it says disabled or fallbacks climb, COPY DIAGNOSTICS — everything still works one-shot, but send it.
+- [ ] Adapter list, DHCP/STATIC badges and link speeds identical to 7.1.0 on the same machine (registry now read in one call).
+
+**IP tab (renamed from ETHER)**
+- [ ] Tab bar reads `IP · PING · SCAN · SITES · DHCP · RECON`, labels not squeezed at the 430 minimum width. ? guide strip says IP.
+- [ ] Unplug from DHCP, plug into the dumb switch with no server → after the address falls to 169.254: amber warning "self-assigned". HEAR THE WIRE with a camera on a fallback static (e.g. 192.168.0.90) → "Heard 192.168.0.x (1) USE 192.168.0.250" → USE fills IP/mask, marked changed, nothing applied.
+- [ ] Office jack → lease → move the cable to the dumb switch quickly (lease still held): warning "gateway … doesn't answer" with RENEW. RENEW → falls to 169.254 → warning changes.
+- [ ] SCAN from a 169.254 base with nothing in that /24 → "LINK-LOCAL: ONLY ONE /24 … TRY DISCOVER".
+
+**DHCP tab**
+- [ ] Open the tab: ① card line shows description · link speed · DHCP/static; ② chips list the card's addresses; cable strip reads LAPTOP ── card ── DEVICES GET first – .last.
+- [ ] Card with no address: SET LAPTOP IP… → 192.168.0.1 → LOG OP apply + VERIFY; chip `✓ 192.168.0.1 TEMP`, note "set by ETHER · reverts on quit". With a device already sitting on 192.168.0.1 (set one static there) → it moves to .2 and says so. Quit → card back to DHCP.
+- [ ] + ALIAS 10.0.30.250 → chip appears (ALIAS TEMP), handing out from it; quit → alias gone.
+- [ ] **Stale settings:** serve on 192.168.0.x, quit, change the card to another subnet (or use a profile saved on another subnet), relaunch → open the tab: status "LAST JOB'S SETTINGS … REFILLED FROM THE CARD". Load the mismatched profile → amber guard with REFILL FROM CARD / + ADD AS ALIAS; SERVE refused with "NOT SERVED — LAPTOP IP IS NOT ON THIS CARD".
+- [ ] Power-cycle the A1210 with the tab open → ASKING within seconds, DEVICE "AXIS A1210 12.2.63", hostname axis-…. Type 192.168.0.150 → ▶ SERVE → SERVED .150 → ↗ OPEN opens its page.
+- [ ] Set it static on 192.168.0.150 in its own UI → within ~3 min (5-min lease) the row turns ✓ STATIC, status "WENT STATIC", log line. Second camera asking → box pre-filled .151.
+- [ ] Lease dropdown: 1 min → device renews about every 30 s (log ACKs).
+- [ ] A camera left on a fallback static / link-local and not asking → ◇ SITTING row with model and mdns/arp sources within ~10 s. On the laptop's subnet: ↗ OPEN. Off it: ⇢ REACH → temporary address, page opens; SCAN tab shows the LINK-LOCAL / alias chip; quit removes it.
+- [ ] Same with AXIS IP Utility running alongside — both see the device; ETHER also sees it while it's still link-local.
+- [ ] SERVE EVERYONE… → confirm modal → (home LAN) another-server modal → CANCEL. On the bench → serves everyone; button reads ■ STOP SERVING EVERYONE.
+- [ ] Wire watch stops when the engine is OFF (status chip): netstat shows nothing on :5353/:1900 from the app after a few seconds.
+
 ### SITES / credentials / import-export
 - [ ] Open a device drawer, add a credential. Value is masked; eye toggle reveals. Close and reopen the app → still there, masked.
 - [ ] Open `%APPDATA%\net-ether\intel.json` in Notepad: top level is `{ "format": 2, "creds": "safeStorage", "sites": {...} }` and the value is `{ "$enc": "..." }`, not plaintext.
@@ -190,10 +218,17 @@ Everything above is already proven; this is only what the fleet changes.
 - [ ] Intune install lands in `C:\Program Files\Broman Enterprises\NET-ETHER\`, Start menu entry present, per-user v6.1 copy removed by IT's uninstall step.
 - [ ] If IT sets `HKLM\SOFTWARE\Policies\Broman Enterprises\NET-ETHER\DisableOnlineVendorLookup=1`: toggle greyed "OFF · POLICY", STATE policy line shows it, LOG has a policy entry, no macvendors traffic.
 - [ ] DHCP tab on the managed laptop: opening it adds the firewall rule silently (EPM elevation, no prompt) — OP `dhcp-fw-add` exit 0. If Defender flags the UDP 67 bind or the rule add, COPY DIAGNOSTICS and send it to IT with the notes below.
-- [ ] If IT sets `DisableDhcpServer=1`: tab shows the red policy notice, badge POLICY OFF, SERVE/QUICK START greyed, netstat shows nothing on :67.
+- [ ] If IT sets `DisableDhcpServer=1`: tab shows the red policy notice, badge POLICY OFF, SERVE EVERYONE greyed, no ▶ SERVE on rows, netstat shows nothing on :67.
 - [ ] Two launches in a row during the EPM delay → one window.
 
 ---
+
+## Deployment notes for IT (v7.2.0)
+
+- **New listening sockets while the DHCP tab is open.** UDP 5353 (mDNS) and UDP 1900 (SSDP) are joined on the selected adapter's addresses to hear devices announce themselves; every 8 s one multicast mDNS query (224.0.0.251) for camera/intercom service names goes out. Closed when the engine is turned off, the tab's card changes, or the app quits. Multicast answers aren't covered by Windows Firewall's response exception, so the app adds one program-scoped inbound rule, `NET-ETHER-DISCOVERY-UDP` (UDP 5353,1900, program = the NET-ETHER exe), the first time it listens, and removes it on quit — logged as OP `disc-fw-add` / `disc-fw-del`. IT may prefer to deploy that rule by policy instead. With Wireshark installed, one more `tshark` process captures only ARP and LLDP on that adapter for the same period. Nothing is sent to devices beyond the mDNS query.
+- **One long-lived PowerShell.** The app now keeps a single hidden `powershell.exe -NoProfile -NonInteractive -NoLogo -Command -` for its read-only queries (Get-NetAdapter, Get-NetIPAddress, Get-NetIPInterface, Get-CimInstance Win32_NetworkAdapter). It is a child of NET-ETHER.exe, reads its commands from stdin, and exits with the app. If policy kills or blocks it, the app falls back to its 7.1 behaviour (one PowerShell per query).
+- **Temporary addresses.** SET LAPTOP IP… (DHCP tab) sets a static address on the chosen card and reverts it on quit; + ALIAS and REACH add aliases that are removed on quit. All three are recovered on the next launch after a crash, and logged.
+- **Process-launch self-check.** One `cmd.exe /c ver` 1.5 s after launch, timed for the diagnostics overlay.
 
 ## Deployment notes for IT (v7.1.0)
 

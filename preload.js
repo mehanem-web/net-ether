@@ -43,6 +43,12 @@ contextBridge.exposeInMainWorld('hud', {
   onReconUpdate:    (cb)      => ipcRenderer.on('recon-update', (_, d) => cb(d)),
   reconVerdicts:    (ev, opts) => ipcRenderer.invoke('recon-verdicts', ev, opts),
   reachAdd:         (opts)    => ipcRenderer.invoke('reach-add', opts),
+  // v7.2.0: passive wire watch (mDNS / SSDP / ARP / device LLDP)
+  wireWatchStart:   (adapter) => ipcRenderer.invoke('wire-watch-start', adapter),
+  wireWatchStop:    ()        => ipcRenderer.invoke('wire-watch-stop'),
+  wireWatchList:    ()        => ipcRenderer.invoke('wire-watch-list'),
+  wireHint:         (opts)    => ipcRenderer.invoke('wire-hint', opts),
+  onWireWatch:      (cb)      => { ipcRenderer.removeAllListeners('wire-watch'); ipcRenderer.on('wire-watch', (_, d) => cb(d)); },
   reachList:        ()        => ipcRenderer.invoke('reach-list'),
   reachClear:       ()        => ipcRenderer.invoke('reach-clear'),
   portBlink:        (opts)    => ipcRenderer.invoke('port-blink', opts),
@@ -126,6 +132,7 @@ contextBridge.exposeInMainWorld('hud', {
   diagGet:     ()   => ipcRenderer.invoke('diag-get'),
   diagClear:   ()   => ipcRenderer.invoke('diag-clear'),
   onDiagEntry: (cb) => ipcRenderer.on('diag-entry', (_, d) => cb(d)),
+  spawnCheck:  ()   => ipcRenderer.invoke('spawn-check'),
 
   // ── DHCP server engine (dhcp.js) — fixed, named surface ──
   dhcp: {
@@ -138,11 +145,11 @@ contextBridge.exposeInMainWorld('hud', {
     setPreview:       (cfg)       => ipcRenderer.invoke('dhcp-set-preview', cfg),
     saveConfig:       (cfg)       => ipcRenderer.invoke('dhcp-save-config', cfg),
     serveAll:         (opts)      => ipcRenderer.invoke('dhcp-serve-all', opts),
-    serveDevice:      (mac, opts) => ipcRenderer.invoke('dhcp-serve-device', mac, opts),
+    serveDevice:      (mac, opts, ip) => ipcRenderer.invoke('dhcp-serve-device', mac, opts, ip),
     unserveDevice:    (mac)       => ipcRenderer.invoke('dhcp-unserve-device', mac),
     stopServing:      ()          => ipcRenderer.invoke('dhcp-stop-serving'),
     quickStart:       ()          => ipcRenderer.invoke('dhcp-quick-start'),
-    staticAssistApply:  (adapter) => ipcRenderer.invoke('dhcp-static-assist-apply', adapter),
+    staticAssistApply:  (adapter, ip, mask) => ipcRenderer.invoke('dhcp-static-assist-apply', adapter, ip, mask),
     staticAssistRevert: ()        => ipcRenderer.invoke('dhcp-static-assist-revert'),
     staticAssistStatus: ()        => ipcRenderer.invoke('dhcp-static-assist-status'),
     probe:            ()          => ipcRenderer.invoke('dhcp-probe'),
@@ -170,6 +177,7 @@ contextBridge.exposeInMainWorld('hud', {
     onStaticPending: (cb) => { ipcRenderer.removeAllListeners('dhcp-static-pending'); ipcRenderer.on('dhcp-static-pending', (_, d) => cb(d)); },
     onLog:           (cb) => { ipcRenderer.removeAllListeners('dhcp-log');            ipcRenderer.on('dhcp-log',            (_, d) => cb(d)); },
     onAdapters:      (cb) => { ipcRenderer.removeAllListeners('dhcp-adapters');       ipcRenderer.on('dhcp-adapters',       (_, d) => cb(d)); },
+    onStatic:        (cb) => { ipcRenderer.removeAllListeners('dhcp-static');         ipcRenderer.on('dhcp-static',         (_, d) => cb(d)); },
   },
 
 });

@@ -5,11 +5,19 @@
 // Two things the subnet sweep can't do:
 //
 //   discover()   — multicast discovery: WS-Discovery/ONVIF (UDP 3702), SSDP
-//                  (UDP 1900) and mDNS (UDP 5353). Finds cameras and boxes that
-//                  sit on a *different* subnet from the laptop — the 169.254.x.x
-//                  camera straight out of the box, the device on the wrong VLAN —
-//                  because the probe is multicast and the reply comes back
-//                  unicast over the same wire regardless of IP. Three seconds.
+//                  (UDP 1900) and mDNS (UDP 5353). Three seconds. WS-Discovery and
+//                  SSDP answers come back unicast, so a device on another subnet only
+//                  answers if it can route to the laptop — a link-local device usually
+//                  can, a device on its fallback static often can't. v7.2.0: the mDNS
+//                  query now goes out from port 5353 asking for MULTICAST answers, which
+//                  reach the laptop whatever subnet either side is on (how AXIS IP
+//                  Utility finds things — bench capture 2026-10-24).
+//
+//   wireWatch()  — v7.2.0, passive: listens for what devices announce to the whole
+//                  wire — mDNS announcements, SSDP NOTIFY, ARP and device LLDP (the
+//                  last two through tshark when present). Builds the "sitting on the
+//                  wire, not asking for DHCP" list for the DHCP tab, and the subnet hint
+//                  for a card with no usable address.
 //
 //   lldpListen() — switch-port identity: listens for LLDP (every 30 s) and CDP
 //                  (every 60 s) through tshark. Nothing is transmitted. Reports
@@ -21,6 +29,7 @@
 
 const dgram  = require('dgram');
 const crypto = require('crypto');
+const { spawn } = require('child_process');   // v7.2.0: the long-running wire-watch tshark streams; execFile would buffer it all
 
 module.exports = function initDiscover(deps) {
   const { diagAdd, lookupVendor, execFile, execAsync, isValidIp } = deps;
@@ -92,15 +101,20 @@ module.exports = function initDiscover(deps) {
     '_services._dns-sd._udp.local', '_http._tcp.local', '_https._tcp.local', '_rtsp._tcp.local',
     '_printer._tcp.local', '_ipp._tcp.local', '_workstation._tcp.local', '_smb._tcp.local',
     '_axis-video._tcp.local', '_googlecast._tcp.local', '_airplay._tcp.local', '_hap._tcp.local',
+    // v7.2.0: the names AXIS IP Utility asks for (bench capture), plus 2N intercoms
+    '_vapix-https._tcp.local', '_vapix-http._tcp.local', '_axis-nvr._tcp.local', '_axis-bwsc._tcp.local',
+    '_2n-os-http._tcp.local', '_2n-os-https._tcp.local', '_onvif._tcp.local',
   ];
   function encodeName(name) {
     const parts = name.split('.').filter(Boolean);
     const bufs = parts.map(p => Buffer.concat([Buffer.from([p.length]), Buffer.from(p, 'utf8')]));
     return Buffer.concat([...bufs, Buffer.from([0])]);
   }
-  function mdnsQuery() {
+  function mdnsQuery(id = 0x1234) {
     const head = Buffer.alloc(12);
-    head.writeUInt16BE(0x1234, 0);           // id (legacy unicast — any port ≠ 5353 gets a unicast reply)
+    // id: 0 from port 5353 = a normal multicast query (answers go to 224.0.0.251:5353);
+    // non-zero from an ephemeral port = legacy unicast (answers come straight back)
+    head.writeUInt16BE(id, 0);
     head.writeUInt16BE(0x0000, 2);           // flags: standard query
     head.writeUInt16BE(MDNS_TYPES.length, 4);
     const qs = MDNS_TYPES.map(t => Buffer.concat([encodeName(t), Buffer.from([0, 12, 0, 1])])); // PTR, IN
@@ -173,6 +187,44 @@ module.exports = function initDiscover(deps) {
       });
     }
     const send = (s, buf, port, host) => new Promise(r => { try { s.send(buf, 0, buf.length, port, host, () => r()); } catch { r(); } });
+    // v7.2.0: a socket on 5353 joined to the mDNS group on this card — hears multicast answers
+    function openMulticast(bindIp, onMsg) {
+      return new Promise(resolve => {
+        const s = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+        s.on('error', () => { try { s.close(); } catch {} resolve(null); });
+        s.on('message', onMsg);
+        s.bind(5353, () => {
+          try { s.addMembership('224.0.0.251', bindIp); s.setMulticastInterface(bindIp); s.setMulticastTTL(255); } catch {}
+          socks.push(s); resolve(s);
+        });
+      });
+    }
+    const myIps = new Set(sources);
+    function onMdnsMsg(msg, rinfo) {
+      if (myIps.has(rinfo.address)) return;     // our own query echoed back
+      if (msg.length < 12 || !(msg.readUInt16BE(2) & 0x8000)) return;   // answers only, not other people's queries
+      const d = parseMdns(msg);
+      const r = rec(rinfo.address); addSrc(r, 'mdns');
+      // hostname: an A record for our responder, else the SRV target
+      const a = d.a.find(x => x.ip === rinfo.address) || d.a[0];
+      const srv = d.srv[0];
+      const host = (a && a.name) || (srv && srv.target) || '';
+      if (host && !r.hostname) r.hostname = host.replace(/\.local\.?$/i, '');
+      d.ptr.forEach(p => {
+        if (/^_services\._dns-sd/i.test(p.name)) { const t = p.target.replace(/\.local\.?$/i, ''); if (!r.services.includes(t)) r.services.push(t); }
+        else if (/\.arpa\.?$/i.test(p.name)) { /* reverse lookup — not a service */ }
+        else {
+          const t = p.name.replace(/\.local\.?$/i, ''); if (!r.services.includes(t)) r.services.push(t);
+          // instance label is often the friendly name: "Front Door Camera._rtsp._tcp"
+          const inst = p.target.replace(/\._[a-z0-9-]+\._(tcp|udp)\.local\.?$/i, '').replace(/\\032/g, ' ');
+          if (inst && !/^_/.test(inst) && !/\.(local|arpa)\.?$/i.test(inst) && !r.name) r.name = inst;
+        }
+      });
+      d.txt.forEach(t => t.strs.forEach(s => {
+        const m = s.match(/^(?:model|md|ty|product)=(.+)$/i);
+        if (m && !r.model) r.model = m[1];
+      }));
+    }
 
     for (const src of sources) {
       // WS-Discovery
@@ -208,29 +260,12 @@ module.exports = function initDiscover(deps) {
       });
       if (ssdp) await send(ssdp, Buffer.from(SSDP_MSEARCH), 1900, '239.255.255.250');
       // mDNS (legacy unicast: we send from an ephemeral port, so answers come back unicast)
-      const mdns = await openSock(src, (msg, rinfo) => {
-        const d = parseMdns(msg);
-        const r = rec(rinfo.address); addSrc(r, 'mdns');
-        // hostname: an A record for our responder, else the SRV target
-        const a = d.a.find(x => x.ip === rinfo.address) || d.a[0];
-        const srv = d.srv[0];
-        const host = (a && a.name) || (srv && srv.target) || '';
-        if (host && !r.hostname) r.hostname = host.replace(/\.local\.?$/i, '');
-        d.ptr.forEach(p => {
-          if (/^_services\._dns-sd/i.test(p.name)) { const t = p.target.replace(/\.local\.?$/i, ''); if (!r.services.includes(t)) r.services.push(t); }
-          else {
-            const t = p.name.replace(/\.local\.?$/i, ''); if (!r.services.includes(t)) r.services.push(t);
-            // instance label is often the friendly name: "Front Door Camera._rtsp._tcp"
-            const inst = p.target.replace(/\._[a-z0-9-]+\._(tcp|udp)\.local\.?$/i, '').replace(/\\032/g, ' ');
-            if (inst && !/^_/.test(inst) && !r.name) r.name = inst;
-          }
-        });
-        d.txt.forEach(t => t.strs.forEach(s => {
-          const m = s.match(/^(?:model|md|ty|product)=(.+)$/i);
-          if (m && !r.model) r.model = m[1];
-        }));
-      });
+      const mdns = await openSock(src, onMdnsMsg);
       if (mdns) await send(mdns, mdnsQuery(), 5353, '224.0.0.251');
+      // v7.2.0: and the same query from port 5353 — answers come back MULTICAST, so a device
+      // on any subnet (link-local, fallback static) reaches us without a route
+      const mdnsMc = await openMulticast(src, onMdnsMsg);
+      if (mdnsMc) await send(mdnsMc, mdnsQuery(0), 5353, '224.0.0.251');
     }
 
     await new Promise(r => setTimeout(r, waitMs));
@@ -598,5 +633,132 @@ module.exports = function initDiscover(deps) {
     return V;
   }
 
-  return { discover, lldpListen, lldpStop, reconListen, reconStop, reconVerdicts, _parse: { parseWsd, parseSsdp, parseMdns } };   // _parse: test hook
+  // ── wireWatch() — v7.2.0 ───────────────────────────────────
+  // Passive, long-running, cheap. What a device says to the whole wire reaches the laptop
+  // whatever subnet either side is on:
+  //   · mDNS announcements and multicast answers (socket on 5353, joined on the card)
+  //   · SSDP NOTIFY (socket on 1900, joined on the card)
+  //   · ARP and device LLDP through tshark, when Wireshark is installed — the only way to
+  //     see a quiet device on a fallback static that announces nothing else
+  // Every 8 s a multicast mDNS query for the camera/intercom service names goes out from
+  // 5353 (the AXIS IP Utility move) so devices that don't re-announce still answer.
+  // onUpdate gets the full list (throttled); stop() closes everything.
+  function wireWatch({ ifaceIps = [], tshark = null, npf = null, onUpdate, queryEveryMs = 8000 }) {
+    const seen = {};                 // ip → record
+    const myIps = new Set(ifaceIps);
+    const socks = [];
+    let proc = null, timer = null, pushT = null, stopped = false;
+    const isNoise = ip => !isValidIp(ip) || ip === '0.0.0.0' || ip.startsWith('224.') || ip.startsWith('239.') || ip === '255.255.255.255' || myIps.has(ip);
+    const recFor = ip => (seen[ip] ||= { ip, mac: '', name: '', model: '', hostname: '', services: [], sources: [], firstSeen: Date.now(), lastSeen: Date.now() });
+    const touch = (r, src) => { r.lastSeen = Date.now(); if (!r.sources.includes(src)) r.sources.push(src); schedule(); };
+    function schedule() {
+      if (pushT || stopped) return;
+      pushT = setTimeout(() => { pushT = null; if (!stopped && onUpdate) try { onUpdate(list()); } catch {} }, 600);
+    }
+    function list() {
+      const cut = Date.now() - 5 * 60000;
+      return Object.values(seen).filter(r => r.lastSeen >= cut).map(r => ({
+        ...r, services: r.services.slice(0, 8), sources: r.sources.slice(),
+        vendor: r.mac ? (lookupVendor(r.mac) || '') : '', linkLocal: /^169\.254\./.test(r.ip),
+      })).sort((a, b) => b.lastSeen - a.lastSeen).slice(0, 200);
+    }
+    function onMdns(msg, rinfo) {
+      if (isNoise(rinfo.address) || msg.length < 12 || !(msg.readUInt16BE(2) & 0x8000)) return;
+      const d = parseMdns(msg);
+      const r = recFor(rinfo.address);
+      const a = d.a.find(x => x.ip === rinfo.address) || d.a[0];
+      const srv = d.srv[0];
+      const host = (a && a.name) || (srv && srv.target) || '';
+      if (host) r.hostname = host.replace(/\.local\.?$/i, '');
+      // instance names: "AXIS A1210" and "AXIS A1210 - E827254B6D34" — the one carrying the MAC wins.
+      // Reverse-lookup PTRs (…in-addr.arpa → host.local) and bare host names are not instances.
+      const takeInst = raw => {
+        const inst = raw.replace(/\._[a-z0-9-]+\._(tcp|udp)\.local\.?$/i, '').replace(/\\032/g, ' ');
+        if (!inst || /^_/.test(inst) || /\.local\.?$/i.test(inst) || /\.arpa\.?$/i.test(inst)) return;
+        if (!r.name || /\s-\s[0-9A-F]{12}$/i.test(inst)) r.name = inst;
+      };
+      d.ptr.forEach(p => {
+        if (/^_services\._dns-sd/i.test(p.name) || /\.arpa\.?$/i.test(p.name)) return;
+        const t = p.name.replace(/\.local\.?$/i, ''); if (!r.services.includes(t)) r.services.push(t);
+        takeInst(p.target);
+      });
+      d.srv.forEach(x => takeInst(x.name));
+      d.txt.forEach(t => t.strs.forEach(x => { const m = x.match(/^(?:model|md|ty|product)=(.+)$/i); if (m) r.model = r.model || m[1]; }));
+      // "AXIS A1210 - E827254B6D34" — the instance name carries model + MAC on Axis
+      const ax = (r.name || '').match(/^(AXIS\s+[A-Z0-9-]+)\s*-\s*([0-9A-F]{12})$/i);
+      if (ax) { r.model = r.model || ax[1].toUpperCase(); if (!r.mac) r.mac = ax[2].toLowerCase().match(/../g).join(':'); }
+      touch(r, 'mdns');
+    }
+    function onSsdp(msg, rinfo) {
+      if (isNoise(rinfo.address)) return;
+      const txt = msg.toString('utf8');
+      if (!/^NOTIFY|^HTTP\/1\.1 200/i.test(txt)) return;
+      const h = parseSsdp(txt);
+      const r = recFor(rinfo.address);
+      if (h.server) r.model = r.model || h.server.replace(/^.*?UPnP\/[\d.]+\s*/i, '').substring(0, 48);
+      touch(r, 'ssdp');
+    }
+    function openGroup(port, group, ip, onMsg) {
+      return new Promise(resolve => {
+        const s = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+        s.on('error', () => { try { s.close(); } catch {} resolve(null); });
+        s.on('message', onMsg);
+        s.bind(port, () => {
+          if (stopped) { try { s.close(); } catch {} resolve(null); return; }   // stop() arrived while we were binding
+          try { s.addMembership(group, ip); s.setMulticastInterface(ip); s.setMulticastTTL(255); } catch {}
+          socks.push(s); resolve(s);
+        });
+      });
+    }
+    (async () => {
+      const mdnsSocks = [];
+      for (const ip of ifaceIps) {
+        if (stopped) return;
+        const m = await openGroup(5353, '224.0.0.251', ip, onMdns); if (m) mdnsSocks.push(m);
+        await openGroup(1900, '239.255.255.250', ip, onSsdp);
+      }
+      const ask = () => mdnsSocks.forEach(m => { try { const q = mdnsQuery(0); m.send(q, 0, q.length, 5353, '224.0.0.251'); } catch {} });
+      if (!stopped) { ask(); setTimeout(ask, 1500); timer = setInterval(ask, queryEveryMs); }
+    })();
+    // tshark: ARP senders + device LLDP. Fields, not JSON — one line per frame.
+    if (tshark && npf) {
+      const args = ['-i', npf, '-l', '-n', '-f', 'arp or ether proto 0x88cc', '-T', 'fields', '-E', 'separator=|', '-E', 'occurrence=f',
+        '-e', 'eth.src', '-e', 'arp.src.proto_ipv4', '-e', 'arp.src.hw_mac', '-e', 'lldp.tlv.system.name', '-e', 'lldp.mgn.addr.ip4', '-e', 'lldp.tlv.system.desc'];
+      try {
+        proc = spawn(tshark, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+        proc.on('error', () => { proc = null; });
+        let out = '';
+        proc.stdout.on('data', d => {
+          out += d.toString('utf8');
+          let i;
+          while ((i = out.indexOf('\n')) >= 0) {
+            const [eth, arpIp, arpMac, sysName, mgmtIp, sysDesc] = out.slice(0, i).replace(/\r$/, '').split('|');
+            out = out.slice(i + 1);
+            if (arpIp && !isNoise(arpIp)) { const r = recFor(arpIp); if (arpMac) r.mac = arpMac.toLowerCase(); touch(r, 'arp'); }
+            if (mgmtIp && !isNoise(mgmtIp)) {
+              const r = recFor(mgmtIp);
+              if (eth && !r.mac) r.mac = eth.toLowerCase();
+              if (sysName) r.name = r.name || sysName;
+              if (sysDesc) r.model = r.model || sysDesc.substring(0, 48);
+              touch(r, 'lldp');
+            }
+          }
+        });
+        proc.stderr.on('data', () => {});
+        proc.on('close', () => { proc = null; });
+      } catch { proc = null; }
+    }
+    return {
+      list,
+      stop() {
+        stopped = true;
+        if (timer) clearInterval(timer);
+        if (pushT) clearTimeout(pushT);
+        socks.forEach(x => { try { x.close(); } catch {} });
+        if (proc) { try { proc.kill(); } catch {} proc = null; }
+      },
+    };
+  }
+
+  return { discover, wireWatch, lldpListen, lldpStop, reconListen, reconStop, reconVerdicts, _parse: { parseWsd, parseSsdp, parseMdns } };   // _parse: test hook
 };

@@ -2628,6 +2628,13 @@ html, body {
 .adapter-dhcp-action.show { display: inline-block; }
 .adapter-dhcp-action:hover { color: var(--amber); border-color: var(--amber); background: rgba(255,204,0,0.12); }
 .adapter-dhcp-action.armed { color: #000; background: var(--amber); border-color: var(--amber); animation: cursor-blink 0.8s steps(1) infinite; }
+/* v7.2.0: wrong-address warning under the adapter row */
+.adapter-warn { margin-top: 6px; border: 1px solid rgba(255,204,0,0.45); background: rgba(255,204,0,0.06); border-radius: var(--radius); padding: 6px 9px; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.45; color: var(--amber); }
+.adapter-warn .aw-btns { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
+.adapter-warn .cmd-btn { flex: none; padding: 3px 8px; font-size: 10px; color: var(--amber); border-color: rgba(255,204,0,0.5); }
+.adapter-warn .aw-hint { margin-top: 5px; color: var(--label); }
+.adapter-warn .aw-hint b { color: var(--green); }
+.adapter-warn .aw-use { color: var(--green); border-color: rgba(var(--ar),var(--ag),var(--ab),0.6); margin-left: 4px; }
 .copy-cmd-row { margin-top: 6px; }
 .copy-cmd-row .cmd-btn { width: 100%; }
 
@@ -2859,7 +2866,7 @@ html, body {
 .dhcp-devices-head .cnt { color: var(--green); font-size: 12px; margin-left: 4px; }
 .dhcp-tools { display: flex; gap: 4px; }
 .dhcp-table { background: rgba(0,0,0,0.3); border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.12); border-radius: var(--radius); min-height: 150px; display: flex; flex-direction: column; overflow: hidden; flex: 1 1 0; }
-.dhcp-thead, .dhcp-row { display: grid; grid-template-columns: 92px 116px 124px 1fr 1fr 86px 178px; gap: 8px; align-items: center; padding: 0 10px; }
+.dhcp-thead, .dhcp-row { display: grid; grid-template-columns: 96px 112px 118px 1.45fr 0.85fr 92px 150px; gap: 8px; align-items: center; padding: 0 10px; }
 .dhcp-thead { font-family: var(--font-hud); font-size: 8.5px; font-weight: 900; letter-spacing: 1.2px; color: var(--label-dim); padding-top: 6px; padding-bottom: 5px; border-bottom: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.12); }
 .dhcp-dev-list { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; }
 .dhcp-dev-list::-webkit-scrollbar { width: 4px; } .dhcp-dev-list::-webkit-scrollbar-thumb { background: rgba(var(--ar),var(--ag),var(--ab),0.2); }
@@ -2908,6 +2915,49 @@ body.dhcp-resizing { cursor: row-resize; user-select: none; }
 .dhcp-log .ok { color: var(--green); } .dhcp-log .warn { color: var(--amber); } .dhcp-log .err { color: var(--red); } .dhcp-log .info { opacity: 0.7; }
 .dhcp-log::-webkit-scrollbar { width: 4px; } .dhcp-log::-webkit-scrollbar-thumb { background: rgba(var(--ar),var(--ag),var(--ab),0.2); }
 .cmd-btn.dhcp-logbtn { display: flex; align-items: center; align-self: flex-start; }
+/* ── v7.2.0 DHCP rework: steps, chips, cable strip, guard, row actions ── */
+.dhcp-steps { border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.28); border-radius: var(--radius); background: rgba(0,0,0,0.22); padding: 9px 11px; display: flex; flex-direction: column; gap: 6px; }
+.dhcp-step-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dhcp-step { width: 18px; height: 18px; border-radius: 50%; background: var(--green); color: #05080b; font-family: var(--font-hud); font-size: 10px; font-weight: 900; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.dhcp-step-t { font-family: var(--font-hud); font-size: 10px; font-weight: 900; letter-spacing: 1.3px; color: var(--green); }
+.dhcp-card-sub { font-family: var(--font-mono); font-size: 11px; color: var(--label-dim); padding-left: 2px; min-height: 14px; }
+.dhcp-card-sub .warn { color: var(--amber); }
+.dhcp-ip-chips { display: inline-flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.dhcp-chip { font-family: var(--font-mono); font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: var(--radius); border: 1px solid var(--border); color: var(--label); background: transparent; cursor: pointer; white-space: nowrap; }
+.dhcp-chip:hover { border-color: var(--border-bright); color: var(--green); }
+.dhcp-chip.on { background: var(--green); border-color: var(--green); color: #05080b; }
+.dhcp-chip.add { border-style: dashed; color: var(--label-dim); }
+.dhcp-chip.set { border-color: rgba(255,204,0,0.6); color: var(--amber); background: rgba(255,204,0,0.07); }
+.dhcp-chip .tag { font-size: 9px; letter-spacing: 1px; margin-left: 5px; opacity: 0.75; }
+.dhcp-chip-note { font-size: 10.5px; color: var(--label-faint); }
+.dhcp-guard { font-family: var(--font-mono); font-size: 11.5px; line-height: 1.5; color: var(--amber); border: 1px solid rgba(255,204,0,0.45); background: rgba(255,204,0,0.06); border-radius: var(--radius); padding: 6px 9px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.dhcp-guard .cmd-btn { flex: none; padding: 3px 8px; font-size: 10px; color: var(--amber); border-color: rgba(255,204,0,0.5); }
+.dhcp-cable { display: flex; align-items: center; padding: 5px 10px; border-radius: var(--radius); background: var(--green-ghost); font-family: var(--font-mono); font-size: 12px; }
+.dhcp-cable .end { display: flex; flex-direction: column; align-items: center; gap: 1px; flex: none; }
+.dhcp-cable .k { font-size: 9.5px; letter-spacing: 1px; color: var(--label-dim); white-space: nowrap; }
+.dhcp-cable .v { color: var(--green); font-weight: 700; white-space: nowrap; }
+.dhcp-cable .wire { flex: 1; min-width: 14px; height: 0; border-top: 2px dashed rgba(var(--ar),var(--ag),var(--ab),0.45); margin: 0 10px; }
+.dhcp-grid5 { grid-template-columns: 1.15fr 1.15fr 1.1fr 1.1fr 0.8fr; }
+select.field-input.dhcp-lease { padding: 5px 6px; font-size: 12px; cursor: pointer; }
+.dhcp-advanced-note { font-size: 10px; color: var(--label-faint); }
+.dhcp-actions2 { display: flex; gap: 6px; margin-top: 10px; align-items: center; flex-wrap: wrap; }
+.dhcp-actions2 .cmd-btn { flex: none; padding: 5px 10px; font-size: 10px; letter-spacing: 1px; }
+.cmd-btn.dhcp-everyone { color: var(--amber); border-color: rgba(255,204,0,0.55); }
+.cmd-btn.dhcp-everyone.stop, .cmd-btn.dhcp-stop { color: var(--red); border-color: rgba(255,68,85,0.6); }
+.dhcp-hint { font-size: 11.5px; color: var(--label-dim); margin: -1px 0 5px; line-height: 1.45; }
+.dhcp-hint b { color: var(--green); font-weight: 700; }
+.dhcp-row .actions .cmd-btn.bright { background: var(--green); color: #05080b; border-color: var(--green); font-family: var(--font-hud); font-weight: 900; letter-spacing: 1px; padding: 3px 9px; box-shadow: 0 0 8px rgba(var(--ar),var(--ag),var(--ab),0.4); }
+.dhcp-row .actions .cmd-btn.bright:hover { filter: brightness(1.12); }
+.dhcp-row .actions .cmd-btn.reach { background: rgba(var(--lr),var(--lg),var(--lb),0.85); border-color: rgba(var(--lr),var(--lg),var(--lb),0.85); color: #05080b; font-weight: 900; }
+.dhcp-ask-ip { width: 104px; background: var(--surface); border: 1px solid rgba(255,204,0,0.55); border-radius: 3px; color: var(--amber); font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; padding: 2px 5px; outline: none; }
+.dhcp-ask-ip:focus { border-color: var(--amber); box-shadow: 0 0 5px rgba(255,204,0,0.35); }
+.dhcp-row.static   { border-left-color: rgba(var(--lr),var(--lg),var(--lb),0.6); }
+.dhcp-row.releasing { border-left-color: rgba(var(--lr),var(--lg),var(--lb),0.4); }
+.dhcp-row.sitting  { border-left-color: rgba(var(--lr),var(--lg),var(--lb),0.5); background: rgba(var(--lr),var(--lg),var(--lb),0.03); }
+.dhcp-pill.static   { color: var(--label); border-color: rgba(var(--lr),var(--lg),var(--lb),0.5); }
+.dhcp-pill.releasing { color: var(--label-dim); border-color: var(--border); }
+.dhcp-pill.sitting  { color: var(--label); border-color: rgba(var(--lr),var(--lg),var(--lb),0.45); }
+.dhcp-row .vendor .fw { color: var(--label-dim); font-weight: 400; margin-left: 4px; }
 .dhcp-policy-note { border: 1px solid rgba(255,68,85,0.4); background: rgba(255,68,85,0.06); color: var(--red); border-radius: var(--radius); padding: 8px 10px; font-size: 11px; line-height: 1.5; margin: 6px 0 4px; }
 /* diag TOOLS section */
 .diag-tools { display: flex; gap: 6px; align-items: center; margin: 4px 0 8px; }
@@ -2940,7 +2990,7 @@ body.dhcp-resizing { cursor: row-resize; user-select: none; }
   <div class="tab-bar">
     <div class="tab active" id="tab-net"   onclick="switchTab('net')">
       <img class="tab-icon" id="ticon-net"   src="" alt="">
-      <span class="tab-label">ETHER</span>
+      <span class="tab-label">IP</span>
     </div>
     <div class="tab"        id="tab-tools" onclick="switchTab('tools')">
       <img class="tab-icon" id="ticon-tools" src="" alt="">
@@ -3019,6 +3069,8 @@ body.dhcp-resizing { cursor: row-resize; user-select: none; }
         </div>
         <span class="adapter-selector-chevron" id="adapter-selector-chevron">▾</span>
       </div>
+      <!-- v7.2.0: wrong-address warning — 169.254, a dead old lease, or nothing at all -->
+      <div class="adapter-warn" id="adapter-warn" style="display:none"></div>
     </div>
     <div class="field-row">
       <div class="field-label">IP ADDRESS</div>
@@ -3128,34 +3180,53 @@ body.dhcp-resizing { cursor: row-resize; user-select: none; }
 
     <div class="dhcp-policy-note" id="dhcp-policy-note" style="display:none">DHCP SERVER DISABLED BY IT POLICY (DisableDhcpServer=1). The tab is read-only on this machine.</div>
 
-    <div class="dhcp-top">
-      <div class="dhcp-top-left">
-        <div class="section-label">SERVE ON</div>
-        <div class="dhcp-head">
-          <select class="dhcp-select" id="dhcp-adapter" title="Which network adapter to serve on"><option value="">— select adapter —</option></select>
-          <span class="adapter-refresh-btn" onclick="dhcpRefreshAdapters()" title="Refresh adapter list">⟳</span>
-          <span class="dhcp-link" id="dhcp-link"><span class="dot"></span><span id="dhcp-link-txt">NO LINK</span></span>
-          <span class="dhcp-mode-badge off" id="dhcp-mode-badge" onclick="dhcpEngineToggle()" title="Click to switch the engine between OFFLINE (UDP 67 released) and LISTENING"><span class="mb-dot"></span><span id="dhcp-mode-txt">OFFLINE</span></span>
-        </div>
+    <!-- v7.2.0: two numbered steps make "the laptop is the server" obvious — ① the cable
+         (network card), ② the laptop's address on that cable. No "server" wording anywhere. -->
+    <div class="dhcp-steps">
+      <div class="dhcp-step-row">
+        <span class="dhcp-step">1</span><span class="dhcp-step-t">NETWORK CARD — THE CABLE YOU'RE PLUGGED INTO</span>
+        <span style="flex:1"></span>
+        <span class="dhcp-mode-badge off" id="dhcp-mode-badge" onclick="dhcpEngineToggle()" title="Listening starts when you open this tab and stops when the engine is turned off. Click to turn the engine OFF (UDP 67 released) or back on."><span class="mb-dot"></span><span id="dhcp-mode-txt">OFF</span></span>
+      </div>
+      <div class="dhcp-head">
+        <select class="dhcp-select" id="dhcp-adapter" title="The network card the device's cable is plugged into"><option value="">— pick the card —</option></select>
+        <span class="adapter-refresh-btn" onclick="dhcpRefreshAdapters()" title="Refresh the card list">⟳</span>
+        <span class="dhcp-link" id="dhcp-link"><span class="dot"></span><span id="dhcp-link-txt">NO LINK</span></span>
+      </div>
+      <div class="dhcp-card-sub" id="dhcp-card-sub"></div>
+
+      <div class="dhcp-step-row" style="margin-top:8px">
+        <span class="dhcp-step">2</span><span class="dhcp-step-t">LAPTOP'S ADDRESS ON THAT CABLE</span>
+        <span class="dhcp-ip-chips" id="dhcp-ip-chips"></span>
+        <span class="dhcp-chip-note" id="dhcp-chip-note"></span>
+      </div>
+      <input type="hidden" id="dcfg-adapterIp">
+      <div class="dhcp-guard" id="dhcp-guard" style="display:none"></div>
+      <div class="dhcp-cable" id="dhcp-cable" title="The laptop answers DHCP from its address on this card. Devices get addresses next to it — and you reach them the same way afterwards.">
+        <span class="end"><span class="k">LAPTOP</span><span class="v" id="dhcp-cable-me">—</span></span>
+        <span class="wire"></span><span class="k" id="dhcp-cable-card">—</span><span class="wire"></span>
+        <span class="end"><span class="k">DEVICES GET</span><span class="v" id="dhcp-cable-pool">—</span></span>
       </div>
     </div>
-    <div class="dhcp-policy-note" id="dhcp-policy-note" style="display:none">DHCP SERVER DISABLED BY IT POLICY (DisableDhcpServer=1). The tab is read-only on this machine.</div>
 
-    <div class="section-label" style="margin-top:8px">DHCP SETTINGS
+    <div class="section-label" style="margin-top:10px">ADDRESSES TO HAND OUT
       <span style="flex:1"></span>
-      <select class="dhcp-select" id="dhcp-profile" style="flex:none;width:150px;font-size:10px;padding:3px 6px" title="Saved setting profiles"><option value="">— profiles —</option></select>
+      <select class="dhcp-select" id="dhcp-profile" style="flex:none;width:150px;font-size:10px;padding:3px 6px" title="Saved setting profiles — checked against the card when loaded"><option value="">— profiles —</option></select>
       <span class="cmd-btn dhcp-mini" onclick="dhcpProfileSave()" title="Save current settings as a named profile">⊕ SAVE</span>
       <span class="cmd-btn dhcp-mini" id="dhcp-profile-del" onclick="dhcpProfileDelete()" title="Delete the selected profile">✕</span>
     </div>
-    <div class="dhcp-grid">
-      <div class="field-row dhcp-field" id="dfld-adapterIp"><div class="field-label" title="Your adapter's IP — the address devices talk to">SERVER IP (THIS PC)</div><input class="field-input" id="dcfg-adapterIp" placeholder="192.168.1.1" spellcheck="false"></div>
-      <div class="field-row dhcp-field" id="dfld-subnet"><div class="field-label">SUBNET MASK</div><input class="field-input" id="dcfg-subnet" placeholder="255.255.255.0" spellcheck="false"></div>
-      <div class="field-row dhcp-field" id="dfld-lease"><div class="field-label" title="Shorter means devices re-ask sooner after a restart">LEASE (SECONDS)</div><input class="field-input" id="dcfg-lease" placeholder="300" spellcheck="false"></div>
-      <div class="field-row dhcp-field" id="dfld-rangeStart"><div class="field-label" title="First address handed out">POOL START — FIRST ADDRESS GIVEN</div><input class="field-input" id="dcfg-rangeStart" placeholder="192.168.1.100" spellcheck="false"></div>
-      <div class="field-row dhcp-field" id="dfld-rangeEnd"><div class="field-label" title="Last address handed out">POOL END — LAST ADDRESS GIVEN</div><input class="field-input" id="dcfg-rangeEnd" placeholder="192.168.1.200" spellcheck="false"></div>
-      <div class="field-row dhcp-field" id="dfld-gateway"><div class="field-label" title="Router address devices should use — blank points them at this PC">GATEWAY (BLANK = THIS PC)</div><input class="field-input" id="dcfg-gateway" placeholder="auto" spellcheck="false"></div>
+    <div class="dhcp-grid dhcp-grid5">
+      <div class="field-row dhcp-field" id="dfld-rangeStart"><div class="field-label" title="First address handed out">FIRST</div><input class="field-input" id="dcfg-rangeStart" placeholder="192.168.0.100" spellcheck="false"></div>
+      <div class="field-row dhcp-field" id="dfld-rangeEnd"><div class="field-label" title="Last address handed out">LAST</div><input class="field-input" id="dcfg-rangeEnd" placeholder="192.168.0.200" spellcheck="false"></div>
+      <div class="field-row dhcp-field" id="dfld-subnet"><div class="field-label">MASK</div><input class="field-input" id="dcfg-subnet" placeholder="255.255.255.0" spellcheck="false"></div>
+      <div class="field-row dhcp-field" id="dfld-gateway"><div class="field-label" title="Router address devices should use — blank points them at this laptop">GATEWAY (BLANK = LAPTOP)</div><input class="field-input" id="dcfg-gateway" placeholder="laptop" spellcheck="false"></div>
+      <div class="field-row dhcp-field" id="dfld-lease"><div class="field-label" title="How long a device keeps the address before it asks again">LEASE</div>
+        <select class="field-input dhcp-lease" id="dcfg-lease">
+          <option value="60">1 min</option><option value="120">2 min</option><option value="300" selected>5 min</option>
+          <option value="900">15 min</option><option value="3600">1 hour</option><option value="86400">1 day</option>
+        </select></div>
     </div>
-    <div class="dhcp-adv-toggle" id="dhcp-adv-toggle" onclick="dhcpToggleAdvanced()">▸ ADVANCED OPTIONS</div>
+    <div class="dhcp-adv-toggle" id="dhcp-adv-toggle" onclick="dhcpToggleAdvanced()">▸ ADVANCED OPTIONS (DNS, NTP, TFTP, OPTION 43, AUTO-STOP)</div>
     <div class="dhcp-adv-drawer" id="dhcp-adv-drawer">
       <div class="dhcp-grid">
         <div class="field-row dhcp-field" id="dfld-dns"><div class="field-label">DNS SERVER (BLANK = NONE)</div><input class="field-input" id="dcfg-dns" placeholder="none" spellcheck="false"></div>
@@ -3168,25 +3239,29 @@ body.dhcp-resizing { cursor: row-resize; user-select: none; }
       </div>
     </div>
 
-    <div class="dhcp-actions">
-      <div class="cmd-btn dhcp-side" id="dhcp-quick-btn" onclick="dhcpQuickStart()" title="Pick the wired adapter, fill everything in, scan the wire, serve">⚡ QUICK START</div>
-      <div class="serve-btn bracket" id="dhcp-serve-btn" onclick="dhcpServeClick()">▶ SERVE ALL DEVICES</div>
-      <div class="cmd-btn dhcp-side" id="dhcp-scan-btn" onclick="dhcpScanWire()" title="Ask the wire who's serving DHCP — no serving, no changes">◉ SCAN WIRE</div>
-      <div class="cmd-btn dhcp-side" id="dhcp-selftest-btn" onclick="dhcpSelfTest()" title="Check adapter, port 67, firewall rule, other servers">⚕ SELF-TEST</div>
+    <!-- v7.2.0: one device is the default flow — the bright buttons live on the rows.
+         SERVE EVERYONE is the small amber one and asks first. -->
+    <div class="dhcp-actions2">
+      <span class="cmd-btn dhcp-mini dhcp-everyone" id="dhcp-serve-btn" onclick="dhcpServeClick()" title="Answer EVERY device on this cable — bench or dead network. Asks first, and checks the wire for another DHCP server.">▶ SERVE EVERYONE…</span>
+      <span class="cmd-btn dhcp-mini" id="dhcp-scan-btn" onclick="dhcpScanWire()" title="Ask the wire who's serving DHCP — no serving, no changes">◉ SCAN WIRE</span>
+      <span class="cmd-btn dhcp-mini" id="dhcp-selftest-btn" onclick="dhcpSelfTest()" title="Check card, port 67, firewall rule, other servers">⚕ SELF-TEST</span>
+      <span style="flex:1"></span>
+      <span class="cmd-btn dhcp-mini dhcp-stop" id="dhcp-stop-btn" onclick="dhcpStopServing()" style="display:none" title="Stop answering — leases already handed out stay on the devices until they expire">■ STOP SERVING</span>
     </div>
 
     <div class="dhcp-devices-head">
-      <div class="section-label">DEVICES ON THE WIRE<span class="cnt" id="dhcp-dev-count">0</span></div>
+      <div class="section-label">DEVICES ON THIS CABLE<span class="cnt" id="dhcp-dev-count">0</span></div>
       <div class="dhcp-tools">
-        <span class="cmd-btn dhcp-mini serve" id="dhcp-serve-sel-btn" onclick="dhcpServeSelected()" style="display:none" title="Answer only the ticked devices">▶ SERVE SELECTED</span>
-        <span class="cmd-btn dhcp-mini" id="dhcp-resv-sel-btn" onclick="dhcpReserveSelected()" style="display:none" title="Pin the ticked devices to consecutive addresses from a start IP — 20 cameras in one go">★ RESERVE SELECTED</span>
+        <span class="cmd-btn dhcp-mini serve" id="dhcp-serve-sel-btn" onclick="dhcpServeSelected()" style="display:none" title="Answer only the ticked devices">▶ SERVE TICKED</span>
+        <span class="cmd-btn dhcp-mini" id="dhcp-resv-sel-btn" onclick="dhcpReserveSelected()" style="display:none" title="Pin the ticked devices to consecutive addresses from a start IP — 20 cameras in one go">★ RESERVE TICKED</span>
         <span class="cmd-btn dhcp-mini disabled" id="dhcp-csv-btn" onclick="dhcpExportCsv()" title="Copy lease table as CSV">⎘ CSV</span>
         <span class="cmd-btn dhcp-mini disabled" id="dhcp-release-btn" onclick="dhcpReleaseAll()" title="Clear every lease and offer">✕ RELEASE ALL</span>
       </div>
     </div>
+    <div class="dhcp-hint" id="dhcp-hint">Type the address you want it to end up on, press <b>SERVE</b>, then <b>OPEN</b>. Set it static on the device and ETHER marks it done.</div>
     <div class="dhcp-table">
       <div class="dhcp-thead">
-        <span><input type="checkbox" class="dhcp-check" id="dhcp-check-all" onchange="dhcpCheckAll(this.checked)" title="Tick every device that's asking"> STATUS</span><span>IP ADDRESS</span><span>MAC ADDRESS</span><span>VENDOR</span><span>HOSTNAME</span><span>ACTIVITY</span><span style="text-align:right">ACTIONS</span>
+        <span><input type="checkbox" class="dhcp-check" id="dhcp-check-all" onchange="dhcpCheckAll(this.checked)" title="Tick every device that's asking"> STATUS</span><span>IP ADDRESS</span><span>MAC ADDRESS</span><span>DEVICE</span><span>HOSTNAME</span><span>ACTIVITY</span><span style="text-align:right">ACTIONS</span>
       </div>
       <div class="dhcp-dev-list" id="dhcp-dev-list"></div>
     </div>
@@ -3337,7 +3412,7 @@ body.dhcp-resizing { cursor: row-resize; user-select: none; }
     <div class="recon-intro" id="recon-intro">Plug in, say nothing, and let the port tell you what it is: which switch and port, whether it wants 802.1X, which VLAN, who's handing out addresses, who's talking, and a free address you could take. Up to 65 s — LLDP announces every 30, CDP every 60.</div>
 
     <div class="recon-adapter-row">
-      <span class="recon-k">ON</span><span class="recon-adapter" id="recon-adapter">— select an adapter on the ETHER tab —</span>
+      <span class="recon-k">ON</span><span class="recon-adapter" id="recon-adapter">— select an adapter on the IP tab —</span>
       <div class="scan-opt-toggle on" id="recon-mode" onclick="reconToggleMode()" title="STANDARD leaves the adapter as-is — Windows itself will chatter (DHCP, NetBIOS, LLMNR). SILENT unbinds IPv4/IPv6 for the listen so nothing leaves the port, then restores them. SILENT needs the app elevated.">
         <span id="recon-mode-label">STANDARD</span><span class="pill" id="recon-mode-pill">NOISY</span>
       </div>
@@ -4251,7 +4326,7 @@ function updateLiveBar() {
   const adapterEl = document.getElementById('live-bar-adapter');
   if (!dot) return;
 
-  // Find the active adapter — prefer the one selected in the ETHER tab,
+  // Find the active adapter — prefer the one selected in the IP tab,
   // fall back to best connected adapter
   const selectedName = document.getElementById('adapter')?.value.trim().toLowerCase();
   const a = (selectedName && adapterList.find(x => x.name.toLowerCase() === selectedName))
@@ -4274,7 +4349,7 @@ function updateLiveBar() {
   ipEl.textContent = a.ip;
   ipEl.className   = 'live-bar-ip';
 
-  // Gateway — read from the ETHER tab field (more reliable than adapterList)
+  // Gateway — read from the IP tab field (more reliable than adapterList)
   const gw = document.getElementById('gateway')?.value.trim() || '';
   if (gw) {
     gwEl.textContent    = 'GW ' + gw;
@@ -4421,7 +4496,7 @@ async function wifiChipClick() {
 
 function wiresharkAdapter() {
   const a = currentAdapterEntry();
-  if (!a) { setReconStatus('SELECT AN ADAPTER ON THE ETHER TAB FIRST', 'warn', 3000); return; }
+  if (!a) { setReconStatus('SELECT AN ADAPTER ON THE IP TAB FIRST', 'warn', 3000); return; }
   wiresharkOpen({ adapter: a.name }, setReconStatus);
 }
 async function wiresharkOpen(opts, status = setNetStatus) {
@@ -4453,6 +4528,7 @@ function updateAdapterStatus() {
     selector.className = 'adapter-selector' + (adapterDropdownOpen ? ' open' : '');
     if (dhcpBadge) dhcpBadge.style.display = 'none';
     updateAdapterDhcpAction(null);
+    updateAdapterWarn(null);
     if (displaySpan) { displaySpan.textContent = 'Select adapter'; displaySpan.classList.add('placeholder'); }
     return;
   }
@@ -4486,7 +4562,67 @@ function updateAdapterStatus() {
     dhcpBadge.style.display = 'none';
   }
   updateAdapterDhcpAction(a);
+  updateAdapterWarn(a);
   updateLiveBar();
+}
+
+// ── v7.2.0: WRONG-ADDRESS WARNING ──────────────────────────
+// The dock/corp-lease case: plug into a dumb camera switch and Windows either keeps the
+// last network's lease (its gateway is gone) or falls back to 169.254. Either way the
+// cameras' subnet isn't reachable and nothing says so. This line does, and offers a
+// way out: listen to the wire for the subnet in use, or set an address.
+const _awGw = {};          // name|ip|gw → 'checking' | 'ok' | 'dead'
+let _awHint = null;        // { adapter, nets, linkLocal, ts }
+function updateAdapterWarn(a) {
+  const el = document.getElementById('adapter-warn'); if (!el) return;
+  const hide = () => { el.style.display = 'none'; el.innerHTML = ''; };
+  if (!a || !a.connected || a.admin === 'Disabled') { hide(); return; }
+  const ip = a.ip || '';
+  let kind = null, msg = '';
+  if (a.noAddress) { kind = 'none'; msg = `Link is up but ${escHtml(a.name)} has no address${a.isDhcp ? ' — nothing answered DHCP on this cable' : ''}.`; }
+  else if (/^169\.254\./.test(ip)) { kind = 'apipa'; msg = `${escHtml(ip)} is self-assigned — nothing on this cable answered DHCP. Devices on a real subnet aren't reachable from here, and SCAN only sweeps link-local.`; }
+  else if (a.isDhcp && a.gateway && window.hud && hud.ping) {
+    const key = a.name + '|' + ip + '|' + a.gateway;
+    const st = _awGw[key];
+    if (st === undefined) {
+      _awGw[key] = 'checking';
+      hud.ping(a.gateway).then(r => { _awGw[key] = r && r.ok ? 'ok' : 'dead'; updateAdapterWarn(currentAdapterEntry()); })
+                         .catch(() => { _awGw[key] = 'ok'; });
+    }
+    if (st === 'dead') { kind = 'stale'; msg = `Holding a DHCP lease (${escHtml(ip)}) but its gateway ${escHtml(a.gateway)} doesn't answer — an old lease from the last network? (moved the cable or the dock)`; }
+  }
+  if (!kind) { hide(); return; }
+  let hint = '';
+  if (_awHint && _awHint.adapter === a.name) {
+    if (_awHint.running) hint = '<div class="aw-hint">Listening to the wire (10 s)…</div>';
+    else if (_awHint.nets && _awHint.nets.length) hint = '<div class="aw-hint">Heard: ' + _awHint.nets.slice(0, 3).map(n => `<b>${escHtml(n.net)}.x</b> (${n.count})` + (n.free ? ` <span class="cmd-btn aw-use" data-ip="${escHtml(n.free)}">USE ${escHtml(n.free)}</span>` : '')).join(' · ') + '</div>';
+    else hint = `<div class="aw-hint">Nothing heard on a real subnet${_awHint.linkLocal ? ` — ${_awHint.linkLocal} link-local device(s); the AXIS tile joins 169.254/16` : ''}. Set the address from the device label or install sheet.</div>`;
+  }
+  el.innerHTML = `<div class="aw-msg">⚠ ${msg}</div><div class="aw-btns">` +
+    `<span class="cmd-btn" data-aw="hear" title="Listen 10 s for ARP / mDNS / LLDP and suggest a free address on the subnet the devices are using">HEAR THE WIRE</span>` +
+    `<span class="cmd-btn" data-aw="static" title="Type a static address in the form below, then APPLY">SET STATIC…</span>` +
+    (a.isDhcp ? `<span class="cmd-btn" data-aw="renew" title="Ask DHCP again (ipconfig /renew)">RENEW</span>` : '') +
+    `</div>${hint}`;
+  el.style.display = '';
+  el.querySelector('[data-aw="hear"]').onclick = () => adapterHearWire(a.name);
+  el.querySelector('[data-aw="static"]').onclick = () => {
+    const f = document.getElementById('ip'); if (f) { f.focus(); f.select(); }
+    setNetStatus('TYPE THE ADDRESS (AND MASK), THEN APPLY — OR HEAR THE WIRE FOR A SUGGESTION', 'warn', 6000);
+  };
+  const rn = el.querySelector('[data-aw="renew"]'); if (rn) rn.onclick = () => adapterRenew();
+  el.querySelectorAll('.aw-use').forEach(b => b.onclick = () => reconTake({ ip: b.dataset.ip, subnet: '255.255.255.0', gateway: '' }));
+}
+async function adapterHearWire(name) {
+  if (!window.hud || !hud.wireHint) return;
+  _awHint = { adapter: name, running: true };
+  updateAdapterWarn(currentAdapterEntry());
+  setNetStatus('LISTENING TO THE WIRE FOR 10 S — ARP, mDNS, LLDP...', '');
+  let r = null;
+  try { r = await hud.wireHint({ adapter: name, seconds: 10 }); } catch {}
+  _awHint = { adapter: name, running: false, nets: (r && r.nets) || [], linkLocal: (r && r.linkLocal) || 0, ts: Date.now() };
+  updateAdapterWarn(currentAdapterEntry());
+  if (r && r.nets && r.nets.length) setNetStatus(`HEARD DEVICES ON ${r.nets[0].net}.x — USE ${r.nets[0].free || 'A FREE ADDRESS'} TO JOIN THEM`, 'ok', 6000);
+  else setNetStatus('NOTHING HEARD ON A REAL SUBNET IN 10 S', 'warn', 5000);
 }
 
 // updateAliasStatusPill removed — referenced DOM IDs (#alias-status-pill etc) don't exist
@@ -4597,7 +4733,7 @@ document.addEventListener('keydown', e => {
 // switches between them. FULL MANUAL → opens the bundled PDF.
 // ══════════════════════════════════════════════════════════════
 const HELP_TABS = ['net', 'tools', 'scan', 'intel', 'dhcp', 'recon', 'cidr'];
-const HELP_LABEL = { net: 'ETHER', dhcp: 'DHCP', tools: 'PING', scan: 'SCAN', intel: 'SITES', recon: 'RECON', cidr: 'CIDR' };
+const HELP_LABEL = { net: 'IP', dhcp: 'DHCP', tools: 'PING', scan: 'SCAN', intel: 'SITES', recon: 'RECON', cidr: 'CIDR' };
 const HELP_CONTENT = {
   net: {
     lead: 'Adapter IP configuration. Everything you change here goes through netsh on the selected adapter.',
@@ -4618,20 +4754,21 @@ const HELP_CONTENT = {
     gotcha: 'Modern Axis cameras have no factory IP — they fall back to 169.254.x.x. Use the AXIS tile to join that /16, then find the camera\'s address in its label or the Axis tool.',
   },
   dhcp: {
-    lead: 'A DHCP server for the bench and the dead segment. Opens in LISTEN — it hears every request on the wire and answers nothing until you say so.',
+    lead: 'The laptop is the DHCP server. ① pick the card the device is plugged into, ② pick (or set) the laptop\'s address on that cable — devices get addresses next to it. Listening starts when you open this tab; nothing is served until you say so.',
     rows: [
-      ['LISTEN',     'Default. Devices asking for an address appear as ASKING with the address they would get. Nothing is served.'],
-      ['SERVE (row)','Answers only that one MAC. The safe choice on a customer network that already has DHCP.'],
-      ['SERVE ALL',  'Answers everyone. Runs SCAN WIRE first and asks for confirmation if another server is live.'],
-      ['QUICK START','Picks the wired adapter, fills the pool from its subnet, scans, serves. If the adapter has no address it offers a temporary static IP that reverts on quit.'],
-      ['SCAN WIRE',  'Active check for other DHCP servers (~6 s). No serving, no changes.'],
-      ['SELF-TEST',  'Adapter, port 67, firewall rule, other servers — in plain language.'],
-      ['★ PIN',      'Reserve a fixed address for a MAC. ✕ takes an address back. Leases are in memory only.'],
-      ['★ RESERVE SELECTED', 'Tick devices, give a start address, and they get consecutive reservations in list order. Server, gateway and existing reservations are skipped.'],
-      ['SERVE FROM ALIAS', 'An adapter with a MULTI-IP alias asks which address to serve from. Pick the alias to hand out leases on the camera subnet while the laptop keeps its own.'],
-      ['AUTO-STOP',  'Serving drops back to LISTEN after N idle minutes (ADVANCED, default 30). ENGINE OFF releases UDP 67 entirely.'],
+      ['① CARD',      'The network card the cable goes into. The line under it says what it is, the link speed, and whether it has an address.'],
+      ['② LAPTOP IP', 'The address the laptop answers from — and how you reach the device afterwards. No address on the card? SET LAPTOP IP… gives it one (192.168.0.1 by default, duplicate-checked, reverts on quit). + ALIAS adds a second, temporary address for another subnet.'],
+      ['SERVE (row)', 'The everyday flow: a device shows up ASKING, type the address it should end up on, press ▶ SERVE, then ↗ OPEN. Only that MAC is answered — safe on a live network. The next row continues from the last address.'],
+      ['✓ STATIC',    'Set the device static on the same address and stop: when it stops renewing (or releases) but still answers there, the row turns STATIC and the lease is freed.'],
+      ['◇ SITTING',   'Heard on the wire but not asking for DHCP — mDNS / SSDP announcements, ARP and device LLDP, the way AXIS IP Utility finds things. ↗ OPEN if it\'s on your subnet, ⇢ REACH adds a temporary address next to it and opens it.'],
+      ['SERVE EVERYONE…', 'Small amber button: answers every device on the cable. Asks first and runs SCAN WIRE; warns if another DHCP server is live. Bench and dead networks only.'],
+      ['LAST JOB\'S SETTINGS', 'If the saved laptop IP isn\'t on the card any more (yesterday\'s site), the tab refills from the card — or shows why it can\'t. A profile that doesn\'t match the card gets REFILL / + ADD AS ALIAS.'],
+      ['SCAN WIRE',   'Active check for other DHCP servers (~6 s). No serving, no changes.'],
+      ['SELF-TEST',   'Card, port 67, firewall rule, other servers — in plain language.'],
+      ['★ PIN / ★ RESERVE TICKED', 'Reserve a fixed address for a MAC, or tick several and give a start address. ✕ takes an address back.'],
+      ['AUTO-STOP',   'Serving drops back to listening after N idle minutes (ADVANCED, default 30). Click the status chip to turn the engine OFF and release UDP 67.'],
     ],
-    gotcha: 'Every SERVE and firewall change is written to DIAGNOSTICS. IT can switch this tab off with the DisableDhcpServer policy value.',
+    gotcha: 'DEVICE shows what the device says it is — Axis puts model and firmware in its DHCP request. Every SERVE and firewall change is written to DIAGNOSTICS. IT can switch this tab off with the DisableDhcpServer policy value.',
   },
   tools: {
     lead: 'Continuous reachability monitor for up to 8 hosts.',
@@ -4680,14 +4817,14 @@ const HELP_CONTENT = {
   recon: {
     lead: 'Plug in and listen. In about a minute the port tells you what it is — without you sending a single packet. Needs Wireshark 4.6+ (tshark + npcap).',
     rows: [
-      ['LISTEN',     'Up to 65 s of passive capture on the ETHER adapter. Verdicts appear as evidence arrives; LLDP comes at ~30 s, CDP at ~60. Click again to stop early.'],
+      ['LISTEN',     'Up to 65 s of passive capture on the IP tab adapter. Verdicts appear as evidence arrives; LLDP comes at ~30 s, CDP at ~60. Click again to stop early.'],
       ['STANDARD / SILENT', 'STANDARD leaves the adapter alone — Windows itself still chatters (DHCP, NetBIOS, LLMNR). SILENT unbinds IPv4/IPv6 for the listen so nothing leaves the port, then restores them. If the app died mid-listen, the next elevated launch restores them too.'],
       ['SWITCH',     'Switch name, port and VLAN from LLDP/CDP. "No announcement" means it\'s off on that port or it isn\'t a managed switch — that\'s an answer, not an error.'],
       ['802.1X',     'EAPOL from the switch means the port wants authentication. A camera without a cert gets MAB or the guest VLAN, if anything.'],
       ['STP / TRUNK', 'Spanning-tree BPDUs mean don\'t hang an unmanaged switch off this port. Tagged frames or per-VLAN BPDUs for several VLANs mean it\'s a trunk — an untagged device lands on the native VLAN.'],
       ['DHCP',       'Which server answered, with the gateway, mask and DNS it handed out. "Clients asking, nobody answering" is the dead-server signature.'],
       ['HOSTS',      'How many addresses were heard and on which subnet(s). More than one subnet on an access port is worth a question.'],
-      ['ADDRESS',    'A free-looking address on the busiest subnet, with the mask and gateway heard. TAKE puts it in the ETHER form — APPLY still runs the duplicate check.'],
+      ['ADDRESS',    'A free-looking address on the busiest subnet, with the mask and gateway heard. TAKE puts it in the IP tab form — APPLY still runs the duplicate check.'],
       ['WIRESHARK',  'The whole wire, live, in the Wireshark the fleet already has.'],
     ],
     gotcha: 'Windows NIC drivers often strip 802.1Q tags before the capture sees them, so a trunk is spotted from per-VLAN BPDUs and CDP/LLDP as much as from tags. BPDU guard can\'t be detected passively — "STP running" is the actionable version.',
@@ -4729,7 +4866,7 @@ function renderHelp(tab) {
     `<div class="help-tab${t === tab ? ' active' : ''}" onclick="renderHelp('${t}')">${HELP_LABEL[t]}</div>`).join('');
   if (tab === 'cidr') {
     if (ttl) ttl.textContent = 'CIDR';
-    body.innerHTML = `<p class="help-lead">Prefix length ↔ subnet mask ↔ usable hosts. Click a row to put that mask into the ETHER subnet field.</p><div class="help-cidr"><div class="cidr-table" id="help-cidr-table"></div></div>`;
+    body.innerHTML = `<p class="help-lead">Prefix length ↔ subnet mask ↔ usable hosts. Click a row to put that mask into the IP tab subnet field.</p><div class="help-cidr"><div class="cidr-table" id="help-cidr-table"></div></div>`;
     buildCidrTable(document.getElementById('help-cidr-table'));
     body.scrollTop = 0;
     return;
@@ -4859,6 +4996,16 @@ function diagStateRows(s) {
                   s.tools && s.tools.wireshark && s.tools.tsharkOk ? '' : 'warn'],
     ['credentials', diagCredLabel(s.creds).text, diagCredLabel(s.creds).cls],
     ['policy',    [s.policy && s.policy.onlineVendorDisabled ? 'DisableOnlineVendorLookup=1' : null, s.policy && s.policy.dhcpServerDisabled ? 'DisableDhcpServer=1' : null].filter(Boolean).join(' · ') || 'none set', ''],
+    // v7.2.0: what one process launch costs on this laptop — the first thing to read on a "it's slow" report
+    ...(s.spawn ? [
+      ['process launch', s.spawn.selfCheckMs === null ? 'measuring…' : `cmd /c ver ${s.spawn.selfCheckMs} ms — ${s.spawn.verdict}`,
+        s.spawn.selfCheckMs === null ? '' : s.spawn.selfCheckMs >= 1500 ? 'err' : s.spawn.selfCheckMs >= 600 ? 'warn' : ''],
+      ['launches', `${s.spawn.total} so far · avg ${s.spawn.avgMs} ms · worst ${s.spawn.maxMs} ms (${s.spawn.maxCmd || '—'})` +
+        (s.spawn.byExe && s.spawn.byExe.length ? ' · ' + s.spawn.byExe.slice(0, 4).map(b => `${b.exe} ×${b.n} ~${b.avg}ms`).join(', ') : ''), ''],
+      ['ps worker', `${s.spawn.worker.state}${s.spawn.worker.firstReplyMs !== null ? ' · start-up ' + s.spawn.worker.firstReplyMs + ' ms' : ''} · ${s.spawn.worker.jobs} job${s.spawn.worker.jobs !== 1 ? 's' : ''}${s.spawn.worker.fallbacks ? ' · ' + s.spawn.worker.fallbacks + ' fallback' : ''}`,
+        s.spawn.worker.state === 'disabled' ? 'warn' : ''],
+      ...(s.spawn.delayMs ? [['latency injector', `ON — +${s.spawn.delayMs} ms on every launch (NET_ETHER_SPAWN_DELAY_MS)`, 'warn']] : []),
+    ] : []),
     ['dhcp engine', s.dhcp ? (s.dhcp.mode === 'off' ? 'off (UDP 67 not bound)' : `${s.dhcp.mode}${s.dhcp.serveCfg ? ' · ' + s.dhcp.serveCfg.rangeStart + '–' + s.dhcp.serveCfg.rangeEnd : ''} · ${s.dhcp.leases} lease${s.dhcp.leases !== 1 ? 's' : ''}`) : 'not loaded', s.dhcp && s.dhcp.mode !== 'off' && s.dhcp.mode !== 'listen' ? 'warn' : ''],
     ...files,
   ];
@@ -6124,7 +6271,7 @@ function monHandleStart() {
 function monFillGateway() {
   if (monState === 'running') return;
   const gw = document.getElementById('gateway')?.value.trim();
-  if (!gw) { monSetStatus('NO GATEWAY SET — CHECK ETHER TAB', 'warn'); return; }
+  if (!gw) { monSetStatus('NO GATEWAY SET — CHECK IP TAB', 'warn'); return; }
   const slot = monHosts.findIndex(h => !h);
   if (slot >= 0) { monHosts[slot] = gw; }
   else if (monHosts.length < MON_MAX_HOSTS) { monHosts.push(gw); }
@@ -6136,7 +6283,7 @@ function monFillGateway() {
 function monFillCurrentIp() {
   if (monState === 'running') return;
   const ip = document.getElementById('ip')?.value.trim();
-  if (!ip) { monSetStatus('NO IP SET — CHECK ETHER TAB', 'warn'); return; }
+  if (!ip) { monSetStatus('NO IP SET — CHECK IP TAB', 'warn'); return; }
   const slot = monHosts.findIndex(h => !h);
   if (slot >= 0) { monHosts[slot] = ip; }
   else if (monHosts.length < MON_MAX_HOSTS) { monHosts.push(ip); }
@@ -6697,7 +6844,7 @@ function scanPickSite(sel) {
 }
 
 function scanAutoDetect(silent) {
-  // Prefer the adapter currently selected on the ETHER tab
+  // Prefer the adapter currently selected on the IP tab
   const selectedAdapter = document.getElementById('adapter').value.trim();
   const selectedEntry = selectedAdapter ? adapterList.find(a => a.name.toLowerCase() === selectedAdapter.toLowerCase()) : null;
   const best = (selectedEntry && selectedEntry.ip)
@@ -6970,8 +7117,12 @@ function finishScan(aborted) {
   btn.textContent = '▶ SCAN SUBNET';
   btn.classList.remove('scanning');
 
+  // v7.2.0: a 169.254 base sweeps one /24 of a /16 — empty there doesn't mean empty
+  const llBase = /^169\.254\./.test((document.getElementById('scan-base')?.value || '').trim() + '.');
   if (scanFound === 0 && !aborted) {
-    document.getElementById('scan-empty').textContent = 'NO HOSTS FOUND ON THIS SUBNET';
+    document.getElementById('scan-empty').textContent = llBase
+      ? 'NOTHING IN THIS /24 — 169.254 IS A /16: USE DISCOVER, OR THE DHCP TAB\'S ◇ SITTING LIST'
+      : 'NO HOSTS FOUND ON THIS SUBNET';
     document.getElementById('scan-empty').style.display = '';
     document.getElementById('scan-results-header').style.display = 'none';
   }
@@ -6982,8 +7133,8 @@ function finishScan(aborted) {
     setScanStatus(
       scanFound > 0
         ? `SCAN COMPLETE — ${scanFound} HOST${scanFound !== 1 ? 'S' : ''} ALIVE — PROBING PORTS...`
-        : 'SCAN COMPLETE — NO HOSTS FOUND',
-      scanFound > 0 ? 'ok' : ''
+        : (llBase ? 'SCAN COMPLETE — LINK-LOCAL: ONLY ONE /24 OF 169.254 WAS SWEPT. TRY DISCOVER' : 'SCAN COMPLETE — NO HOSTS FOUND'),
+      scanFound > 0 ? 'ok' : (llBase ? 'warn' : '')
     );
   }
 
@@ -7807,7 +7958,7 @@ const DISC_LABEL = { onvif: 'ONVIF', wsd: 'WSD', ssdp: 'SSDP', mdns: 'mDNS' };
 async function scanDiscover(baseIp) {
   if (!window.hud || !hud.discoverRun || scanDiscBusy) return;
   const adapter = document.getElementById('adapter').value.trim();
-  if (!adapter) { if (!scanRunning) setScanStatus('SELECT AN ADAPTER ON THE ETHER TAB FIRST', 'warn', 3000); return; }
+  if (!adapter) { if (!scanRunning) setScanStatus('SELECT AN ADAPTER ON THE IP TAB FIRST', 'warn', 3000); return; }
   scanDiscBusy = true;
   const btn = document.getElementById('scan-discover-btn');
   if (btn) { btn.classList.add('busy'); btn.textContent = '◎ LISTENING…'; }
@@ -7935,12 +8086,12 @@ function updateScanFoundCount() {
 async function reachLinkLocal(ip) {
   const adapter = document.getElementById('adapter').value.trim();
   const a = currentAdapterEntry();
-  if (!adapter || !a) { setScanStatus('SELECT AN ADAPTER ON THE ETHER TAB FIRST', 'warn', 3000); return; }
+  if (!adapter || !a) { setScanStatus('SELECT AN ADAPTER ON THE IP TAB FIRST', 'warn', 3000); return; }
   if (!window.hud || !hud.reachAdd) return;
   const go = await hudModal({
     title: 'REACH ' + ip + '?', tone: 'warn',
     bodyHtml: `Adds a temporary <span class="hl">169.254.x.x</span> alias to <span class="hl">${escHtml(adapter)}</span> so this box is routable, then opens <span class="hl">http://${escHtml(ip)}</span>.` +
-              (a.isDhcp ? ` <br><br>The adapter is on <span class="hl">DHCP</span> — adding an alias converts it to static first (current lease frozen). Use → DHCP on the ETHER tab when you're done.` : '') +
+              (a.isDhcp ? ` <br><br>The adapter is on <span class="hl">DHCP</span> — adding an alias converts it to static first (current lease frozen). Use → DHCP on the IP tab when you're done.` : '') +
               ` <br><br>The alias is removed when you quit, or with REMOVE on the chip that appears.`,
     buttons: [{ label: 'REACH', style: 'ok', value: true }, { label: 'CANCEL', style: 'cancel', value: null }],
   });
@@ -7990,13 +8141,13 @@ function reconToolsState() {
   const ok = !!(toolsInfo && toolsInfo.tshark && toolsInfo.tsharkOk);
   const a = currentAdapterEntry();
   const adEl = document.getElementById('recon-adapter');
-  if (adEl) { adEl.textContent = a ? `${a.name}${a.ip ? ' · ' + a.ip : ''}` : '— select an adapter on the ETHER tab —'; adEl.classList.toggle('none', !a); }
+  if (adEl) { adEl.textContent = a ? `${a.name}${a.ip ? ' · ' + a.ip : ''}` : '— select an adapter on the IP tab —'; adEl.classList.toggle('none', !a); }
   const btn = document.getElementById('recon-btn');
   if (btn && !reconBusy) {
     btn.classList.toggle('disabled', !ok || !a || a.admin === 'Disabled');
     btn.title = !toolsInfo || !toolsInfo.tshark ? 'Needs Wireshark (tshark + npcap) installed'
               : !toolsInfo.tsharkOk ? `tshark ${toolsInfo.tsharkVersion || '?'} found — Wireshark 4.6 or newer needed`
-              : !a ? 'Select an adapter on the ETHER tab' : '';
+              : !a ? 'Select an adapter on the IP tab' : '';
   }
   const sh = document.getElementById('recon-shark'); if (sh) sh.classList.toggle('hidden', !(toolsInfo && toolsInfo.wireshark));
   const cp = document.getElementById('recon-copy'); if (cp) cp.classList.toggle('hidden', !reconLast);
@@ -8080,7 +8231,7 @@ function reconRenderCards(verdicts, ev, live) {
     const card = document.createElement('div');
     card.className = 'recon-card ' + (v.kind || 'info');
     card.innerHTML = `<div class="rc-tag">${escHtml(v.tag)}</div><div class="rc-title" title="${escHtml(v.title)}">${escHtml(v.title)}</div>` +
-      (v.action ? `<div class="rc-act" title="Put ${escHtml(v.action.ip)} in the ETHER form">TAKE</div>` : '<div></div>') +
+      (v.action ? `<div class="rc-act" title="Put ${escHtml(v.action.ip)} in the IP tab form">TAKE</div>` : '<div></div>') +
       `<div class="rc-detail">${escHtml(v.detail || '')}</div>`;
     if (v.action) card.querySelector('.rc-act').onclick = () => reconTake(v.action);
     c.appendChild(card);
@@ -9270,6 +9421,13 @@ document.addEventListener('DOMContentLoaded', () => {
 const D = {
   mode: 'off', targets: [], devices: [], foreign: [], policyDisabled: false,
   started: false, listenersOn: false, resvEdits: new Map(), adapters: [], selected: new Set(),
+  // v7.2.0
+  askIp: new Map(),        // mac → address typed on an asking row (survives re-renders)
+  lastServed: null,        // last address served from a row — the next row starts after it
+  wire: [],                // passive wire watch: devices heard announcing / ARPing
+  wireCard: null,          // card + address set the watch was started for
+  tempIps: [],             // temporary addresses ETHER added (REACH / + ALIAS)
+  assist: null,            // laptop address ETHER set on a card (reverts on quit)
 };
 // ── multi-select serve ────────────────────────────────────
 function dhcpUpdateSelectedBtn() {
@@ -9278,9 +9436,9 @@ function dhcpUpdateSelectedBtn() {
   const b = dEl('dhcp-serve-sel-btn'); if (!b) return;
   const n = D.selected.size;
   b.style.display = n ? '' : 'none';
-  b.textContent = `▶ SERVE SELECTED (${n})`;
+  b.textContent = `▶ SERVE TICKED (${n})`;
   const rb = dEl('dhcp-resv-sel-btn');
-  if (rb) { rb.style.display = n ? '' : 'none'; rb.textContent = `★ RESERVE SELECTED (${n})`; }
+  if (rb) { rb.style.display = n ? '' : 'none'; rb.textContent = `★ RESERVE TICKED (${n})`; }
   const all = dEl('dhcp-check-all');
   if (all) { const askers = D.devices.filter(d => d.state === 'asking' && !d.targeted); all.checked = askers.length > 0 && askers.every(d => D.selected.has(d.mac)); }
 }
@@ -9293,9 +9451,9 @@ async function dhcpServeSelected() {
   if (!await dhcpEnsureEngine()) return;
   const opts = await dhcpValidateForm(); if (!opts) return;
   let ok = 0;
-  for (const mac of macs) { const r = await hud.dhcp.serveDevice(mac, opts); if (r.ok) ok++; else dhcpLog(`Could not target ${mac}: ${r.msg}`, 'err'); }
+  for (const mac of macs) { const r = await hud.dhcp.serveDevice(mac, opts, D.askIp.get(mac) || null); if (r.ok) { ok++; D.askIp.delete(mac); } else dhcpLog(`Could not serve ${mac}: ${r.msg}`, 'err'); }
   D.selected.clear();
-  setDhcpStatus(`◎ TARGETING ${ok} DEVICE${ok !== 1 ? 'S' : ''}` + (D.foreign.length ? ' — NOTE: OTHER DHCP AT ' + D.foreign.join(', ') : ''), D.foreign.length ? 'warn' : 'ok', 6000);
+  setDhcpStatus(`◎ SERVING ${ok} DEVICE${ok !== 1 ? 'S' : ''}` + (D.foreign.length ? ' — NOTE: OTHER DHCP AT ' + D.foreign.join(', ') : ''), D.foreign.length ? 'warn' : 'ok', 6000);
   dhcpRenderDevices();
 }
 const DCFG_KEYS = ['adapterIp','subnet','rangeStart','rangeEnd','gateway','lease','dns','domainName','ntp','tftpServer','bootFile','opt43'];
@@ -9306,7 +9464,7 @@ function dhcpGather() {
   return {
     adapterName: dEl('dhcp-adapter')?.value || '',
     adapterIp: v('adapterIp'), subnet: v('subnet'), rangeStart: v('rangeStart'), rangeEnd: v('rangeEnd'),
-    gateway: v('gateway'), dns: v('dns'), lease: Math.max(30, parseInt(v('lease'), 10) || 300),
+    gateway: v('gateway'), dns: v('dns'), lease: Math.max(60, parseInt(v('lease'), 10) || 300),
     domainName: v('domainName'), ntp: v('ntp'), tftpServer: v('tftpServer'), bootFile: v('bootFile'), opt43: v('opt43'),
   };
 }
@@ -9314,18 +9472,29 @@ function dhcpFill(cfg) {
   if (!cfg) return;
   const set = (k, val) => { const el = dEl('dcfg-' + k); if (el && val !== undefined && val !== null) el.value = val; };
   set('adapterIp', cfg.adapterIp ?? cfg.serverIp); set('subnet', cfg.subnet); set('rangeStart', cfg.rangeStart); set('rangeEnd', cfg.rangeEnd);
-  set('gateway', cfg.gateway ?? ''); set('dns', cfg.dns ?? ''); set('lease', cfg.lease ?? 300);
+  set('gateway', cfg.gateway ?? ''); set('dns', cfg.dns ?? ''); dhcpSetLease(cfg.lease ?? 300);
   set('domainName', cfg.domainName ?? ''); set('ntp', cfg.ntp ?? ''); set('tftpServer', cfg.tftpServer ?? ''); set('bootFile', cfg.bootFile ?? ''); set('opt43', cfg.opt43 ?? '');
   dhcpClearErrors(); dhcpSchedulePreview();
+}
+// v7.2.0: lease is a dropdown in plain time; a saved value that isn't one of the presets
+// (an old profile with 600 s) gets its own option instead of silently becoming 5 min.
+function dhcpSetLease(sec) {
+  const sel = dEl('dcfg-lease'); if (!sel) return;
+  const v = String(Math.max(60, parseInt(sec, 10) || 300));
+  if (![...sel.options].some(o => o.value === v)) {
+    const n = +v, o = document.createElement('option');
+    o.value = v; o.textContent = n % 3600 === 0 ? (n / 3600) + ' h' : n % 60 === 0 ? (n / 60) + ' min' : n + ' s';
+    sel.appendChild(o);
+  }
+  sel.value = v;
 }
 function dhcpClearErrors() { document.querySelectorAll('.dhcp-field.error').forEach(el => el.classList.remove('error')); }
 function dhcpMarkError(msg) {
   const m = (msg || '').toLowerCase();
   const on = id => dEl('dfld-' + id)?.classList.add('error');
-  if (m.includes('server ip')) on('adapterIp');
-  if (m.includes('subnet')) on('subnet');
-  if (m.includes('pool start') || (m.includes('pool') && m.includes('less'))) on('rangeStart');
-  if (m.includes('pool end') || (m.includes('pool') && m.includes('less'))) on('rangeEnd');
+  if (m.includes('subnet') || m.includes('mask')) on('subnet');
+  if (m.includes('first')) on('rangeStart');
+  if (m.includes('last')) on('rangeEnd');
   if (m.includes('gateway')) on('gateway');
   if (m.includes('dns')) on('dns');
   if (m.includes('ntp')) on('ntp');
@@ -9337,6 +9506,7 @@ function dhcpMarkError(msg) {
 let _dhcpPreviewTimer = null;
 function dhcpSchedulePreview() {
   clearTimeout(_dhcpPreviewTimer);
+  dhcpRenderCable();
   _dhcpPreviewTimer = setTimeout(async () => {
     if (!window.hud || !hud.dhcp || !D.started) return;
     try { await hud.dhcp.setPreview(dhcpGather()); } catch {}
@@ -9344,7 +9514,7 @@ function dhcpSchedulePreview() {
 }
 function dhcpToggleAdvanced() {
   const d = dEl('dhcp-adv-drawer'); const open = d.classList.toggle('open');
-  dEl('dhcp-adv-toggle').textContent = (open ? '▾' : '▸') + ' ADVANCED OPTIONS';
+  dEl('dhcp-adv-toggle').textContent = (open ? '▾' : '▸') + ' ADVANCED OPTIONS (DNS, NTP, TFTP, OPTION 43, AUTO-STOP)';
   autoResize();
 }
 const dhcpIsServing = () => D.mode === 'serve-all' || D.mode === 'serve-targeted';
@@ -9370,6 +9540,8 @@ function dhcpInitListeners() {
   hud.dhcp.onRogue(d => { if (!D.foreign.includes(d.server)) D.foreign.push(d.server); setDhcpStatus('⚠ OTHER DHCP SERVER ON WIRE: ' + d.server, 'err'); });
   hud.dhcp.onPort67(d => setDhcpStatus('⚠ UDP 67 HELD BY ' + d.squatter.toUpperCase(), 'err'));
   hud.dhcp.onAutoStopped(d => setDhcpStatus(`⏻ AUTO-STOPPED AFTER ${d.idleMinutes} MIN IDLE — STILL LISTENING`, 'warn'));
+  if (hud.dhcp.onStatic) hud.dhcp.onStatic(d => setDhcpStatus(`✓ ${d.ip} WENT STATIC — ${(d.model || d.hostname || d.vendor || d.mac).toUpperCase()} IS DONE`, 'ok', 8000));
+  if (hud.onWireWatch) hud.onWireWatch(d => { if (d && d.adapter === (dEl('dhcp-adapter')?.value || '')) { D.wire = d.list || []; dhcpRenderDevices(); } });
   hud.dhcp.onStaticPending(async rec => {
     const revert = await hudModal({
       title: 'LEFTOVER STATIC IP', tone: 'warn',
@@ -9386,9 +9558,12 @@ function dhcpInitListeners() {
       const before = selName ? ((D.adapters.find(x => x.name === selName) || {}).ips || []).map(x => x.ip).join(',') : '';
       dhcpFillAdapterSelect(data.adapters || []);
       const after = selName ? ((D.adapters.find(x => x.name === selName) || {}).ips || []).map(x => x.ip).join(',') : '';
-      if (selName && before !== after && !dhcpIsServing() && D.started) {
-        setDhcpStatus('ADAPTER ADDRESSES CHANGED — SETTINGS REFILLED', 'warn', 4000);
-        dhcpAdapterChanged();
+      if (selName && before !== after && D.started) {
+        // v7.2.0: the card's addresses changed (laptop IP set, alias added/removed). Keep the
+        // chosen laptop IP if it's still there; otherwise refill. Restart the wire watch so it
+        // listens on the new addresses.
+        if (!dhcpIsServing()) dhcpAdapterChanged(true);
+        dhcpWireWatch(true);
       }
     }
     if (data.event === 'link-up')   setDhcpStatus('⚡ LINK UP — ' + data.name.toUpperCase(), 'ok', 4000);
@@ -9413,6 +9588,7 @@ async function dhcpOnTabOpen() {
     return;
   }
   D.started = true;
+  dhcpWireWatch(true);
   setDhcpStatus('LISTENING — NOTHING IS SERVED UNTIL YOU SAY SO', 'ok', 6000);
 }
 
@@ -9421,6 +9597,7 @@ function dhcpHydrate(st) {
   dhcpApplyMode(st);
   D.devices = st.devices || []; dhcpRenderDevices();
   D.foreign = st.foreignServers || [];
+  D.assist = st.staticAssist || null;
   const box = dEl('dhcp-log'); if (box && !box.children.length) (st.log || []).forEach(l => dhcpLog(l.replace(/^\[[^\]]*\]\s*/, '')));
   if (st.idleMinutes !== undefined) dEl('dcfg-idle').value = st.idleMinutes;
   dhcpFillProfiles(st.profiles || []);
@@ -9428,32 +9605,46 @@ function dhcpHydrate(st) {
   if (st.current) {
     dhcpFill(st.current);
     const want = st.current.adapterName || st.current.adapter;
-    if (want && dEl('dhcp-adapter')) dEl('dhcp-adapter').value = want;
+    if (want && dEl('dhcp-adapter') && [...dEl('dhcp-adapter').options].some(o => o.value === want)) dEl('dhcp-adapter').value = want;
   }
   dhcpSyncAdapterFromEther();
+  // v7.2.0 stale-settings guard: last session's settings only stand if the laptop IP is
+  // still an address on this card. Otherwise refill from the card (or say why we can't).
+  dhcpGuardCheck('hydrate');
+  dhcpUpdateLink();
+  dhcpRenderCard();
+  dhcpRefreshTempIps();
 }
 function dhcpApplyPolicyState() {
   const note = dEl('dhcp-policy-note'); if (note) note.style.display = D.policyDisabled ? '' : 'none';
-  ['dhcp-serve-btn','dhcp-quick-btn'].forEach(id => dEl(id)?.classList.toggle('disabled', D.policyDisabled));
+  ['dhcp-serve-btn'].forEach(id => dEl(id)?.classList.toggle('disabled', D.policyDisabled));
 }
 
 function dhcpApplyMode(st) {
   D.mode = st.mode || 'off'; D.targets = st.targets || [];
-  const badge = dEl('dhcp-mode-badge'), txt = dEl('dhcp-mode-txt'), btn = dEl('dhcp-serve-btn'), tab = dEl('tab-dhcp');
+  const badge = dEl('dhcp-mode-badge'), txt = dEl('dhcp-mode-txt'), btn = dEl('dhcp-serve-btn'), stop = dEl('dhcp-stop-btn'), tab = dEl('tab-dhcp');
+  // v7.2.0: states in words — OFF / LISTENING / SERVING EVERYONE / SERVING N
   if (D.policyDisabled) { badge.className = 'dhcp-mode-badge policy'; txt.textContent = 'POLICY OFF'; }
   else if (D.mode === 'listen') { badge.className = 'dhcp-mode-badge listen'; txt.textContent = 'LISTENING'; }
-  else if (D.mode === 'serve-all') { badge.className = 'dhcp-mode-badge serving'; txt.textContent = 'SERVING ALL'; }
-  else if (D.mode === 'serve-targeted') { badge.className = 'dhcp-mode-badge serving'; txt.textContent = `SERVING ${D.targets.length} TARGET${D.targets.length !== 1 ? 'S' : ''}`; }
+  else if (D.mode === 'serve-all') { badge.className = 'dhcp-mode-badge serving'; txt.textContent = 'SERVING EVERYONE'; }
+  else if (D.mode === 'serve-targeted') { badge.className = 'dhcp-mode-badge serving'; txt.textContent = `SERVING ${D.targets.length}`; }
   else if (D.mode === 'suspended') { badge.className = 'dhcp-mode-badge suspended'; txt.textContent = 'SUSPENDED'; }
-  else { badge.className = 'dhcp-mode-badge off'; txt.textContent = 'OFFLINE'; }
+  else { badge.className = 'dhcp-mode-badge off'; txt.textContent = 'OFF'; }
   if (btn) {
-    if (D.mode === 'serve-all')           { btn.className = 'serve-btn bracket stop'; btn.textContent = '■ STOP SERVING ALL'; }
-    else if (D.mode === 'serve-targeted') { btn.className = 'serve-btn bracket stop'; btn.textContent = `■ STOP · ${D.targets.length} TARGET${D.targets.length !== 1 ? 'S' : ''}`; }
-    else                                  { btn.className = 'serve-btn bracket'; btn.textContent = '▶ SERVE ALL DEVICES'; }
+    btn.style.display = D.mode === 'serve-targeted' ? 'none' : '';
+    if (D.mode === 'serve-all') { btn.className = 'cmd-btn dhcp-mini dhcp-everyone stop'; btn.textContent = '■ STOP SERVING EVERYONE'; }
+    else                        { btn.className = 'cmd-btn dhcp-mini dhcp-everyone'; btn.textContent = '▶ SERVE EVERYONE…'; }
+    btn.classList.toggle('disabled', D.policyDisabled);
+  }
+  if (stop) {
+    stop.style.display = D.mode === 'serve-targeted' ? '' : 'none';
+    stop.textContent = `■ STOP SERVING (${D.targets.length})`;
   }
   if (tab) { tab.classList.toggle('serving', dhcpIsServing()); tab.classList.toggle('listening', D.mode === 'listen'); tab.classList.toggle('suspended', D.mode === 'suspended'); }
   updateLiveBarDhcp();
   dhcpRenderDevices();
+  if (D.mode === 'off') dhcpWireWatchStop();
+  else if (D.started) dhcpWireWatch(false);
 }
 // Serving state also shows in the always-visible live bar
 function updateLiveBarDhcp() {
@@ -9465,34 +9656,83 @@ function updateLiveBarDhcp() {
     pill.title = 'DHCP server is serving — click to open the tab'; pill.onclick = () => switchTab('dhcp');
     bar.appendChild(pill);
   }
-  if (dhcpIsServing()) { pill.style.display = ''; pill.textContent = D.mode === 'serve-all' ? 'DHCP: SERVING ALL' : `DHCP: ${D.targets.length} TARGET${D.targets.length !== 1 ? 'S' : ''}`; }
+  if (dhcpIsServing()) { pill.style.display = ''; pill.textContent = D.mode === 'serve-all' ? 'DHCP: SERVING EVERYONE' : `DHCP: SERVING ${D.targets.length}`; }
   else pill.style.display = 'none';
 }
 
 // ── adapters ──────────────────────────────────────────────
+function dhcpCurCard() { return D.adapters.find(x => x.name === dEl('dhcp-adapter')?.value) || null; }
+function dhcpCardIps(a) { return a && a.ips ? a.ips.filter(x => !x.apipa).map(x => x.ip) : []; }
 function dhcpUpdateLink() {
   const el = dEl('dhcp-link'), txt = dEl('dhcp-link-txt'); if (!el) return;
-  const a = D.adapters.find(x => x.name === dEl('dhcp-adapter')?.value);
+  const a = dhcpCurCard();
   if (!a || !a.connected) { el.className = 'dhcp-link'; txt.textContent = 'NO LINK'; return; }
-  if (a.apipa) { el.className = 'dhcp-link apipa'; txt.textContent = 'NO USABLE IP'; return; }
+  if (a.apipa || !dhcpCardIps(a).length) { el.className = 'dhcp-link apipa'; txt.textContent = 'NO ADDRESS'; return; }
   el.className = 'dhcp-link up'; txt.textContent = 'LINK UP';
 }
+// ETHER's full adapter list (IP tab) carries description, link speed and DHCP/static —
+// the DHCP engine's light list doesn't, so borrow it for the card's sub-line and option text.
+function dhcpFullCard(name) { try { return (typeof adapterList !== 'undefined' && Array.isArray(adapterList)) ? adapterList.find(x => x.name === name) || null : null; } catch { return null; } }
 function dhcpFillAdapterSelect(adapters) {
   D.adapters = adapters;
   const sel = dEl('dhcp-adapter'); if (!sel) return;
   const cur = sel.value;
-  sel.innerHTML = '<option value="">— select adapter —</option>';
+  sel.innerHTML = '<option value="">— pick the card —</option>';
   for (const a of adapters) {
     const o = document.createElement('option');
     o.value = a.name;
-    const extra = (a.ips || []).filter(x => !x.apipa).length - 1;
-    o.textContent = a.name + (a.ip ? '  [' + a.ip + (a.apipa ? ' — no address' : '') + (extra > 0 ? ' +' + extra + ' alias' : '') + ']' : '  [no link]');
+    const full = dhcpFullCard(a.name);
+    const desc = full && full.desc ? ' — ' + full.desc : '';
+    o.textContent = a.name + desc + (a.connected ? '' : '  [no link]');
     if (a.name === cur) o.selected = true;
     sel.appendChild(o);
   }
   dhcpUpdateLink();
+  dhcpRenderCard();
 }
-// If nothing is chosen here yet, follow the adapter selected on the ETHER tab —
+// The card's sub-line, step ② chips and the cable strip
+function dhcpRenderCard() {
+  const a = dhcpCurCard(), sub = dEl('dhcp-card-sub'), chips = dEl('dhcp-ip-chips'), note = dEl('dhcp-chip-note');
+  if (!sub || !chips) return;
+  if (!a) { sub.textContent = 'Pick the card the device is plugged into.'; chips.innerHTML = ''; if (note) note.textContent = ''; dhcpRenderCable(); return; }
+  const full = dhcpFullCard(a.name) || {};
+  const bits = [];
+  if (full.desc && !(dEl('dhcp-adapter')?.selectedOptions[0]?.textContent || '').includes(full.desc)) bits.push(escHtml(full.desc));
+  if (!a.connected) bits.push('<span class="warn">no link — check the cable</span>');
+  else if (full.linkSpeed) bits.push('link ' + escHtml(full.linkSpeed));
+  const ips = dhcpCardIps(a);
+  if (a.connected && !ips.length) bits.push(`<span class="warn">${a.isDhcp ? 'was DHCP, nothing answered' : 'no address'} — set one in step 2</span>`);
+  else if (a.isDhcp === true) bits.push('DHCP');
+  else if (a.isDhcp === false) bits.push('static');
+  sub.innerHTML = bits.join(' · ');
+  const cur = dEl('dcfg-adapterIp')?.value || '';
+  const primary = a.ip && !a.apipa ? a.ip : ips[0];
+  let html = '';
+  for (const ip of ips) {
+    const temp = D.tempIps.includes(ip) || (D.assist && D.assist.adapter === a.name && D.assist.applied === ip);
+    html += `<span class="dhcp-chip${ip === cur ? ' on' : ''}" data-ip="${escHtml(ip)}" title="Answer DHCP from ${escHtml(ip)} — devices get addresses next to it">${ip === cur ? '✓ ' : ''}${escHtml(ip)}${ip !== primary ? '<span class="tag">ALIAS</span>' : ''}${temp ? '<span class="tag">TEMP</span>' : ''}</span>`;
+  }
+  if (!ips.length && a.connected) html += `<span class="dhcp-chip set" data-act="set" title="Give the laptop an address on this cable — 192.168.0.1 by default. Reverts when you quit.">SET LAPTOP IP…</span>`;
+  if (ips.length) html += `<span class="dhcp-chip add" data-act="alias" title="Add another address on this card (temporary — removed when you quit) to hand out addresses on a different subnet">+ ALIAS</span>`;
+  chips.innerHTML = html;
+  chips.querySelectorAll('[data-ip]').forEach(el => el.onclick = () => dhcpPickLaptopIp(el.dataset.ip));
+  const setBtn = chips.querySelector('[data-act="set"]'); if (setBtn) setBtn.onclick = () => dhcpSetLaptopIp();
+  const alBtn = chips.querySelector('[data-act="alias"]'); if (alBtn) alBtn.onclick = () => dhcpAddAlias();
+  const anyTemp = ips.some(ip => D.tempIps.includes(ip)) || (D.assist && D.assist.adapter === a.name);
+  if (note) note.textContent = anyTemp ? 'set by ETHER · reverts on quit' : '';
+  dhcpRenderCable();
+}
+function dhcpRenderCable() {
+  const a = dhcpCurCard();
+  const me = dEl('dcfg-adapterIp')?.value || '';
+  const s = (dEl('dcfg-rangeStart')?.value || '').trim(), e = (dEl('dcfg-rangeEnd')?.value || '').trim();
+  const set = (id, t) => { const el = dEl(id); if (el) el.textContent = t; };
+  set('dhcp-cable-me', me || '—');
+  set('dhcp-cable-card', a ? a.name.toUpperCase() : '—');
+  const tail = (x, y) => { const px = x.split('.'), py = y.split('.'); return px.slice(0, 3).join('.') === py.slice(0, 3).join('.') ? x + ' – .' + py[3] : x + ' – ' + y; };
+  set('dhcp-cable-pool', s && e ? tail(s, e) : '—');
+}
+// If nothing is chosen here yet, follow the adapter selected on the IP tab —
 // same list, same instance, no second poll.
 function dhcpSyncAdapterFromEther() {
   const sel = dEl('dhcp-adapter'); if (!sel || sel.value) return;
@@ -9502,28 +9742,125 @@ function dhcpSyncAdapterFromEther() {
 async function dhcpRefreshAdapters() {
   if (!(window.hud && hud.dhcp)) return;
   try { dhcpFillAdapterSelect(await hud.dhcp.refreshAdapters()); } catch {}
-  if (dEl('dhcp-adapter')?.value && !dhcpIsServing()) dhcpAdapterChanged();   // v7.1.0: ⟳ also re-runs the pick-and-fill
+  if (dEl('dhcp-adapter')?.value && !dhcpIsServing()) dhcpAdapterChanged(true);   // v7.1.0: ⟳ also re-runs the pick-and-fill
 }
-async function dhcpAdapterChanged() {
+// v7.2.0: no "which address?" modal any more — step ②'s chips are the choice. Keep the
+// chosen laptop IP if it's still on the card (keepIfOnCard), else take the primary.
+async function dhcpAdapterChanged(keepIfOnCard) {
   dhcpUpdateLink();
   const name = dEl('dhcp-adapter').value;
+  dhcpRenderCard();
+  if (keepIfOnCard !== true) dhcpWireWatch(true);
   if (!name || dhcpIsServing()) return;
-  // v7.1.0: serve-from-alias — an adapter with a MULTI-IP alias can serve either subnet
-  const a = D.adapters.find(x => x.name === name);
-  const choices = a && a.ips ? a.ips.filter(x => !x.apipa) : [];
-  let fromIp = null;
-  if (choices.length > 1) {
-    fromIp = await hudModal({
-      title: 'SERVE FROM WHICH ADDRESS?',
-      bodyHtml: `<span class="hl">${escHtml(name)}</span> has ${choices.length} addresses. The pool is built on the one you pick — use the alias to hand out leases on the camera subnet while the laptop keeps its own.`,
-      buttons: [...choices.slice(0, 4).map((x, i) => ({ label: x.ip + (i ? ' (ALIAS)' : ''), style: 'ok', value: x.ip })), { label: 'CANCEL', style: 'cancel', value: null }],
-    });
-    if (!fromIp) return;
+  const a = dhcpCurCard();
+  const ips = dhcpCardIps(a);
+  const cur = dEl('dcfg-adapterIp')?.value || '';
+  if (keepIfOnCard === true && cur && ips.includes(cur)) { dhcpGuardHide(); return; }
+  const pick = a && a.ip && !a.apipa && ips.includes(a.ip) ? a.ip : ips[0];
+  if (!pick) { dEl('dcfg-adapterIp').value = ''; dhcpRenderCard(); dhcpGuardCheck('card'); setDhcpStatus('THIS CARD HAS NO ADDRESS — SET A LAPTOP IP IN STEP 2', 'warn', 5000); return; }
+  await dhcpPickLaptopIp(pick, true);
+}
+async function dhcpPickLaptopIp(ip, quiet) {
+  const name = dEl('dhcp-adapter').value; if (!name) return;
+  if (dhcpIsServing()) { setDhcpStatus('STOP SERVING BEFORE CHANGING THE LAPTOP ADDRESS', 'warn', 4000); return; }
+  const cfg = await hud.dhcp.getAdapterConfig(name, ip);
+  if (!cfg) { setDhcpStatus('THAT ADDRESS IS NOT USABLE', 'warn', 4000); return; }
+  dhcpFill({ ...cfg, adapterIp: cfg.serverIp, lease: dEl('dcfg-lease')?.value || 300 });
+  dhcpGuardHide();
+  dhcpRenderCard();
+  if (!quiet) setDhcpStatus(`HANDING OUT FROM ${ip} — POOL ${cfg.rangeStart} – ${cfg.rangeEnd}`, 'ok', 3500);
+  else setDhcpStatus('SETTINGS FILLED IN FROM ' + name.toUpperCase() + ' (' + ip + ')', 'ok', 3000);
+}
+// Step ②: the card has no usable address — give the laptop one (default 192.168.0.1,
+// duplicate-checked in main; ETHER reverts it on quit)
+async function dhcpSetLaptopIp() {
+  const name = dEl('dhcp-adapter').value; if (!name) return;
+  const ip = await hudModal({
+    title: 'SET LAPTOP IP',
+    bodyHtml: `Give <span class="hl">${escHtml(name)}</span> an address on this cable. Pick one in the range the device should end up in — the laptop answers DHCP from it, and you reach the device the same way afterwards.<br><br><span style="font-size:11px;color:var(--label-dim)">Mask 255.255.255.0. If something already answers at this address, ETHER moves to the next one. Reverts when you quit.</span>`,
+    input: '192.168.0.1', placeholder: '192.168.0.1',
+    buttons: [{ label: 'CANCEL', style: 'cancel', value: null }, { label: 'SET', style: 'ok', value: '__INPUT__' }],
+  });
+  if (!ip) return;
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) { setDhcpStatus('NOT AN IP ADDRESS', 'err', 4000); return; }
+  setDhcpStatus(`SETTING ${name.toUpperCase()} TO ${ip}…`, '');
+  const sa = await hud.dhcp.staticAssistApply(name, ip === '192.168.0.1' ? null : ip);
+  if (!sa.ok) { setDhcpStatus('COULD NOT SET IT: ' + (sa.msg || '').toUpperCase(), 'err', 6000); return; }
+  dhcpLog(`Laptop set to ${sa.ip} on ${name} — reverts on quit`, 'ok');
+  D.assist = { adapter: name, applied: sa.ip };
+  loadAdapters(true);
+  await dhcpRefreshAdapters();
+  await dhcpPickLaptopIp(sa.ip, true);
+  setDhcpStatus(`✓ LAPTOP IS ${sa.ip} ON ${name.toUpperCase()} — DEVICES GET ADDRESSES NEXT TO IT`, 'ok', 5000);
+}
+async function dhcpAddAlias(prefill) {
+  const name = dEl('dhcp-adapter').value; if (!name) return;
+  const ip = await hudModal({
+    title: '+ ALIAS',
+    bodyHtml: `Add another address to <span class="hl">${escHtml(name)}</span> so the laptop can hand out addresses on a second subnet (pre-staging cameras on their production range) while keeping its own.<br><br><span style="font-size:11px;color:var(--label-dim)">Temporary — removed when you quit, or with REMOVE on the SCAN tab.</span>`,
+    input: prefill || '', placeholder: '10.0.30.250',
+    buttons: [{ label: 'CANCEL', style: 'cancel', value: null }, { label: 'ADD', style: 'ok', value: '__INPUT__' }],
+  });
+  if (!ip) return;
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) { setDhcpStatus('NOT AN IP ADDRESS', 'err', 4000); return; }
+  setDhcpStatus(`ADDING ${ip} TO ${name.toUpperCase()}…`, '');
+  const r = await hud.reachAdd({ adapter: name, alias: ip, mask: '255.255.255.0' });
+  if (!r || !r.ok) { setDhcpStatus('ALIAS FAILED: ' + String((r && (r.err || r.msg)) || 'unknown').toUpperCase(), 'err', 6000); return; }
+  await dhcpRefreshTempIps();
+  loadAdapters(true);
+  await dhcpRefreshAdapters();
+  await dhcpPickLaptopIp(r.alias || ip, true);
+  setDhcpStatus(`✓ ${r.alias || ip} ADDED (TEMPORARY) — HANDING OUT FROM IT`, 'ok', 5000);
+}
+async function dhcpRefreshTempIps() {
+  try { const l = await hud.reachList(); D.tempIps = (l || []).map(t => t.ip); } catch { D.tempIps = []; }
+  dhcpRenderCard();
+}
+
+// ── stale-settings guard (v7.2.0) ─────────────────────────
+function dhcpGuardHide() { const g = dEl('dhcp-guard'); if (g) { g.style.display = 'none'; g.innerHTML = ''; } }
+function dhcpGuardShow(ip, a, why) {
+  const g = dEl('dhcp-guard'); if (!g) return;
+  const ips = dhcpCardIps(a);
+  g.innerHTML = `<span>⚠ ${why === 'profile' ? 'This profile\'s' : 'Settings from another job? The'} laptop IP <b>${escHtml(ip)}</b> isn't on ${escHtml(a ? a.name : 'this card')}${ips.length ? ' (it has ' + ips.map(escHtml).join(', ') + ')' : ''}.</span>` +
+    (ips.length ? `<span class="cmd-btn" data-g="refill">REFILL FROM CARD</span>` : `<span class="cmd-btn" data-g="set">SET LAPTOP IP…</span>`) +
+    `<span class="cmd-btn" data-g="alias">+ ADD ${escHtml(ip)} AS ALIAS</span>`;
+  g.style.display = '';
+  const q = sel => g.querySelector(sel);
+  if (q('[data-g="refill"]')) q('[data-g="refill"]').onclick = () => dhcpAdapterChanged(false);
+  if (q('[data-g="set"]')) q('[data-g="set"]').onclick = () => dhcpSetLaptopIp();
+  q('[data-g="alias"]').onclick = () => dhcpAddAlias(ip);
+}
+// Returns true when the settings are usable on this card.
+function dhcpGuardCheck(why) {
+  const a = dhcpCurCard(); if (!a) return true;
+  const ip = dEl('dcfg-adapterIp')?.value || '';
+  const ips = dhcpCardIps(a);
+  if (!ip || ips.includes(ip)) { dhcpGuardHide(); return true; }
+  if (why === 'hydrate' && ips.length && !dhcpIsServing()) {
+    const old = ip.split('.').slice(0, 3).join('.') + '.x';
+    dhcpAdapterChanged(false).then(() => setDhcpStatus(`LAST JOB'S SETTINGS (${old}) DIDN'T MATCH ${a.name.toUpperCase()} — REFILLED FROM THE CARD`, 'warn', 7000));
+    return false;
   }
-  const cfg = await hud.dhcp.getAdapterConfig(name, fromIp);
-  if (!cfg) { setDhcpStatus('ADAPTER HAS NO USABLE ADDRESS — QUICK START CAN SET ONE', 'warn', 5000); return; }
-  dhcpFill({ ...cfg, adapterIp: cfg.serverIp });
-  setDhcpStatus('SETTINGS FILLED IN FROM ' + name.toUpperCase() + (fromIp && fromIp !== choices[0].ip ? ' (ALIAS ' + fromIp + ')' : ''), 'ok', 3000);
+  dhcpGuardShow(ip, a, why);
+  return false;
+}
+
+// ── wire watch (v7.2.0) — devices announcing on this cable ──
+async function dhcpWireWatch(force) {
+  if (!window.hud || !hud.wireWatchStart || D.mode === 'off' || !D.started) return;
+  const a = dhcpCurCard(); if (!a) { dhcpWireWatchStop(); return; }
+  const key = a.name + '|' + (a.ips || []).map(x => x.ip).join(',');
+  if (!force && D.wireCard === key) return;
+  if (D.wireCard && D.wireCard !== key) { try { await hud.wireWatchStop(); } catch {} }
+  D.wireCard = key; D.wire = [];
+  try { const r = await hud.wireWatchStart(a.name); if (r && r.list) D.wire = r.list; } catch {}
+  dhcpRenderDevices();
+}
+function dhcpWireWatchStop() {
+  if (!D.wireCard) return;
+  D.wireCard = null; D.wire = [];
+  try { hud.wireWatchStop(); } catch {}
 }
 
 // ── profiles ──────────────────────────────────────────────
@@ -9538,10 +9875,17 @@ async function dhcpProfileChanged() {
   dEl('dhcp-profile-del')?.classList.toggle('disabled', !sel.value);
   if (!sel.value) return;
   const cfg = await hud.dhcp.profilesLoad(sel.value);
-  if (cfg) { dhcpFill(cfg); if (cfg.adapterName && dEl('dhcp-adapter')) dEl('dhcp-adapter').value = cfg.adapterName; setDhcpStatus('PROFILE LOADED: ' + sel.value.toUpperCase(), 'ok', 3000); }
+  if (cfg) {
+    dhcpFill(cfg);
+    if (cfg.adapterName && dEl('dhcp-adapter') && [...dEl('dhcp-adapter').options].some(o => o.value === cfg.adapterName)) dEl('dhcp-adapter').value = cfg.adapterName;
+    dhcpUpdateLink(); dhcpRenderCard();
+    // v7.2.0: a profile is someone's settings from some job — check it against this card
+    if (dhcpGuardCheck('profile')) setDhcpStatus('PROFILE LOADED: ' + sel.value.toUpperCase(), 'ok', 3000);
+    else setDhcpStatus('PROFILE LOADED — ITS LAPTOP IP IS NOT ON THIS CARD (SEE ABOVE)', 'warn', 6000);
+  }
 }
 async function dhcpProfileSave() {
-  const name = await hudModal({ title: 'SAVE PROFILE', bodyHtml: 'Name these settings so you can pull them back on any job.', input: dEl('dhcp-profile').value || '', placeholder: 'e.g. CAMERA BENCH 192.168.100.x',
+  const name = await hudModal({ title: 'SAVE PROFILE', bodyHtml: 'Name these settings so you can pull them back on any job.', input: dEl('dhcp-profile').value || '', placeholder: 'e.g. CAMERA BENCH 192.168.0.x',
     buttons: [{ label: 'CANCEL', style: 'cancel', value: null }, { label: 'SAVE', style: 'ok', value: '__INPUT__' }] });
   if (!name) return;
   const r = await hud.dhcp.profilesSave(name, dhcpGather());
@@ -9561,8 +9905,13 @@ async function dhcpProfileDelete() {
 async function dhcpValidateForm() {
   dhcpClearErrors();
   const opts = dhcpGather();
+  if (!opts.adapterName) { setDhcpStatus('PICK THE NETWORK CARD FIRST (STEP 1)', 'warn', 4000); return null; }
+  if (!opts.adapterIp) { setDhcpStatus('THE LAPTOP HAS NO ADDRESS ON THIS CARD — SET ONE IN STEP 2', 'warn', 5000); dhcpGuardCheck('card'); return null; }
   const v = await hud.dhcp.validateConfig(opts);
-  if (!v.ok) { dhcpMarkError(v.msg); setDhcpStatus('CONFIG: ' + v.msg.toUpperCase(), 'err', 6000); return null; }
+  if (!v.ok) {
+    if (v.code === 'NOT_ON_CARD') { dhcpGuardShow(opts.adapterIp, dhcpCurCard(), 'serve'); setDhcpStatus('NOT SERVED — LAPTOP IP IS NOT ON THIS CARD (SEE STEP 2)', 'err', 7000); return null; }
+    dhcpMarkError(v.msg); setDhcpStatus('CHECK SETTINGS: ' + v.msg.toUpperCase(), 'err', 6000); return null;
+  }
   return opts;
 }
 // Buttons bring the engine up themselves — nobody should have to find an ON switch first.
@@ -9574,6 +9923,7 @@ async function dhcpEnsureEngine() {
   if (r && r.state) dhcpHydrate(r.state);
   if (!r || !r.ok) { setDhcpStatus('COULD NOT START: ' + ((r && r.err) || 'unknown').toUpperCase(), 'err'); return false; }
   D.started = true;
+  dhcpWireWatch(true);
   return true;
 }
 async function dhcpRogueGate() {
@@ -9583,7 +9933,7 @@ async function dhcpRogueGate() {
   if (!probe.servers.length) { setDhcpStatus(probe.reused ? 'RECENT SCAN WAS CLEAR — NO OTHER DHCP SERVER' : 'NO OTHER DHCP SERVER ANSWERED', 'ok', 3000); return true; }
   D.foreign = probe.servers.slice();
   let heard = probe.recentlyHeard && probe.recentlyHeard.length ? `<br><br><span style="font-size:11px;color:var(--label-dim)">${probe.recentlyHeard.map(escHtml).join(', ')} didn't answer this probe but was heard on the wire in the last two minutes — routers often ignore a second DISCOVER a few seconds after the first.</span>` : '';
-  if (probe.offSubnet && probe.offSubnet.length) heard += `<br><br><span style="font-size:11px;color:var(--amber)">${probe.offSubnet.map(escHtml).join(', ')} is not on the subnet you'd serve — this laptop reaches it through another adapter (Wi-Fi?). Serving everyone would answer that side too. Disable that adapter, or serve devices one at a time.</span>`;
+  if (probe.offSubnet && probe.offSubnet.length) heard += `<br><br><span style="font-size:11px;color:var(--amber)">${probe.offSubnet.map(escHtml).join(', ')} is not on the subnet you'd serve — this laptop reaches it through another card (Wi-Fi?). Serving everyone would answer that side too. Disable that card, or serve devices one at a time.</span>`;
   const go = await hudModal({
     title: '⚠ ANOTHER DHCP SERVER IS LIVE', tone: 'warn',
     bodyHtml: `Something already answered at <span class="hl">${probe.servers.map(escHtml).join(', ')}</span>.${heard}<br><br>Serving <b>everyone</b> on a network that already has DHCP can knock devices offline. If you only need one device, use the <span class="hl">SERVE</span> button on its row instead.`,
@@ -9591,57 +9941,45 @@ async function dhcpRogueGate() {
   });
   return !!go;
 }
+// v7.2.0: SERVE EVERYONE is the small, confirm-first button — bench or dead network only
 async function dhcpServeClick() {
   if (D.policyDisabled) return;
   if (!await dhcpEnsureEngine()) return;
-  if (dhcpIsServing()) { await hud.dhcp.stopServing(); setDhcpStatus('SERVING STOPPED — STILL LISTENING', 'warn', 4000); return; }
-  if (!dEl('dhcp-adapter').value) { setDhcpStatus('SELECT AN ADAPTER FIRST', 'warn', 3000); return; }
+  if (D.mode === 'serve-all') { await hud.dhcp.stopServing(); setDhcpStatus('STOPPED SERVING EVERYONE — STILL LISTENING', 'warn', 4000); return; }
   const opts = await dhcpValidateForm(); if (!opts) return;
-  if (!await dhcpRogueGate()) { setDhcpStatus('SERVE ALL CANCELLED', 'warn', 3000); return; }
+  const sure = await hudModal({
+    title: 'SERVE EVERYONE?',
+    bodyHtml: `Hand out an address to <b>every</b> device on <span class="hl">${escHtml(opts.adapterName)}</span> that asks — from <span class="hl">${escHtml(opts.adapterIp)}</span>, pool <span class="hl">${escHtml(opts.rangeStart)} – ${escHtml(opts.rangeEnd)}</span>.<br><br>For a bench switch or a site with no DHCP. On a live network, serve one device from its row instead.`,
+    buttons: [{ label: 'CANCEL', style: 'cancel', value: false }, { label: 'SERVE EVERYONE', style: 'ok', value: true }],
+  });
+  if (!sure) return;
+  if (!await dhcpRogueGate()) { setDhcpStatus('SERVE EVERYONE CANCELLED', 'warn', 3000); return; }
   const r = await hud.dhcp.serveAll(opts);
-  if (r.ok) { setDhcpStatus('✓ SERVING ALL — POOL ' + opts.rangeStart + ' – ' + opts.rangeEnd, 'ok'); if (r.warning) { dhcpLog(r.warning, 'warn'); } }
+  if (r.ok) { setDhcpStatus('✓ SERVING EVERYONE — POOL ' + opts.rangeStart + ' – ' + opts.rangeEnd, 'ok'); if (r.warning) { dhcpLog(r.warning, 'warn'); } }
+  else if (r.code === 'NOT_ON_CARD') { dhcpGuardShow(opts.adapterIp, dhcpCurCard(), 'serve'); setDhcpStatus('NOT SERVED — LAPTOP IP IS NOT ON THIS CARD', 'err', 6000); }
   else { dhcpMarkError(r.msg || ''); setDhcpStatus('FAILED: ' + (r.msg || 'unknown').toUpperCase(), 'err'); }
 }
-async function dhcpServeDevice(mac) {
+async function dhcpStopServing() {
+  await hud.dhcp.stopServing();
+  D.askIp.clear();
+  setDhcpStatus('SERVING STOPPED — STILL LISTENING', 'warn', 4000);
+}
+// Serve one device — with the address typed on its row (the one it will end up on)
+async function dhcpServeDevice(mac, ip) {
+  if (!await dhcpEnsureEngine()) return;
   const opts = await dhcpValidateForm(); if (!opts) return;
-  const r = await hud.dhcp.serveDevice(mac, opts);
-  if (!r.ok) { setDhcpStatus(r.msg.toUpperCase(), 'err', 5000); return; }
-  setDhcpStatus('◎ TARGETING ' + mac.toUpperCase() + (D.foreign.length ? ' — NOTE: OTHER DHCP AT ' + D.foreign.join(', ') : ''), D.foreign.length ? 'warn' : 'ok', 6000);
+  const want = (ip !== undefined ? ip : (D.askIp.get(mac) || '')).trim();
+  if (want && !/^\d{1,3}(\.\d{1,3}){3}$/.test(want)) { setDhcpStatus(`${want} IS NOT AN IP ADDRESS`, 'err', 4000); return; }
+  const r = await hud.dhcp.serveDevice(mac, opts, want || null);
+  if (!r.ok) {
+    if (r.code === 'NOT_ON_CARD') { dhcpGuardShow(opts.adapterIp, dhcpCurCard(), 'serve'); setDhcpStatus('NOT SERVED — LAPTOP IP IS NOT ON THIS CARD', 'err', 6000); return; }
+    setDhcpStatus(String(r.msg || 'failed').toUpperCase(), 'err', 5000); return;
+  }
+  if (want) D.lastServed = want;
+  D.askIp.delete(mac);
+  setDhcpStatus('◎ SERVING ' + mac.toUpperCase() + (want ? ' → ' + want : '') + (D.foreign.length ? ' — NOTE: OTHER DHCP AT ' + D.foreign.join(', ') : ''), D.foreign.length ? 'warn' : 'ok', 6000);
 }
 async function dhcpUnserveDevice(mac) { await hud.dhcp.unserveDevice(mac); }
-
-async function dhcpQuickStart() {
-  if (D.policyDisabled) return;
-  const btn = dEl('dhcp-quick-btn'); btn.classList.add('disabled');
-  try {
-    if (!await dhcpEnsureEngine()) return;
-    setDhcpStatus('QUICK START — PICKING THE BEST ADAPTER...', '');
-    let qs = await hud.dhcp.quickStart();
-    if (!qs.ok && qs.reason === 'needs-static') {
-      const fix = await hudModal({
-        title: 'NO USABLE ADDRESS', tone: 'warn',
-        bodyHtml: `<span class="hl">${escHtml(qs.adapter)}</span> is plugged in but has no usable IP — nothing on this network is handing out addresses (that's probably why you're here).<br><br>Give this PC a static address (<span class="hl">192.168.100.1</span> or similar) so it can serve? It goes through ETHER's apply path and reverts automatically when you quit.`,
-        buttons: [{ label: 'CANCEL', style: 'cancel', value: false }, { label: 'SET STATIC IP', style: 'ok', value: true }],
-      });
-      if (!fix) { setDhcpStatus('QUICK START CANCELLED', 'warn', 3000); return; }
-      setDhcpStatus('SETTING STATIC IP ON ' + qs.adapter.toUpperCase() + '...', '');
-      const sa = await hud.dhcp.staticAssistApply(qs.adapter);
-      if (!sa.ok) { setDhcpStatus('STATIC IP FAILED: ' + (sa.msg || '').toUpperCase(), 'err'); return; }
-      dhcpLog('Adapter set to ' + sa.ip + ' — reverts on quit', 'ok');
-      loadAdapters(true);
-      await dhcpRefreshAdapters();
-      qs = await hud.dhcp.quickStart();
-    }
-    if (!qs.ok) { setDhcpStatus((qs.msg || 'NO USABLE ADAPTER').toUpperCase(), 'err'); return; }
-    dEl('dhcp-adapter').value = qs.cfg.adapterName;
-    dhcpFill({ ...qs.cfg, adapterIp: qs.cfg.serverIp });
-    const opts = await dhcpValidateForm(); if (!opts) return;
-    if (!await dhcpRogueGate()) { setDhcpStatus('QUICK START CANCELLED AT SERVE STEP', 'warn', 3000); return; }
-    const r = await hud.dhcp.serveAll(opts);
-    if (r.ok) { setDhcpStatus('⚡ QUICK START — SERVING ON ' + qs.cfg.adapterName.toUpperCase(), 'ok'); if (r.warning) dhcpLog(r.warning, 'warn'); }
-    else setDhcpStatus('FAILED: ' + (r.msg || 'unknown').toUpperCase(), 'err');
-  } finally { btn.classList.remove('disabled'); }
-}
 
 async function dhcpSelfTest() {
   const checks = await hud.dhcp.selfTest(dEl('dhcp-adapter').value || null);
@@ -9686,7 +10024,7 @@ async function dhcpEngineToggle() {
     setDhcpStatus('STARTING ENGINE — LISTENING ON UDP 67...', '');
     const r = await hud.dhcp.engineStart();
     if (r && r.state) dhcpHydrate(r.state);
-    if (r && r.ok) { D.started = true; setDhcpStatus('LISTENING', 'ok', 4000); } else setDhcpStatus('COULD NOT START: ' + ((r && r.err) || 'unknown').toUpperCase(), 'err');
+    if (r && r.ok) { D.started = true; dhcpWireWatch(true); setDhcpStatus('LISTENING', 'ok', 4000); } else setDhcpStatus('COULD NOT START: ' + ((r && r.err) || 'unknown').toUpperCase(), 'err');
     return;
   }
   if (dhcpIsServing()) {
@@ -9726,73 +10064,143 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
   });
 });
-const DHCP_STATE_ORDER = { asking: 0, offered: 1, declined: 2, leased: 3, quiet: 4 };
-const DHCP_PILL = { asking: 'ASKING', offered: 'OFFERED', leased: 'LEASED', declined: 'CONFLICT', quiet: 'WENT QUIET' };
+const DHCP_STATE_ORDER = { asking: 0, offered: 1, declined: 2, leased: 3, releasing: 3, static: 4, sitting: 5, quiet: 6 };
+const DHCP_PILL = { asking: 'ASKING', offered: 'OFFERED', leased: 'SERVED', declined: 'CONFLICT', quiet: 'WENT QUIET', static: '✓ STATIC', releasing: 'CHECKING…', sitting: '◇ SITTING' };
 const dhcpIpNum = ip => ip ? ip.split('.').reduce((a, o) => (a << 8) + (+o), 0) >>> 0 : 0;
 function dhcpFmtExpiry(exp) { if (!exp) return '—'; const s = Math.max(0, Math.round((exp - Date.now()) / 1000)); if (s <= 0) return 'EXP'; const m = Math.floor(s / 60); return m > 0 ? `${m}m ${s % 60}s` : `${s}s`; }
 function dhcpAgo(ts) { if (!ts) return '—'; const s = Math.max(0, Math.round((Date.now() - ts) / 1000)); if (s < 60) return s + 's'; const m = Math.floor(s / 60); return m < 60 ? m + 'm' : Math.floor(m / 60) + 'h ' + (m % 60) + 'm'; }
 
+// v7.2.0: which subnets the laptop has on the selected card (for SITTING rows: OPEN vs REACH)
+function dhcpOnCardSubnet(ip) {
+  const a = dhcpCurCard(); if (!a || !ip) return false;
+  const n = dhcpIpNum(ip);
+  return (a.ips || []).some(x => { const m = dhcpIpNum(x.netmask || '255.255.255.0'); return (dhcpIpNum(x.ip) & m) >>> 0 === (n & m) >>> 0; });
+}
+// v7.2.0: the address an asking row starts with. Typed value wins; after a row is served
+// with a typed address, the next row continues from it (.101 → .102) — a run of cameras
+// off one PoE injector is SERVE, OPEN, next row. Otherwise the engine's own next-free.
+function dhcpRowStartIp(d, taken) {
+  if (D.askIp.has(d.mac)) return D.askIp.get(d.mac);
+  if (d.chosen) return d.chosen;
+  const s = (dEl('dcfg-rangeStart')?.value || '').trim(), e = (dEl('dcfg-rangeEnd')?.value || '').trim();
+  if (D.lastServed && /^\d{1,3}(\.\d{1,3}){3}$/.test(s) && /^\d{1,3}(\.\d{1,3}){3}$/.test(e)) {
+    const me = dEl('dcfg-adapterIp')?.value || '', gw = (dEl('dcfg-gateway')?.value || '').trim();
+    for (let n = dhcpIpNum(D.lastServed) + 1; n <= dhcpIpNum(e) && n - dhcpIpNum(D.lastServed) < 254; n++) {
+      const ip = dhcpNumIp(n);
+      if (n < dhcpIpNum(s) || taken.has(ip) || ip === me || ip === gw) continue;
+      taken.add(ip); return ip;
+    }
+  }
+  if (d.wouldOffer) { taken.add(d.wouldOffer); return d.wouldOffer; }
+  return '';
+}
+function dhcpSittingRows() {
+  const macs = new Set(D.devices.map(d => d.mac)), ips = new Set(D.devices.map(d => d.ip).filter(Boolean));
+  const mine = new Set(dhcpCardIps(dhcpCurCard()));
+  return (D.wire || []).filter(w => {
+    if (!w.ip || mine.has(w.ip) || ips.has(w.ip) || (w.mac && macs.has(w.mac))) return false;
+    const identified = (w.sources || []).some(x => x === 'mdns' || x === 'lldp' || x === 'ssdp');
+    // ARP-only hosts on the laptop's own subnet are just the network — SCAN covers those.
+    // Off-subnet or link-local is the IP-Utility case: heard, but you can't reach it yet.
+    return identified || !dhcpOnCardSubnet(w.ip);
+  }).slice(0, 30).map(w => ({
+    mac: w.mac || '', state: 'sitting', ip: w.ip, vendor: w.vendor || '', model: w.model || '', hostname: w.hostname || w.name || '',
+    lastSeen: w.lastSeen, sources: w.sources || [], name: w.name || '', sitting: true,
+  }));
+}
+
 function dhcpRenderDevices() {
   const list = dEl('dhcp-dev-list'), cnt = dEl('dhcp-dev-count'); if (!list) return;
+  const sitting = D.mode === 'off' ? [] : dhcpSittingRows();
+  const all = D.devices.concat(sitting);
   const leased = D.devices.filter(d => d.state === 'leased').length;
-  cnt.textContent = D.devices.length + (leased ? ' · ' + leased + ' LEASED' : '');
+  cnt.textContent = all.length + (leased ? ' · ' + leased + ' SERVED' : '');
   dEl('dhcp-release-btn')?.classList.toggle('disabled', !D.devices.some(d => d.state === 'leased' || d.state === 'offered'));
   dEl('dhcp-csv-btn')?.classList.toggle('disabled', leased === 0);
-  if (!D.devices.length) {
-    list.innerHTML = `<div class="dhcp-empty">${D.mode === 'off' ? 'ENGINE OFFLINE' : 'LISTENING — DEVICES THAT ASK FOR AN ADDRESS APPEAR HERE'}</div>`;
+  // keep focus + caret in an asking-row IP box across re-renders (devices re-emit every few seconds)
+  const ae = document.activeElement;
+  const focusMac = ae && ae.dataset && ae.dataset.ask ? ae.dataset.ask : null;
+  const selS = focusMac ? ae.selectionStart : null, selE = focusMac ? ae.selectionEnd : null;
+  if (!all.length) {
+    list.innerHTML = `<div class="dhcp-empty">${D.mode === 'off' ? 'ENGINE OFF — OPEN THIS TAB OR CLICK OFF TO START LISTENING' : 'LISTENING — DEVICES THAT ASK FOR AN ADDRESS, OR ANNOUNCE THEMSELVES, APPEAR HERE'}</div>`;
     dhcpUpdateSelectedBtn();
     return;
   }
-  const sorted = D.devices.slice().sort((a, b) => {
+  const sorted = all.slice().sort((a, b) => {
     const so = DHCP_STATE_ORDER[a.state] - DHCP_STATE_ORDER[b.state];
     if (so !== 0) return so;
-    if (a.state === 'leased') return dhcpIpNum(a.ip) - dhcpIpNum(b.ip);
-    return b.lastSeen - a.lastSeen;
+    if (a.state === 'leased' || a.state === 'static') return dhcpIpNum(a.ip) - dhcpIpNum(b.ip);
+    if (a.state === 'asking') return (a.firstSeen || 0) - (b.firstSeen || 0);    // first plugged in, first in the list
+    return (b.lastSeen || 0) - (a.lastSeen || 0);
   });
+  const taken = new Set(D.devices.filter(d => d.ip).map(d => d.ip).concat(D.devices.map(d => d.chosen).filter(Boolean), [...D.askIp.values()]));
   list.innerHTML = '';
-  for (const d of sorted) list.appendChild(dhcpBuildCard(d));
+  for (const d of sorted) list.appendChild(dhcpBuildCard(d, taken));
+  if (focusMac) {
+    const el = list.querySelector(`[data-ask="${CSS.escape(focusMac)}"]`);
+    if (el) { el.focus(); try { el.setSelectionRange(selS, selE); } catch {} }
+  }
   dhcpUpdateSelectedBtn();
 }
-function dhcpBuildCard(d) {
+function dhcpBuildCard(d, taken) {
   const row = document.createElement('div');
   row.className = 'dhcp-row ' + d.state;
-  const mac = escHtml(d.mac), editing = D.resvEdits.has(d.mac);
+  const mac = escHtml(d.mac), editing = !d.sitting && D.resvEdits.has(d.mac);
   let pill = DHCP_PILL[d.state] || d.state.toUpperCase();
-  if (d.targeted && D.mode === 'serve-targeted') pill = '◎ ' + pill;
+  if (d.targeted && D.mode === 'serve-targeted' && d.state === 'asking') pill = '◎ WAITING';
   const star = d.reserved ? `<span class="star" title="Reserved: always gets ${escHtml(d.reserved)}">★</span>` : '';
+  const canServeRow = D.mode !== 'serve-all' && D.mode !== 'off' && !D.policyDisabled;
   let ipHtml;
   if (editing) ipHtml = `<input class="dhcp-resv-input" data-resv="${mac}" value="${escHtml(D.resvEdits.get(d.mac))}" spellcheck="false">`;
-  else if (d.state === 'leased' || d.state === 'offered') ipHtml = `${star}<span>${escHtml(d.ip)}</span>`;
-  else if (d.state === 'asking' && d.wouldOffer) ipHtml = `${star}<span class="would" title="Would be offered this address">→ ${escHtml(d.wouldOffer)}</span>`;
+  else if (d.sitting) ipHtml = `<span>${escHtml(d.ip)}</span>`;
+  else if (['leased', 'offered', 'static', 'releasing'].includes(d.state)) ipHtml = `${star}<span>${escHtml(d.ip)}</span>`;
+  else if (d.state === 'asking' && canServeRow && !d.targeted && !d.reserved) {
+    const v = dhcpRowStartIp(d, taken);
+    ipHtml = `<input class="dhcp-ask-ip" data-ask="${mac}" value="${escHtml(v)}" spellcheck="false" title="The address this device gets — make it the one it will end up on, so setting it static later changes nothing">`;
+  }
+  else if (d.state === 'asking' && (d.chosen || d.wouldOffer || d.reserved)) ipHtml = `${star}<span class="would" title="Will be offered this address">→ ${escHtml(d.chosen || d.reserved || d.wouldOffer)}</span>`;
   else ipHtml = `${star}<span style="opacity:.35">—</span>`;
 
   let actions = '';
   if (editing) {
     actions += `<span class="cmd-btn serve on" data-resv-save="${mac}">SAVE</span><span class="cmd-btn" data-resv-cancel="${mac}">ESC</span>`;
+  } else if (d.sitting) {
+    actions += dhcpOnCardSubnet(d.ip)
+      ? `<span class="cmd-btn bright" data-open="${escHtml(d.ip)}" title="Open ${escHtml(d.ip)} in the browser">↗ OPEN</span>`
+      : `<span class="cmd-btn reach" data-reach="${escHtml(d.ip)}" title="Give the laptop a temporary address next to ${escHtml(d.ip)}, then open it">⇢ REACH</span>`;
   } else {
-    if (D.mode !== 'serve-all' && D.mode !== 'off') {
-      actions += d.targeted ? `<span class="cmd-btn serve on" data-unserve="${mac}" title="Stop answering this device">◎ SERVING</span>`
-                            : `<span class="cmd-btn serve" data-serve="${mac}" title="Answer ONLY this device — safest option on a live network">SERVE</span>`;
+    if (d.state === 'asking' && canServeRow) {
+      actions += d.targeted ? `<span class="cmd-btn serve on" data-unserve="${mac}" title="Stop answering this device">◎ SERVING ✕</span>`
+                            : `<span class="cmd-btn bright" data-serve="${mac}" title="Answer ONLY this device — safest option on a live network">▶ SERVE</span>`;
     }
-    if (d.state === 'leased') actions += `<span class="cmd-btn" data-open="${escHtml(d.ip)}" title="Open device in browser">OPEN</span>`;
-    actions += `<span class="cmd-btn pin${d.reserved ? ' on' : ''}" data-pin="${mac}" title="${d.reserved ? 'Reserved at ' + escHtml(d.reserved) + ' — click to clear' : 'Pin this device to a fixed address'}">${d.reserved ? '★' : '☆'}</span>`;
+    if (d.state === 'leased') actions += `<span class="cmd-btn bright" data-open="${escHtml(d.ip)}" title="Open ${escHtml(d.ip)} in the browser">↗ OPEN</span>`;
+    if (d.state === 'static') actions += `<span class="cmd-btn" data-open="${escHtml(d.ip)}" title="Open ${escHtml(d.ip)} in the browser">↗ OPEN</span>`;
+    if (d.state !== 'static' && d.state !== 'releasing') actions += `<span class="cmd-btn pin${d.reserved ? ' on' : ''}" data-pin="${mac}" title="${d.reserved ? 'Reserved at ' + escHtml(d.reserved) + ' — click to clear' : 'Pin this device to a fixed address'}">${d.reserved ? '★' : '☆'}</span>`;
     if (d.state === 'leased' || d.state === 'offered') actions += `<span class="cmd-btn x" data-revoke="${mac}" title="Take the address back">✕</span>`;
+    if (d.state === 'static') actions += `<span class="cmd-btn x" data-revoke="${mac}" title="Forget this row">✕</span>`;
   }
   let act = '';
-  if (d.state === 'asking')        act = `${d.attempts}× · <span data-ago="${d.lastSeen}">${dhcpAgo(d.lastSeen)}</span> ago`;
+  if (d.sitting)                   act = `${escHtml((d.sources || []).join('+') || 'heard')} · <span data-ago="${d.lastSeen}">${dhcpAgo(d.lastSeen)}</span>`;
+  else if (d.state === 'asking')   act = `${d.attempts}× · <span data-ago="${d.lastSeen}">${dhcpAgo(d.lastSeen)}</span> ago`;
   else if (d.state === 'offered')  act = 'offer sent…';
   else if (d.state === 'leased')   act = `exp <span data-expires="${d.expires || 0}">${dhcpFmtExpiry(d.expires)}</span>`;
+  else if (d.state === 'static')   act = 'set static · done';
+  else if (d.state === 'releasing') act = 'released — still there?';
   else if (d.state === 'declined') act = '<span class="warn">conflict</span>';
   else if (d.state === 'quiet')    act = `quiet <span data-ago="${d.lastSeen}">${dhcpAgo(d.lastSeen)}</span>`;
   if (d.foreignServer) act += ` <span class="warn" title="Asked ${escHtml(d.foreignServer)}">⚠</span>`;
 
-  const canPick = D.mode !== 'serve-all' && !d.targeted && d.state !== 'leased' && d.state !== 'offered';
+  const canPick = !d.sitting && D.mode !== 'serve-all' && !d.targeted && d.state === 'asking';
   const check = canPick ? `<input type="checkbox" class="dhcp-check" data-check="${mac}"${D.selected.has(d.mac) ? ' checked' : ''} title="Tick to serve this device with the others you pick">` : `<span style="display:inline-block;width:16px"></span>`;
+  // DEVICE: what the device says it is (DHCP option 60 / mDNS / LLDP), else the OUI vendor
+  const model = d.model || '';
+  const devTxt = model || d.vendor || '—';
+  const devTitle = [model, d.fw ? 'firmware ' + d.fw : '', d.vendor && d.vendor !== model ? 'MAC vendor ' + d.vendor : '', d.vendorClass && d.vendorClass !== model ? 'DHCP class ' + d.vendorClass : ''].filter(Boolean).join(' · ');
   row.innerHTML =
     `<span class="st">${check}<span class="dhcp-pill ${d.state}">${pill}</span></span>` +
     `<span class="ip">${ipHtml}</span>` +
-    `<span class="mac" title="${mac}">${mac}</span>` +
-    `<span class="vendor" title="${escHtml(d.vendor || '')}">${escHtml(d.vendor || '—')}</span>` +
+    `<span class="mac" title="${mac}">${mac || '—'}</span>` +
+    `<span class="vendor" title="${escHtml(devTitle)}">${escHtml(devTxt)}${d.fw ? `<span class="fw">${escHtml(d.fw.split('.').slice(0, 3).join('.'))}</span>` : ''}</span>` +
     `<span class="host" title="${escHtml(d.hostname || '')}">${escHtml(d.hostname || '—')}</span>` +
     `<span class="act">${act}</span>` +
     `<span class="actions">${actions}</span>`;
@@ -9802,14 +10210,20 @@ function dhcpBuildCard(d) {
 function dhcpWireCard(card, d) {
   const q = sel => card.querySelector(sel);
   const cb = q('[data-check]'); if (cb) cb.onchange = () => { if (cb.checked) D.selected.add(d.mac); else D.selected.delete(d.mac); dhcpUpdateSelectedBtn(); };
-  const open = q('[data-open]');   if (open) open.onclick = () => hud.openExternal('http://' + open.dataset.open);
-  const serve = q('[data-serve]'); if (serve) serve.onclick = () => dhcpServeDevice(serve.dataset.serve);
+  const open = q('[data-open]');   if (open) open.onclick = () => { hud.openExternal('http://' + open.dataset.open); setDhcpStatus('↗ OPENING ' + open.dataset.open + ' — THE DEVICE REDIRECTS TO HTTPS ITSELF IF IT WANTS', 'ok', 4000); };
+  const serve = q('[data-serve]'); if (serve) serve.onclick = () => { const inp = q('[data-ask]'); dhcpServeDevice(serve.dataset.serve, inp ? inp.value : undefined); };
+  const ask = q('[data-ask]');
+  if (ask) {
+    ask.oninput = () => D.askIp.set(d.mac, ask.value.trim());
+    ask.onkeydown = e => { if (e.key === 'Enter') dhcpServeDevice(d.mac, ask.value); if (e.key === 'Escape') { D.askIp.delete(d.mac); dhcpRenderDevices(); } };
+  }
+  const reach = q('[data-reach]'); if (reach) reach.onclick = () => dhcpReachSitting(reach.dataset.reach);
   const un = q('[data-unserve]');  if (un) un.onclick = () => dhcpUnserveDevice(un.dataset.unserve);
-  const rv = q('[data-revoke]');   if (rv) rv.onclick = async () => { const r = await hud.dhcp.revoke(rv.dataset.revoke); if (r.ok) setDhcpStatus('REVOKED ' + r.ip, 'warn', 3000); };
+  const rv = q('[data-revoke]');   if (rv) rv.onclick = async () => { const r = await hud.dhcp.revoke(rv.dataset.revoke); if (r.ok) setDhcpStatus((d.state === 'static' ? 'FORGOT ' : 'REVOKED ') + r.ip, 'warn', 3000); };
   const pin = q('[data-pin]');
   if (pin) pin.onclick = async () => {
     if (d.reserved) { await hud.dhcp.clearReservation(d.mac); setDhcpStatus('RESERVATION CLEARED — ' + d.mac.toUpperCase(), 'ok', 3000); }
-    else { D.resvEdits.set(d.mac, d.ip || d.wouldOffer || ''); dhcpRenderDevices(); }
+    else { D.resvEdits.set(d.mac, d.ip || D.askIp.get(d.mac) || d.wouldOffer || ''); dhcpRenderDevices(); }
   };
   const inp = q('[data-resv]');
   if (inp) {
@@ -9819,6 +10233,20 @@ function dhcpWireCard(card, d) {
   }
   const sv = q('[data-resv-save]');   if (sv) sv.onclick = () => dhcpSaveReservation(d.mac);
   const cn = q('[data-resv-cancel]'); if (cn) cn.onclick = () => { D.resvEdits.delete(d.mac); dhcpRenderDevices(); };
+}
+// v7.2.0: REACH from a SITTING row — a temporary address next to the device, then open it.
+// The device keeps whatever address it has; the laptop comes to it (what IP Utility can't do
+// without you retyping your own IP).
+async function dhcpReachSitting(ip) {
+  const name = dEl('dhcp-adapter')?.value; if (!name) return;
+  setDhcpStatus(`⇢ REACHING ${ip} — ADDING A TEMPORARY ADDRESS NEXT TO IT…`, '');
+  const r = await hud.reachAdd({ adapter: name, target: ip });
+  if (!r || !r.ok) { setDhcpStatus('REACH FAILED: ' + String((r && (r.err || r.msg)) || 'unknown').toUpperCase(), 'err', 6000); return; }
+  await dhcpRefreshTempIps();
+  loadAdapters(true);
+  dhcpRefreshAdapters();
+  setDhcpStatus(`✓ LAPTOP IS ALSO ${r.alias} (TEMPORARY) — OPENING ${ip}`, 'ok', 6000);
+  setTimeout(() => hud.openExternal('http://' + ip), r.reused ? 200 : 1500);
 }
 // v7.1.0: batch reservations — ticked devices get consecutive addresses from a start IP,
 // in the order they're listed (asking devices by last-seen). Server, gateway and
@@ -9830,13 +10258,13 @@ async function dhcpReserveSelected() {
   const start = await hudModal({
     title: `RESERVE ${macs.length} DEVICE${macs.length !== 1 ? 'S' : ''}`,
     bodyHtml: `First address goes to the first ticked device, then +1 for each. The server IP, gateway and existing reservations are skipped.`,
-    input: v('rangeStart') || '', placeholder: '192.168.1.100',
+    input: v('rangeStart') || '', placeholder: '192.168.0.100',
     buttons: [{ label: 'RESERVE', style: 'ok', value: '__INPUT__' }, { label: 'CANCEL', style: 'cancel', value: null }],
   });
   if (!start) return;
   if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(start)) { setDhcpStatus('START ADDRESS IS NOT AN IP', 'err', 4000); return; }
   const taken = new Set([v('adapterIp'), v('gateway'), ...D.devices.map(d => d.reserved).filter(Boolean)]);
-  const order = D.devices.filter(d => macs.includes(d.mac)).sort((a, b) => b.lastSeen - a.lastSeen);   // same order as the list
+  const order = D.devices.filter(d => macs.includes(d.mac)).sort((a, b) => (a.firstSeen || 0) - (b.firstSeen || 0));   // same order as the list (v7.2.0: first plugged in first)
   let next = dhcpIpNum(start), done = 0, fail = null;
   for (const d of order) {
     let ip;

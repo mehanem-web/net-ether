@@ -1,4 +1,4 @@
-# NET//ETHER — v7.1.0
+# NET//ETHER — v7.2.0
 **Broman Enterprises**
 
 A cyberpunk-styled always-on-top desktop HUD for Windows network configuration management — static IP, DHCP server, ping, subnet scan and a per-site device knowledge base in one window. Built for field technicians switching between network setups on job sites.
@@ -27,6 +27,8 @@ Or manually:
 npm install
 npx electron . --dev
 ```
+
+**Slow-laptop simulation:** `dev-slow.bat` (or `set NET_ETHER_SPAWN_DELAY_MS=2000` before `npx electron . --dev`, or the launch argument `--spawn-delay=2000`) holds every process launch for that long — what a locked-down fleet laptop feels like. DIAGNOSTICS → STATE shows the injector as ON.
 
 DevTools open detached automatically in dev mode. Dev mode runs **unelevated** (the Electron binary carries no manifest): the titlebar version chip turns amber, and each adapter change goes through a UAC prompt instead of running directly. That path exists for development only.
 
@@ -61,8 +63,8 @@ GitHub `main` is the source of truth; Claude pulls it directly at session start.
 
 ## TABS
 
-### ETHER
-Manage static IP configuration for any wired adapter.
+### IP
+Manage static IP configuration for any wired adapter. (The tab was called ETHER until 7.2.0 — the app is still NET//ETHER.)
 
 - **Presets** — 4 slots (LIVE, +3 saved). LIVE auto-populates from the active adapter and never persists to disk.
 - **Factory defaults** — manufacturer out-of-box addresses, beside SAVE TO PRESET. A tile fills the device's subnet and puts you one address above it. The **AXIS** tile is link-local (`169.254.1.1 / 255.255.0.0`): current Axis cameras ship DHCP-only and fall back to a random `169.254` address, so joining that /16 is how you reach one without a DHCP server or the Axis tool.
@@ -74,20 +76,23 @@ Manage static IP configuration for any wired adapter.
 - **REVERT** — snapshots the previous config before applying; one click to restore
 - **Connection History** — last 10 applied configs, click any to reload
 - `169.254.x.x` is allowed (with a mask hint). `0.x.x.x` and an APIPA DNS server are still rejected.
+- **Wrong-address warning** (7.2.0) — an amber line under the adapter when it holds a self-assigned 169.254 address, a DHCP lease whose gateway doesn't answer (moved the cable from the office jack to a camera switch), or no address. **HEAR THE WIRE** listens 10 s (ARP, mDNS, device LLDP) and offers a free address on each subnet heard; **SET STATIC…** and **RENEW** beside it.
 
 ### DHCP
-A DHCP server for the bench and the dead segment — NET//DHCP v3, absorbed into ETHER in v7.0.0 with its engine moved onto ETHER's elevated path and diagnostics log.
+A DHCP server for the bench and the dead segment — NET//DHCP v3, absorbed into ETHER in v7.0.0, reworked around the one-device flow in v7.2.0. The laptop is the server.
 
-- **The wide tab.** The window grows to ~820 px while DHCP is open (NET//DHCP's own layout: 3-column settings, device table, log strip) and returns to your normal width when you leave.
-- **Off at launch.** Nothing binds UDP 67 until the DHCP tab is opened. Opening it starts **LISTEN**: every DHCP request on the wire shows in the table as ASKING with the address it *would* be given, and nothing is answered.
-- **SERVE** (per row) — answers only that MAC. The safe option on a network that already has DHCP.
-- **SERVE ALL DEVICES** — answers everyone, after an active scan for other DHCP servers; asks for confirmation if one is live.
-- **QUICK START** — picks the wired adapter, derives the pool, scans, serves. If the adapter has no usable address it offers a temporary static IP (via ETHER's own apply/verify path) that reverts on quit, with crash recovery on next launch.
-- **SCAN WIRE** — active rogue-DHCP check (relay-style DISCOVER, ~6 s). Scans are serialised, a result is reused for 20 s, and the serve-all gate also counts any server heard on the wire in the last two minutes — routers often ignore a second DISCOVER sent seconds after the first. **SELF-TEST** — adapter, port 67, firewall rule, other servers, policy.
-- Ping-before-offer conflict probe, DHCPDECLINE quarantine, MAC → IP reservations (★), named profiles, idle auto-stop (default 30 min), lease CSV and activity-log export.
+- **The wide tab.** The window grows to ~820 px while DHCP is open and returns to your normal width when you leave.
+- **Off at launch.** Nothing binds UDP 67 until the DHCP tab is opened. Opening it starts **LISTENING**: every DHCP request on the wire shows in the table as ASKING, and nothing is answered.
+- **① NETWORK CARD / ② LAPTOP'S ADDRESS ON THAT CABLE.** Pick the cable, then the address the laptop answers from (chips). **SET LAPTOP IP…** gives a card with no address one — 192.168.0.1 by default, duplicate-checked, reverts on quit. **+ ALIAS** adds a temporary second address for another subnet. A strip reads it back: `LAPTOP 192.168.0.1 ── Ethernet 2 ── DEVICES GET 192.168.0.100 – .200`.
+- **One device is the default.** An ASKING row carries an address box: type the address it should end up on, **▶ SERVE**, **↗ OPEN**. Set it static on the device on that address; when it stops renewing (or releases) but still answers, the row turns **✓ STATIC** and the lease is freed. The next row starts one address higher. **DEVICE** shows what the device says it is — option 60 (`AXIS,Network Door Controller,A1210,12.2.63.19` → AXIS A1210, firmware) — before it has an address.
+- **◇ SITTING** — devices heard on the wire that aren't asking: mDNS (queried from 5353 so answers come back multicast, the way AXIS IP Utility finds things) and announcements, SSDP NOTIFY, and ARP + device LLDP through tshark. **↗ OPEN** on your subnet, **⇢ REACH** (temporary address next to it, any subnet) otherwise.
+- **SERVE EVERYONE…** — small amber button; asks first, then an active scan for other DHCP servers; confirms again if one is live.
+- **Stale-settings guard** — a saved laptop IP that isn't on the card (yesterday's site) is refilled from the card on open; a profile that doesn't match gets REFILL / + ADD AS ALIAS; the engine refuses to serve from an address the card doesn't have.
+- **SCAN WIRE** — active rogue-DHCP check (relay-style DISCOVER, ~6 s). Scans are serialised, a result is reused for 20 s, and the serve-all gate also counts any server heard on the wire in the last two minutes. **SELF-TEST** — card, port 67, firewall rule, other servers, policy.
+- Ping-before-offer conflict probe, DHCPDECLINE quarantine, MAC → IP reservations (★), named profiles, idle auto-stop (default 30 min), lease in plain time (1 min … 1 day, default 5 min), lease CSV and activity-log export.
 - Advanced options: DNS (6), domain (15), NTP (42), vendor 43, TFTP (66), boot file (67).
-- The buttons bring the engine up themselves; the mode badge (OFFLINE / LISTENING / SERVING) is the on-off switch. OFFLINE releases UDP 67 and removes the firewall rule. The engine is also torn down on quit.
-- Every serve/firewall/static-assist step is written to DIAGNOSTICS. IT can disable the server with the `DisableDhcpServer` policy value.
+- The status chip (OFF / LISTENING / SERVING N / SERVING EVERYONE) is also the engine switch; OFF releases UDP 67 and removes the firewall rule. The engine is torn down on quit.
+- Every serve/firewall/laptop-address step is written to DIAGNOSTICS. IT can disable the server with the `DisableDhcpServer` policy value.
 - Settings live in `%APPDATA%\net-ether\dhcp-config.json`; on first run they are imported from a standalone NET//DHCP install if one exists.
 
 ### MULTI-IP
@@ -189,9 +194,12 @@ All JSON writes are atomic (temp file + rename).
 NET-ETHER/
 ├── main.js          — Electron main process: window, IPC, netsh, scanning, crypto, diagnostics
 ├── dhcp.js          — DHCP server engine (RFC 2131, listen-first) on ETHER's elevated path
+├── discover.js      — Multicast discovery, passive wire watch, LLDP/CDP and RECON (tshark)
+├── spawn.js         — Process-launch timing, dev latency injector, persistent PowerShell worker
 ├── preload.js       — Secure IPC bridge (contextBridge, fixed API surface)
 ├── package.json     — electron-builder config (nsis + portable, per-machine)
 ├── dev.bat          — One-click dev launch
+├── dev-slow.bat     — Dev launch with every process launch held 2 s (fleet-laptop simulation)
 ├── build.bat        — One-click production build
 ├── RELEASING.md     — Tag → CI → release procedure
 ├── TESTING.md       — Pre-release test checklist (home vs managed laptop)
@@ -209,6 +217,38 @@ NET-ETHER/
 ---
 
 ## CHANGELOG
+
+### v7.2.0 (2026-10-24)
+Built from two weeks of field notes: a coworker's laptop that felt frozen (process launches at 2–4 s each), the DHCP tab being hard for people who weren't there when it was made, and AXIS IP Utility seeing devices ETHER didn't. One release, all of it.
+
+**DHCP tab**
+- Two numbered steps: ① NETWORK CARD (the cable) and ② LAPTOP'S ADDRESS ON THAT CABLE (chips, + ALIAS, SET LAPTOP IP…). No "server" wording: LAPTOP IP, FIRST / LAST, GATEWAY (BLANK = LAPTOP). Cable strip reads the plan back. The "serve from which address?" modal is gone — the chips are the choice.
+- One device is the default flow: the address box on an ASKING row (serve the address it will end up on), bright ▶ SERVE, then ↗ OPEN on the served row; the next row continues from the last address served.
+- ✓ STATIC: a served device that stops renewing (or releases) but still answers on its address (ping, or ARP with the same MAC) is marked done and its lease freed; the address stays out of the pool.
+- DEVICE column: model and firmware from DHCP option 60 (Axis), mDNS instance names and LLDP, else the OUI vendor.
+- SERVE EVERYONE… replaces SERVE ALL DEVICES and QUICK START: small, amber, confirm-first. QUICK START's no-address fix is SET LAPTOP IP… (default 192.168.0.1, Windows duplicate-address check, next candidate if taken, reverts on quit).
+- Lease as a dropdown in plain time (1 min, 2 min, 5 min, 15 min, 1 hour, 1 day); default 5 min.
+- Status in words: OFF / LISTENING / SERVING N / SERVING EVERYONE. STOP SERVING (N) only while serving.
+- **Stale-settings guard (bug fix):** the tab used to serve the last job's settings on a different network (field case: server identifier 192.168.4.195 on a laptop that was 10.99.99.10 — the device couldn't reach its server to renew). The laptop IP must be an address on the card: refilled on open, checked on profile load, refused by the engine with REFILL / + ADD AS ALIAS.
+- ◇ SITTING rows and REACH to any subnet (below).
+
+**Hearing the wire**
+- Bench capture of an A1210 (AXIS OS 12) showed what IP Utility does: plain mDNS queries from port 5353, answered by multicast. DISCOVER now sends that query too (the legacy-unicast one stays), and skips reverse-lookup PTRs when naming devices.
+- New passive wire watch while the DHCP tab is listening: mDNS announcements, SSDP NOTIFY, ARP and device LLDP (tshark, when installed). Feeds the ◇ SITTING rows and the IP tab's HEAR THE WIRE.
+- REACH works for any subnet: a device on 192.168.0.90 gets the laptop a temporary 192.168.0.250 (an address nobody was heard on); 169.254 targets still get a link-local alias. `reach-add` also takes an explicit alias (+ ALIAS). All temporary, removed on quit or REMOVE, cleaned up after a crash.
+
+**IP tab (was ETHER)**
+- Renamed — techs look for "IP". App name unchanged.
+- Wrong-address warning with HEAR THE WIRE / SET STATIC… / RENEW (169.254, dead old lease, no address).
+- SCAN from a 169.254 base says it only swept one /24 of the /16.
+
+**Spawn latency**
+- `spawn.js` wraps `child_process` before anything else loads: every launch timed, by command, in DIAGNOSTICS → STATE (launches / worst / per-command averages).
+- PROCESS LAUNCH self-check: `cmd /c ver` timed at start-up, with a verdict (normal / slow / very slow / SEVERE). The first number to read on an "it's slow" report.
+- Persistent PowerShell worker for read-only queries (Get-NetAdapter, GUIDs, CIM descriptions, IPv4 interface checks, duplicate-address state): one hidden `powershell -Command -` reading one-line jobs from stdin, no .NET or dynamic script blocks (CLM-safe). Used only after its warm-up job answers; any timeout, crash or multi-line script falls back to the old one-shot launch; three deaths turn it off for the session. PS WORKER row in STATE.
+- Adapter refresh: the four reads (netsh ×2, PowerShell, registry) start together instead of in series; EnableDHCP for every interface comes from ONE `reg query /s` (was one per DHCP adapter, each at up to 2 s); adapter GUIDs ride along in the Get-NetAdapter call; simultaneous refreshes from the IP tab, DHCP tab and LIVE poll share one run.
+- Dev latency injector: `NET_ETHER_SPAWN_DELAY_MS` / `--spawn-delay=` / `dev-slow.bat`.
+- Packaging: `spawn.js` added to the electron-builder file list.
 
 ### v7.1.0 (2026-10-03)
 The v7.1 roadmap, home-tested over ten release candidates. Headline: RECON, multicast discovery, link speed, Wi-Fi/adapter switches, port blinking, Wake-on-LAN, serve-from-alias, batch reservations, site report, Electron fuses. The rc notes below are kept as the record of what changed when.

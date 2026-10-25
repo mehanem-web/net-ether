@@ -2,7 +2,7 @@
 
 *What every control does, in order, with its side effects. Not a guide — the
 Guide tells you how to use the app; this says what the app does when you press
-something. Current as of **v7.1.0**. Update the row when the behaviour
+something. Current as of **v7.2.0**. Update the row when the behaviour
 changes; the diagnostics `tag` column is the link to COPY DIAGNOSTICS output.*
 
 Columns: **Elevated** = runs through `runElevated()` (direct netsh when the app
@@ -18,7 +18,9 @@ log (OP = privileged command with full output, VERIFY = result check, APP = even
 |---|---|---|---|---|
 | Launch | `userData` pinned to `%APPDATA%\net-ether`; single-instance lock (a second launch focuses the first); elevation detected from `whoami /groups`; launch snapshot of every adapter's config written; policy key read; Wireshark/tshark located and version read; leftover REACH aliases and SILENT bindings from a crashed run cleaned up (elevated only) | — | nothing | APP `launch`, APP `tools`, APP `policy`, APP `reach`/VERIFY `recon-rebind` if leftovers |
 | Window position | Last position restored and clamped inside that display's work area; last *narrow-tab* width restored; height always fitted to content — a fit that would cross the bottom moves the window up instead. Wide tabs (SCAN/SITES ≥640, DHCP ≥820) enforce a minimum width, never shrink a wider window, and hand the narrow width back on leaving | — | — | — |
-| LIVE poll | Every 15 s while the ETHER tab is on the LIVE preset **and the window is visible**: `netsh interface show interface`, `netsh interface ip show config`, one `Get-NetAdapter -IncludeHidden` (speed, media, descriptions), registry `EnableDHCP` per adapter | no | nothing | — |
+| LIVE poll | Every 15 s while the IP tab is on the LIVE preset **and the window is visible**: started together — `netsh interface show interface`, `netsh interface ip show config`, one `Get-NetAdapter -IncludeHidden` (speed, media, descriptions, GUIDs) through the PowerShell worker, one `reg query …\Interfaces /s /v EnableDHCP` for every adapter. A refresh already running is shared, not repeated | no | nothing | — |
+| PowerShell worker (7.2.0) | One hidden `powershell -NoProfile -NonInteractive -Command -` started at launch; read-only one-line queries go to it over stdin once its warm-up job has answered. Timeout / crash / multi-line → that query runs one-shot as before; 3 deaths → off for the session | no | nothing | — |
+| Process-launch self-check (7.2.0) | 1.5 s after launch: `cmd /c ver` timed → PROCESS LAUNCH row in STATE with a verdict. Every launch is timed (LAUNCHES row). `NET_ETHER_SPAWN_DELAY_MS` / `--spawn-delay=` holds every callback-style launch that long (dev only) | no | nothing | APP `spawn-check` |
 | Tray | Minimize (─) hides to tray; tray click restores; icon animates red while any PING target is failing | — | — | — |
 | Version chip | Amber when the app is **not** elevated (every netsh will prompt UAC) | — | — | — |
 | Always-on-top | Re-asserted on focus/show when another window stripped it | — | — | APP `window` |
@@ -29,7 +31,7 @@ log (OP = privileged command with full output, VERIFY = result check, APP = even
 | Control | What happens | Elevated | On the wire | Logged as |
 |---|---|---|---|---|
 | Version chip (click) | Menu: DIAGNOSTICS, FIT WINDOW, SITE REPORT | — | — | — |
-| → DIAGNOSTICS | Overlay: STATE (version, elevation, user/host, paths, tools, policy, DHCP engine, file sizes) + LOG (last 200 entries). COPY puts both on the clipboard; CLEAR LOG empties the ring | — | — | APP `log-cleared` |
+| → DIAGNOSTICS | Overlay: STATE (version, elevation, user/host, paths, tools, policy, process-launch cost, launch counts, PS worker, DHCP engine, file sizes) + LOG (last 200 entries). COPY puts both on the clipboard; CLEAR LOG empties the ring | — | — | APP `log-cleared` |
 | → FIT WINDOW | Re-enables auto-fit and sizes the window to content | — | — | — |
 | → SITE REPORT | Markdown to clipboard: adapter + switch, scans this session with site changes and the last result table, RECON verdicts, DHCP leases, PING stats, every OP/VERIFY/ERROR since launch | — | — | — |
 | ◐ theme | Cycles the 6 presets; custom palette via the picker; stored in `localStorage` | — | — | — |
@@ -40,13 +42,15 @@ log (OP = privileged command with full output, VERIFY = result check, APP = even
 
 ---
 
-## ETHER
+## IP (the tab was ETHER until 7.2.0)
 
 | Control | What happens | Elevated | On the wire | Logged as |
 |---|---|---|---|---|
 | Presets LIVE / 1–3 | LIVE mirrors the selected adapter's current config (never saved). Slots 1–3 load into the form; SAVE writes the form to the slot (`presets.json`) | — | — | — |
 | FACTORY DEFAULTS ▾ | Panel of known vendor defaults (incl. link-local Axis). Click a tile → IP/mask fill with "YOU" address beside the device's | — | — | — |
 | Adapter selector | Lists wired adapters (Wi-Fi/VPN filtered). State: **link speed** when connected (green ≥1 G, amber 100 M, red 10 M), **NO ADDRESS** (link but nothing bound), DISCONNECTED (no link), DISABLED. DHCP/STATIC badge from the registry, shown with or without link; → DHCP action when static, **RENEW** (`ipconfig /renew`) when DHCP with no address | yes (RENEW) | DHCP request (RENEW) | OP `renew`, VERIFY `renew` |
+| Wrong-address warning (7.2.0) | Amber line under the adapter for: self-assigned 169.254, a DHCP lease whose gateway doesn't answer (one ping per adapter/IP/gateway combination, cached), or link with no address. Buttons: HEAR THE WIRE, SET STATIC… (focus the IP field), RENEW (DHCP adapters) | — | 1 ICMP to the gateway (DHCP adapters with a gateway) | — |
+| HEAR THE WIRE (7.2.0) | `wire-hint`: the passive wire watch on that adapter for 10 s (mDNS/SSDP sockets joined on the card; ARP + LLDP through tshark if installed) → subnets heard, largest first, each with a free-looking .250→.240 address and USE (fills IP/mask, marks changed — nothing applied) | no | 2 multicast mDNS queries (from 5353) | APP `wire-watch` |
 | ⟳ | Re-reads adapters (same calls as the LIVE poll) | no | nothing | — |
 | WI-FI chip | Shown when a real wireless adapter exists (ghost "Not Present" entries ignored; state from `Status`). Click → modal → `netsh interface set interface "<wifi>" admin=disabled` (or enabled) for every Wi-Fi adapter → admin state polled ≤6 s. Chip is amber **WI-FI OFF** while any is disabled; it survives reboots | yes | nothing | OP `adapter-disable`/`adapter-enable`, VERIFY |
 | DISABLE / ENABLE chip | Modal (louder if it's the adapter in use) → `netsh interface set interface "<n>" admin=…` → poll ≤6 s → list refresh. Refused while the DHCP engine is serving on that adapter | yes | nothing | OP `adapter-disable`/`adapter-enable`, VERIFY |
@@ -89,11 +93,11 @@ log (OP = privileged command with full output, VERIFY = result check, APP = even
 | Site chip / BASE IP / range | Base = the first three octets; range default 1–254; last site auto-detected from the adapter's subnet | — | — | — |
 | ▶ SCAN SUBNET | Opening the tab widens the window to 640 (SITES too; back to your width on leaving). Library rows for a known site drawn first (CACHED). Then: 32-wide `ping -n 1 -w 300` sweep + `arp -a` enrichment (catches ping-blocking hosts) + MAC vendor (57K offline OUI; macvendors.com if ONLINE VENDOR LOOKUP is on and policy allows). Discovery (below) fires alongside. After the sweep: 14-port TCP probe per host (80 443 554 8080 8443 3389 22 23 21 8888 8000 37777 1756 5500), hostnames (reverse DNS 1.5 s ‖ NetBIOS UDP 137 1.2 s), SELF badge, change detection against the site (NEW/MISSING/MOVED chip) | no | ICMP ×254, TCP SYN ×14/host, UDP 137 /host, HTTPS to macvendors.com (optional), multicast discovery | APP `resolve`, APP `discover` |
 | ■ STOP | Kills the sweep, keeps rows found so far | — | — | — |
-| ◎ DISCOVER (beside SCAN SUBNET) | Standalone discovery: WS-Discovery/ONVIF probe (UDP 3702), SSDP M-SEARCH (UDP 1900), mDNS query (UDP 5353), sent from every IPv4 on the adapter, 3 s listen. Answers merge into rows (badge, name, model, URLs, services); off-subnet answerers get their own row with the source where the ms would be; rows that answered pulse; ≤6 are listed in the status. On-subnet rows found this way get a port probe | no | 3 multicast datagrams per adapter address | APP `discover` |
+| ◎ DISCOVER (beside SCAN SUBNET) | Standalone discovery: WS-Discovery/ONVIF probe (UDP 3702), SSDP M-SEARCH (UDP 1900), mDNS query (UDP 5353) both as legacy unicast and — 7.2.0 — from port 5353 so answers come back multicast and reach the laptop from any subnet, sent from every IPv4 on the adapter, 3 s listen. Answers merge into rows (badge, name, model, URLs, services); off-subnet answerers get their own row with the source where the ms would be; rows that answered pulse; ≤6 are listed in the status. On-subnet rows found this way get a port probe | no | 3 multicast datagrams per adapter address | APP `discover` |
 | ONLINE VENDOR LOOKUP | Toggle for macvendors.com fallback; greyed when policy `DisableOnlineVendorLookup` is set | — | — | — |
 | Row: IP / MAC / PING / WSHARK | Copy IP; copy MAC; add to PING and start; Wireshark with `host <ip>`. The four wrap as one unit. On rows ≥600 px wide the MAC shows beside the IP | no | — | APP `wireshark` |
 | Row: smart actions | OPEN (http/https in the browser), RDP (`mstsc`), RTSP (URL copied), SSH (`ssh <ip>` copied), FTP (URL copied) — from the probe; vendor ports show as badges | no | — | — |
-| Row: REACH | 169.254 rows only. Modal (warns about DHCP→static) → `reach-add`: picks a free 169.254.x.y, adds it as a MULTI-IP alias /16, records it in `temp-aliases.json`, opens `http://<ip>`. Amber LINK-LOCAL chip with REMOVE; removed on quit or next launch, adapter returned to DHCP if REACH converted it | yes | nothing (then the browser's HTTP) | OP `reach_add`, VERIFY, APP `reach` |
+| Row: REACH | 169.254 rows. Modal (warns about DHCP→static) → `reach-add`: picks a free 169.254.x.y, adds it as a MULTI-IP alias /16 (7.2.0: for any other subnet — from the DHCP tab's ◇ SITTING rows — the first of .250→.230 on the target's /24 that nobody was heard on, mask /24), records it in `temp-aliases.json`, opens `http://<ip>`. Amber LINK-LOCAL chip with REMOVE; removed on quit or next launch, adapter returned to DHCP if REACH converted it | yes | nothing (then the browser's HTTP) | OP `reach_add`, VERIFY, APP `reach` |
 | LINK-LOCAL chip → REMOVE | `reach-clear`: delete the alias (+ `set address dhcp` if converted) | yes | nothing | OP `reach_del`, APP `reach` |
 | COPY ▾ | CSV or markdown of every row (IP, hostname, MAC, vendor, type, open ports, response) to clipboard | — | — | — |
 | SAVE SITE / UPDATE SITE | Writes rows into the site library (`sites.json`) and the SITES knowledge base (`intel.json`): devices anchored by MAC, first/last seen, ports, announced type; SELF row skipped; MAC-less twins dropped | — | — | APP `sitekb-save` |
@@ -124,17 +128,27 @@ log (OP = privileged command with full output, VERIFY = result check, APP = even
 
 | Control | What happens | Elevated | On the wire | Logged as |
 |---|---|---|---|---|
-| Tab opened | Engine starts in LISTEN: firewall rule `NET-ETHER-DHCP-UDP67` added if missing, UDP 67 bound. Nothing is answered. The DHCP tab's dot shows the engine from every tab: red OFFLINE, green LISTENING, amber SERVING | yes (firewall) | nothing | OP `dhcp-fw-add`, APP `dhcp` |
-| Mode badge (engine switch) | OFFLINE ↔ LISTENING; SERVING when serving; **SUSPENDED** while RECON SILENT has the adapter (socket closed, rule kept, resumes to the previous mode by itself). Dot is a theme-independent traffic light. Off → rule removed, socket closed | yes (firewall) | nothing | OP `dhcp-fw-del`, APP `dhcp` |
-| SERVE ON adapter + ⟳ | Adapter list with every IPv4 (primary first). Choosing an adapter (or ⟳, or the adapter's addresses changing while not serving) fills the settings; with a MULTI-IP alias present a modal asks which address to serve from | — | — | — |
-| Settings / profiles | Server IP, mask, lease, pool start/end, gateway, advanced (DNS, options). Validated in main. Profiles saved in `dhcp-config.json` | — | — | — |
-| ⚡ QUICK START | Picks the best adapter, sets a static address if needed via ETHER's apply path (with crash recovery), fills a pool, starts serving | yes | as APPLY + DHCP | OP `apply`, APP `dhcp` |
-| ▶ SERVE ALL DEVICES | Rogue-server scan first (DISCOVER probe, 2-minute memory of foreign servers) → gate modal if another server answered → serve-all | no | 1 DHCP DISCOVER, then OFFER/ACK per client | APP `dhcp-scan`, APP `dhcp` |
-| SERVE (row) / ▶ SERVE SELECTED | Serve only that MAC / the ticked MACs (targeted mode). Ping-before-offer; DECLINEs quarantine the address; NAK only for leases that are ours; own MAC ignored | no | ICMP before each offer, OFFER/ACK | APP `dhcp` |
-| ★ PIN / ✕ | Reservation for a MAC / release it (`dhcp-config.json`) | — | — | — |
-| ★ RESERVE SELECTED | Start address prompt → consecutive reservations for the ticked devices in list order; server IP, gateway and existing reservations skipped | — | — | — |
+| Tab opened | Engine starts LISTENING: firewall rule `NET-ETHER-DHCP-UDP67` added if missing, UDP 67 bound. Nothing is answered. Wire watch starts on the selected card. The DHCP tab's dot shows the engine from every tab: red OFF, green LISTENING, amber SERVING. Saved settings whose laptop IP isn't on the card are refilled from the card (status says so) | yes (firewall) | 2 multicast mDNS queries, then 1 per 8 s (wire watch) | OP `dhcp-fw-add`, OP `disc-fw-add` (inbound UDP 5353/1900 for this exe, once; removed on quit), APP `dhcp`, APP `wire-watch` |
+| Status chip (engine switch) | OFF ↔ LISTENING; SERVING N / SERVING EVERYONE when serving; **SUSPENDED** while RECON SILENT has the adapter (socket closed, rule kept, resumes to the previous mode by itself). Dot is a theme-independent traffic light. OFF → rule removed, socket closed, wire watch stopped | yes (firewall) | nothing | OP `dhcp-fw-del`, APP `dhcp` |
+| ① NETWORK CARD + ⟳ | Card list (with description). Sub-line: description, link speed, DHCP/static, "no address — set one in step 2". Picking a card keeps the chosen laptop IP if it's still on it, else takes the primary and fills the settings. Restarts the wire watch | — | — | — |
+| ② LAPTOP IP chips | One chip per non-APIPA address on the card (ALIAS / TEMP tags); click = hand out from that address (settings refilled from it). Cable strip reads back LAPTOP ── card ── DEVICES GET | — | — | — |
+| SET LAPTOP IP… | Card with no usable address: prompt (default 192.168.0.1) → `dhcp-static-assist-apply` through ETHER's apply/verify path, mask /24, recorded for revert. After 1.5 s the address's Windows DAD state is read (worker, `Get-NetIPAddress …AddressState`, waits out Tentative); **Duplicate** → next candidate (.2, .3, .254) or fail and revert. Reverted on quit, recovered on next launch after a crash | yes | Windows DAD ARP for each candidate | OP `apply`, VERIFY, APP `dhcp` |
+| + ALIAS | Prompt → `reach-add` with an explicit alias /24 → temporary MULTI-IP alias (DHCP→static conversion as MULTI-IP), recorded in `temp-aliases.json`, removed on quit | yes | nothing | OP `reach_add`, VERIFY, APP `reach` |
+| Guard line (stale settings) | Shown when the laptop IP isn't on the card (profile load, serve attempt, card with no address): REFILL FROM CARD / SET LAPTOP IP… / + ADD <ip> AS ALIAS. The engine independently refuses to serve (code `NOT_ON_CARD`) | — | — | — |
+| ADDRESSES TO HAND OUT / profiles | First, last, mask, gateway (blank = laptop), lease dropdown (60 / 120 / 300 / 900 / 3600 / 86400 s; other saved values get their own option), advanced (DNS, options, idle). Validated in main. Profiles saved in `dhcp-config.json`; loading one runs the guard | — | — | — |
+| ▶ SERVE (row) with address box | ASKING row: address box pre-filled (typed value → after the last row served → engine's next free); SERVE / Enter → `dhcp-serve-device(mac, opts, ip)`: ip must be on the laptop's subnet, not the laptop/network/broadcast/gateway, not in use or reserved for another MAC → held for that MAC this session, offered first. Ping-before-offer; DECLINEs quarantine; NAK only for leases that are ours; own MAC ignored | no | ICMP before the offer, OFFER/ACK | APP `dhcp` |
+| ▶ SERVE TICKED | Ticked ASKING rows, each with its typed address if any | no | as SERVE | APP `dhcp` |
+| ↗ OPEN | `http://<ip>` in the default browser (served, static and on-subnet sitting rows) | — | the browser's HTTP | — |
+| ✓ STATIC (automatic) | A served device past T1 + 15 s without renewing, or 4 s after a RELEASE: ping its address, else `arp -a <ip>` for the same MAC. Answers → row STATIC, lease freed, address kept out of the pool, status "WENT STATIC". No answer → expires normally (RELEASE: row removed). A STATIC device that asks again becomes ASKING. Rows age out after 2 h | no | 1 ICMP | engine log |
+| DEVICE column | DHCP option 60 parsed (Axis `AXIS,<type>,<model>,<fw>` → model + firmware; generic stack strings ignored), mDNS instance/TXT, LLDP system name/description; else OUI vendor. Full detail in the tooltip | — | — | — |
+| ◇ SITTING rows | From the wire watch: devices heard via mDNS (answers/announcements), SSDP NOTIFY, ARP or device LLDP that are not in the DHCP table. ARP-only hosts on the laptop's own subnet are left out (SCAN covers those); ≤30 rows; aged out after 5 min unheard. ↗ OPEN if on the laptop's subnet, ⇢ REACH otherwise | — | as wire watch | — |
+| ⇢ REACH (sitting row) | `reach-add` with the device as target → temporary address next to it (/24, or 169.254/16) → browser opens `http://<ip>` | yes | nothing (then HTTP) | OP `reach_add`, VERIFY, APP `reach` |
+| ▶ SERVE EVERYONE… | Confirm modal → rogue-server scan (DISCOVER probe, 2-minute memory of foreign servers) → gate modal if another server answered → serve-all (guard applies). While serving everyone the button is ■ STOP SERVING EVERYONE | no | 1 DHCP DISCOVER, then OFFER/ACK per client | APP `dhcp-scan`, APP `dhcp` |
+| ■ STOP SERVING (N) | Shown only while serving ticked/row devices: back to LISTENING, typed addresses dropped | no | nothing | APP `dhcp` |
+| ★ PIN / ✕ | Reservation for a MAC / take the address back (STATIC rows: forget) | — | — | — |
+| ★ RESERVE TICKED | Start address prompt → consecutive reservations for the ticked devices in list order (first plugged in first); laptop IP, gateway and existing reservations skipped | — | — | — |
 | ◎ SCAN WIRE | The rogue-server probe on its own | no | 1 DHCP DISCOVER | APP `dhcp-scan` |
-| ⚕ SELF-TEST | Checks: elevation, socket bound, firewall rule, adapter address, pool sanity | no | nothing | — |
+| ⚕ SELF-TEST | Checks: card, socket bound, firewall rule, adapter address, other servers, policy | no | nothing | — |
 | ✕ RELEASE ALL | Clears every lease from memory | — | — | — |
 | ⎘ CSV / ⎘ LOG | Device table / engine log to clipboard | — | — | — |
 
@@ -147,23 +161,50 @@ log (OP = privileged command with full output, VERIFY = result check, APP = even
 | STANDARD / SILENT | STANDARD: adapter untouched (Windows still sends DHCP/NetBIOS/LLMNR). SILENT: the DHCP engine is suspended first if it's running, then `Disable-NetAdapterBinding -ComponentID ms_tcpip,ms_tcpip6` on the ETHER adapter for the listen, state in `recon-silent.json`. Restore (after the listen, on stop, on quit after tshark exits, on the next elevated launch): `Enable-NetAdapterBinding` with 3 retries → `Get-NetIPInterface` must show IPv4 → else toggle `ms_tcpip` again + `Restart-NetAdapter` → if DHCP and still no address after 3 s, `ipconfig /renew`. Failure at quit = Windows message box | yes (SILENT) | DHCP request (renew) | OP `recon-unbind`, OP `recon-rebind`, VERIFY `recon-rebind`, APP `recon-renew` |
 | ▶ LISTEN / ■ STOP | tshark on `\Device\NPF_{guid}` for up to 65 s, capture filter limited to LLDP/CDP/EAPOL/STP/ARP/802.1Q/IGMP and UDP 67/68/137/5353/5355/1900/123 (nothing else reaches a dissector), display filter on the same, JSON streamed; evidence pushed to the UI every ~1.5 s; stops early on click. Needs Wireshark 4.6+ (button dimmed with the reason otherwise) | no | nothing | APP `recon` (summary) / ERROR `recon` |
 | Cards | SWITCH (LLDP/CDP name · port · VLAN, or "no announcement"), 802.1X (EAPOL seen), STP / TRUNK (BPDUs, PVST VLANs, tagged frames), VLAN, DHCP (servers, gateway, mask, DNS heard; "clients asking, nobody answering"), HOSTS per /24, ADDRESS (free-looking IP), NAMES (NetBIOS/mDNS), NTP | — | — | — |
-| TAKE | Fills ETHER's IP/mask/gateway from the ADDRESS card and switches tab; nothing applied | — | — | — |
+| TAKE | Fills the IP tab's IP/mask/gateway from the ADDRESS card and switches tab; nothing applied | — | — | — |
 | WIRESHARK | Wireshark on the whole adapter, no filter | no | nothing | APP `wireshark` |
 | COPY | Verdicts as text | — | — | — |
 
 ---
 
+## Process launches (7.2.0 audit)
+
+Every launch the app makes, what triggers it and how often, and what 7.2.0 did about it. On a managed laptop each one costs whatever DIAGNOSTICS → PROCESS LAUNCH says (2 s on the worst box seen).
+
+| What runs | Triggered by | How often | 7.2.0 |
+|---|---|---|---|
+| `whoami /groups` | launch | once | kept |
+| `cmd /c ver` | launch (self-check), DIAGNOSTICS | once | new — the measurement |
+| `netsh interface show interface` + `netsh interface ip show config` | adapter refresh: IP tab, DHCP tab, LIVE poll (15 s), after every change | per refresh | **parallel**, shared between simultaneous callers |
+| `Get-NetAdapter` (speed, media, descriptions, GUIDs) | adapter refresh | per refresh | **worker**; GUIDs now ride along |
+| `reg query …\Interfaces\{guid} /v EnableDHCP` | adapter refresh | **was one per DHCP adapter** | **batched** — one `reg query … /s` for all |
+| `Get-NetAdapter -Name … InterfaceGuid` | first use of an adapter (cached) | once per adapter | **worker**, mostly pre-filled by the refresh |
+| `Get-CimInstance Win32_NetworkAdapter` | fallback when Get-NetAdapter gave no descriptions | rare | **worker** |
+| `Get-NetIPInterface` count | RECON SILENT rebind check | rare | **worker** |
+| `Get-NetIPAddress … AddressState` | SET LAPTOP IP… duplicate check | per candidate | new, **worker** |
+| `netsh …` writes (APPLY, → DHCP, MTU, aliases, REACH, adapter enable/disable, firewall rule) | user action | per action | kept — elevated, verified, logged |
+| `powershell -EncodedCommand` (bindings) | RECON SILENT | rare | kept one-shot (elevated, exit code matters) |
+| `ipconfig /renew` | RENEW | per click | kept |
+| `ping -n 1` | SCAN sweep (per address), PING tab (plain targets, per cycle), DHCP ping-before-offer, STATIC check, duplicate check | many | kept — ICMP needs a raw socket Node doesn't have; parallel and bounded. Next to measure |
+| `arp -a` | SCAN, DISCOVER, duplicate check, STATIC check | per scan / check | kept — already one bulk read |
+| `tracert` | TRCRT | per click | kept (streaming) |
+| `tshark` | RECON, LLDP chip, wire watch | per listen | kept (streaming, one process per listen) |
+| `netstat` / `tasklist` | DHCP engine start (port-67 squatter) | once per start | kept |
+| `netsh advfirewall … show rule` | DHCP engine start / scan / self-test | per action | kept |
+| `reg query HKLM\…\Policies` | policy read | launch + DHCP actions | kept |
+| `Wireshark.exe` | WSHARK / WIRESHARK | per click | kept |
+
 ## Files (`%APPDATA%\net-ether\`)
 
 | File | Written by |
 |---|---|
-| `presets.json` | ETHER preset SAVE |
+| `presets.json` | IP tab preset SAVE |
 | `sites.json` | SCAN → SAVE SITE |
 | `intel.json` (+ `backups/`) | SITES; backup before delete/import |
 | `dhcp-config.json` | DHCP profiles, reservations, settings |
 | `vendor-cache.json` | macvendors.com answers |
 | `launch-snapshot.json` / `last-snapshot.json` | launch config / pre-APPLY snapshot |
-| `temp-aliases.json` | REACH aliases pending removal |
+| `temp-aliases.json` | REACH / DHCP + ALIAS addresses pending removal |
 | `recon-silent.json` | SILENT bindings pending restore |
 | `diag-log.json` | diagnostics ring (200 entries) |
 | `window-state.json` | position, display, narrow width |

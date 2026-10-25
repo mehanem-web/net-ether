@@ -38,13 +38,18 @@ const FW_RULE_NAME    = 'NET-ETHER-DHCP-UDP67';
 const FW_RULE_LEGACY  = 'NET-DHCP-Server-UDP67';   // NET//DHCP's rule — cleaned up once if found
 
 const ASSIST_BASES = ['192.168.100', '192.168.150', '192.168.200', '10.10.10'];
+// v7.2.0: the laptop address offered first when a card has none — the factory default
+// most of our gear expects to sit next to. .1 is ARP/duplicate-checked before it's kept.
+const ASSIST_DEFAULT = ['192.168.0.1', '192.168.0.2', '192.168.0.3', '192.168.0.254'];
+const STATIC_STALE_MS = 30000;     // a leased device this far past its renewal (T1, or a quarter lease if longer) gets a liveness probe
+const STATIC_KEEP_MS  = 2 * 3600000;
 
 module.exports = function initDhcp(deps) {
   const {
     app, ipcMain, getWin, diagAdd, runElevated,
     isValidIp, isValidSubnet, sanitizeAdapter, lookupVendor,
     getAdapters, applyStatic, applyDhcp, readAdapterConfig, getPolicy,
-    onStateChange,
+    onStateChange, ipAddressState,
   } = deps;
 
   // ── Engine state ───────────────────────────────────────────────────────────
@@ -62,6 +67,7 @@ module.exports = function initDhcp(deps) {
   let scanDebug      = null;
   let foreignServers = {};
   let lastServeAction = 0;
+  const chosenIp = {};            // v7.2.0: mac → address the tech typed on the row (this session only)
   const lastIp = {};              // mac → { ip, ts } — a returning device gets its old address back if free
   const LAST_IP_TTL_MS = 3600000;
   const rememberIp = (mac, ip) => { if (mac && ip) lastIp[mac] = { ip, ts: Date.now() }; };
@@ -150,6 +156,21 @@ module.exports = function initDhcp(deps) {
   }
   const csvEscape = s => String(s).replace(/"/g, '""');
   const cleanMac = m => (typeof m === 'string' && /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(m)) ? m.toLowerCase() : null;
+  // v7.2.0: option 60 says what the device is before it has an address.
+  //   "AXIS,Network Door Controller,A1210,12.2.63.19" → model "AXIS A1210", fw "12.2.63.19"
+  // Generic stack strings (MSFT 5.0, udhcp, dhcpcd, android-dhcp) say nothing useful about the box.
+  function parseVendorClass(vc) {
+    const raw = String(vc || '').replace(/[^\x20-\x7E]/g, '').trim().substring(0, 96);
+    if (!raw) return { raw: '', model: '', fw: '' };
+    const parts = raw.split(',').map(x => x.trim()).filter(Boolean);
+    if (/^axis$/i.test(parts[0] || '') && parts.length >= 3) {
+      const fw = parts.length >= 4 ? parts[parts.length - 1] : '';
+      const model = parts.length >= 4 ? parts[parts.length - 2] : parts[parts.length - 1];
+      return { raw, model: 'AXIS ' + model, fw: /^\d+(\.\d+)+$/.test(fw) ? fw : '' };
+    }
+    if (/^(MSFT|udhcp|dhcpcd|android-dhcp|Linux|PXEClient|Cisco Systems)/i.test(raw)) return { raw, model: '', fw: '' };
+    return { raw, model: raw.length <= 40 ? raw : '', fw: '' };
+  }
 
   // ── Adapters — ETHER's list is the truth; a light os.networkInterfaces poll
   //    keeps link state live between full refreshes ─────────────────────────
@@ -281,11 +302,53 @@ module.exports = function initDhcp(deps) {
     });
   }
 
+  // ── Went static? (v7.2.0) ──────────────────────────────────────────────────
+  // The tech serves a camera, opens it, sets it static on the same address. The camera
+  // stops renewing (or RELEASEs). If it still answers at that address — ping, or at least
+  // ARP with the same MAC — it's done: mark it STATIC, free the lease, keep the address
+  // out of the pool so nobody else is handed it.
+  async function checkWentStatic(mac, ip, why) {
+    const d = devices[mac];
+    if (!d || d.ip !== ip || (d.state !== 'leased' && d.state !== 'releasing')) return;
+    // ping only — Windows' ARP cache still holds a device for minutes after it was unplugged
+    // or rebooted, which made "dynamic" ARP entries a false STATIC. A device that drops ICMP
+    // simply stays SERVED until its lease expires (the old behaviour).
+    const alive = await probeIp(ip);
+    const d2 = devices[mac];
+    if (!d2 || d2.ip !== ip) return;
+    if (alive && (d2.state === 'leased' || d2.state === 'releasing')) {
+      d2.state = 'static'; d2.staticAt = Date.now(); d2.expires = null;
+      delete chosenIp[mac];
+      quarantinedIps.delete(ip);
+      log(`✓ ${ip} WENT STATIC — ${mac} still answers there and ${why === 'released' ? 'released its lease' : 'stopped renewing'}. Lease freed.`, 'ok');
+      send('dhcp-static', { mac, ip, vendor: d2.vendor, model: d2.model || '', hostname: d2.hostname || '' });
+    } else if (d2.state === 'releasing') {
+      delete devices[mac];
+    }
+    emitDevices(); announceTray();
+  }
+
+  // ── Stale-settings guard (v7.2.0) ─────────────────────────────────────────
+  // Field case 2026-10-24: yesterday's site settings (server 192.168.4.195) were served
+  // on a laptop that was 10.99.99.10. The camera took the lease, then couldn't reach its
+  // "server" to renew. The server address must be one this card actually has.
+  function cardCheck(cfg) {
+    const name = sanitizeAdapter(cfg && cfg.adapterName);
+    if (!name || !isValidIp(cfg.adapterIp)) return { ok: true };
+    const a = lightAdapters().find(x => x.name === name);
+    if (!a) return { ok: true };
+    const ips = (a.ips || []).map(x => x.ip);
+    if (ips.includes(cfg.adapterIp)) return { ok: true };
+    return { ok: false, code: 'NOT_ON_CARD',
+      msg: `Laptop IP ${cfg.adapterIp} is not an address on ${name}${ips.length ? ' (it has ' + ips.join(', ') + ')' : ''} — settings from another job. Refill from the card, or add ${cfg.adapterIp} as an alias` };
+  }
+  function fullValidate(cfg) { const v = validateCfg(cfg); return v.ok ? cardCheck(cfg) : v; }
+
   // ── Config validation ──────────────────────────────────────────────────────
   function validateCfg(cfg) {
     if (!cfg || typeof cfg !== 'object') return { ok: false, msg: 'No configuration' };
     const { adapterIp, subnet, rangeStart, rangeEnd, gateway, dns } = cfg;
-    for (const [label, val] of [['Server IP', adapterIp], ['Subnet', subnet], ['Pool Start', rangeStart], ['Pool End', rangeEnd]]) {
+    for (const [label, val] of [['Laptop IP', adapterIp], ['Subnet', subnet], ['First address', rangeStart], ['Last address', rangeEnd]]) {
       if (!isValidIp(val)) return { ok: false, msg: `${label}: invalid IP address` };
     }
     if (gateway && gateway.trim() && !isValidIp(gateway.trim())) return { ok: false, msg: 'Gateway: invalid IP address' };
@@ -293,13 +356,13 @@ module.exports = function initDhcp(deps) {
     if (!isValidSubnet(subnet)) return { ok: false, msg: 'Subnet: not a valid contiguous mask' };
 
     const maskNum = ipToNum(subnet);
-    if (ipToNum(rangeStart) > ipToNum(rangeEnd)) return { ok: false, msg: 'Pool Start must be less than Pool End' };
+    if (ipToNum(rangeStart) > ipToNum(rangeEnd)) return { ok: false, msg: 'First address must be lower than last address' };
     const serverNet = ipToNum(adapterIp) & maskNum;
     if (serverNet !== (ipToNum(rangeStart) & maskNum) || serverNet !== (ipToNum(rangeEnd) & maskNum))
-      return { ok: false, msg: 'Pool appears to be on a different subnet than the server IP' };
+      return { ok: false, msg: 'First/last address are on a different subnet than the laptop IP' };
     if (gateway && gateway.trim() && ((ipToNum(gateway.trim()) & maskNum) !== serverNet))
-      return { ok: false, msg: 'Gateway is not on the server subnet' };
-    if (ipToNum(rangeEnd) - ipToNum(rangeStart) + 1 > 253) return { ok: false, msg: 'Pool too large (max 253 addresses)' };
+      return { ok: false, msg: 'Gateway is not on the laptop IP subnet' };
+    if (ipToNum(rangeEnd) - ipToNum(rangeStart) + 1 > 253) return { ok: false, msg: 'First–last range too large (max 253 addresses)' };
 
     if (cfg.ntp && cfg.ntp.trim() && !isValidIp(cfg.ntp.trim())) return { ok: false, msg: 'NTP server: invalid IP address' };
     if (cfg.opt43 && cfg.opt43.trim()) {
@@ -459,7 +522,7 @@ module.exports = function initDhcp(deps) {
     const chaddr = Buffer.from(msg.slice(28, 34));
     const mac    = Array.from(chaddr).map(b => b.toString(16).padStart(2, '0')).join(':');
 
-    let msgType = 0, hostname = '', requestedIp = null, serverIdent = null;
+    let msgType = 0, hostname = '', requestedIp = null, serverIdent = null, vendorClass = '';
     let i = 240;
     while (i < msg.length - 1) {
       const opt = msg[i++];
@@ -471,6 +534,7 @@ module.exports = function initDhcp(deps) {
       if (opt === 12 && len > 0)   hostname = msg.slice(i, i + len).toString('utf8').replace(/[^\x20-\x7E]/g, '').trim().substring(0, 64);
       if (opt === 50 && len === 4) requestedIp = `${msg[i]}.${msg[i+1]}.${msg[i+2]}.${msg[i+3]}`;
       if (opt === 54 && len === 4) serverIdent = `${msg[i]}.${msg[i+1]}.${msg[i+2]}.${msg[i+3]}`;
+      if (opt === 60 && len > 0)   vendorClass = msg.slice(i, i + len).toString('latin1');
       i += len;
     }
     if (!msgType) return;
@@ -495,6 +559,14 @@ module.exports = function initDhcp(deps) {
     }
     d.lastSeen = now; d.lastXid = xid;
     if (hostname) d.hostname = hostname;
+    if (vendorClass) { const vc = parseVendorClass(vendorClass); d.vendorClass = vc.raw; if (vc.model) d.model = vc.model; if (vc.fw) d.fw = vc.fw; }
+    // A device marked STATIC that talks DHCP again: renewing its own address → it was still
+    // on DHCP after all, back to leased (and ACKed below); a fresh DISCOVER → asking, with its
+    // old address first in line (candidateList pushes d.ip).
+    if (d.state === 'static') {
+      if (msgType === 3 && d.ip && (!requestedIp || requestedIp === d.ip)) { d.state = 'leased'; d.staticAt = null; d.staticProbe = false; quarantinedIps.delete(d.ip); delete probeCache[d.ip]; }
+      else { d.state = 'asking'; d.firstSeen = now; d.attempts = 0; d.staticAt = null; if (d.ip) { quarantinedIps.delete(d.ip); delete probeCache[d.ip]; } }
+    }
     if (d.state === 'quiet' || d.state === 'declined') { d.state = 'asking'; d.firstSeen = now; d.attempts = 0; }
     if (msgType === 1 || msgType === 3) d.attempts++;
 
@@ -527,7 +599,15 @@ module.exports = function initDhcp(deps) {
         emitDevices(); announceTray();
       }
     } else if (msgType === 7) {                                // RELEASE
-      if (d.state === 'leased' || d.state === 'offered') { log(`RELEASE from ${mac}  ${d.ip || ''}`); delete devices[mac]; emitDevices(); announceTray(); }
+      if (d.state === 'leased' || d.state === 'offered') {
+        const ip = d.ip;
+        log(`RELEASE from ${mac}  ${ip || ''}`);
+        // v7.2.0: a device set to static on the same address often RELEASEs on the way —
+        // if it still answers there a few seconds later, it's done, not gone.
+        if (ip && d.state === 'leased') { d.state = 'releasing'; d.expires = null; setTimeout(() => checkWentStatic(mac, ip, 'released'), 4000); }
+        else delete devices[mac];
+        emitDevices(); announceTray();
+      }
     } else if (msgType === 8) {                                // INFORM
       emitDevices();
     }
@@ -594,6 +674,7 @@ module.exports = function initDhcp(deps) {
       return;
     }
     d.state = 'leased'; d.ip = ip; d.offerExpires = null; d.expires = Date.now() + serveCfg.leaseSeconds * 1000;
+    d.leasedAt = Date.now(); d.staticProbe = false;
     rememberIp(mac, ip);
     log(`REQUEST from ${mac} → ACK ${ip}  [${d.vendor}]${d.hostname ? '  ' + d.hostname : ''}`, 'ok');
     const ack = buildDhcpPacket(5, d.lastXid, chaddr, ip, serveCfg);
@@ -613,13 +694,15 @@ module.exports = function initDhcp(deps) {
     if (cfg.gateway) used.add(cfg.gateway);
     if (cfg.dns)     used.add(cfg.dns);
     for (const q of quarantinedIps) used.add(q);
-    for (const [m2, d2] of Object.entries(devices)) if (m2 !== mac && d2.ip && (d2.state === 'offered' || d2.state === 'leased')) used.add(d2.ip);
+    for (const [m2, d2] of Object.entries(devices)) if (m2 !== mac && d2.ip && (d2.state === 'offered' || d2.state === 'leased' || d2.state === 'static' || d2.state === 'releasing')) used.add(d2.ip);
     for (const [m2, ip2] of Object.entries(store.reservations)) if (m2 !== mac) used.add(ip2);
+    for (const [m2, ip2] of Object.entries(chosenIp)) if (m2 !== mac) used.add(ip2);
     // Keep another device's remembered address out of this one's pool walk while that device is still around
     for (const m2 of Object.keys(devices)) if (m2 !== mac) { const r = recallIp(m2); if (r) used.add(r); }
     const onSubnet = ip => isValidIp(ip) && ((ipToNum(ip) & maskNum) === (ipToNum(cfg.adapterIp) & maskNum));
     const out = [];
     const push = ip => { if (ip && onSubnet(ip) && !used.has(ip) && !out.includes(ip)) out.push(ip); };
+    push(chosenIp[mac]);            // v7.2.0: the address typed on the row wins for this session
     push(store.reservations[mac]);
     const d = devices[mac];
     if (d && d.ip) push(d.ip);
@@ -639,6 +722,11 @@ module.exports = function initDhcp(deps) {
     for (const mac of Object.keys(devices)) {
       const d = devices[mac];
       if (d.state === 'leased' && d.expires && d.expires < now)                 { log(`Lease expired: ${d.ip}  ${mac}`); rememberIp(mac, d.ip); delete devices[mac]; changed = true; }
+      else if (d.state === 'leased' && serveCfg && !d.staticProbe && d.leasedAt && (now - d.lastSeen) > serveCfg.leaseSeconds * 500 + Math.max(STATIC_STALE_MS, serveCfg.leaseSeconds * 250)) {
+        // v7.2.0: missed its renewal — set static on the device, or unplugged? A ping decides.
+        d.staticProbe = true; checkWentStatic(mac, d.ip, 'missed renewal');
+      }
+      else if (d.state === 'static' && (now - (d.staticAt || now)) > STATIC_KEEP_MS) { delete devices[mac]; changed = true; }
       else if (d.state === 'offered' && d.offerExpires && d.offerExpires < now) { d.state = 'asking'; d.offerExpires = null; changed = true; }
       else if (d.state === 'asking' && (now - d.lastSeen) > QUIET_AFTER_MS)     { d.state = 'quiet'; changed = true; }
       else if (d.state === 'quiet' && (now - d.lastSeen) > PURGE_QUIET_MS)      { delete devices[mac]; changed = true; }
@@ -662,9 +750,11 @@ module.exports = function initDhcp(deps) {
     const preview = previewAssignments();
     return Object.entries(devices).map(([mac, d]) => ({
       mac, state: d.state,
-      ip: (d.state === 'offered' || d.state === 'leased') ? d.ip : null,
+      ip: (d.state === 'offered' || d.state === 'leased' || d.state === 'static' || d.state === 'releasing') ? d.ip : null,
       wouldOffer: d.state === 'asking' ? (preview[mac] || null) : null,
+      chosen: chosenIp[mac] || null,
       vendor: d.vendor, hostname: d.hostname || '', firstSeen: d.firstSeen, lastSeen: d.lastSeen, attempts: d.attempts,
+      model: d.model || '', fw: d.fw || '', vendorClass: d.vendorClass || '', staticAt: d.staticAt || null,
       expires: d.state === 'leased' ? d.expires : null,
       targeted: targets.has(mac), reserved: store.reservations[mac] || null, foreignServer: d.foreignServer,
     }));
@@ -679,7 +769,8 @@ module.exports = function initDhcp(deps) {
     if (cfg.gateway) used.add(cfg.gateway);
     if (cfg.dns)     used.add(cfg.dns);
     for (const q of quarantinedIps) used.add(q);
-    for (const d of Object.values(devices)) if (d.ip && (d.state === 'offered' || d.state === 'leased')) used.add(d.ip);
+    for (const d of Object.values(devices)) if (d.ip && (d.state === 'offered' || d.state === 'leased' || d.state === 'static' || d.state === 'releasing')) used.add(d.ip);
+    for (const ip of Object.values(chosenIp)) used.add(ip);
     const onSubnet = ip => isValidIp(ip) && ((ipToNum(ip) & maskNum) === (ipToNum(cfg.adapterIp) & maskNum));
     const askers = Object.entries(devices).filter(([, d]) => d.state === 'asking').sort((a, b) => a[1].firstSeen - b[1].firstSeen);
     // Hold every asker's remembered address before dealing, so an earlier asker can't be dealt someone else's old IP
@@ -689,7 +780,8 @@ module.exports = function initDhcp(deps) {
     for (const [mac, d] of askers) {
       let pick = null;
       const reserved = store.reservations[mac], remembered = recallIp(mac);
-      if (reserved && onSubnet(reserved) && !used.has(reserved)) pick = reserved;
+      if (chosenIp[mac] && onSubnet(chosenIp[mac])) pick = chosenIp[mac];
+      else if (reserved && onSubnet(reserved) && !used.has(reserved)) pick = reserved;
       else if (d.ip && onSubnet(d.ip) && !used.has(d.ip)) pick = d.ip;
       else if (remembered && onSubnet(remembered) && !used.has(remembered) && !Object.values(store.reservations).includes(remembered)) pick = remembered;
       else {
@@ -868,24 +960,50 @@ module.exports = function initDhcp(deps) {
   }
 
   // ── Static-IP assist — ETHER's apply + verify path, recorded for revert ────
-  async function staticAssistApply(adapterName) {
+  // v7.2.0: the tech can pick the laptop's address (step ② on the DHCP tab). Default is
+  // 192.168.0.1 — the factory subnet most of our gear sits on — and every candidate is
+  // checked for a duplicate on the wire after it's applied (Windows' own DAD), moving to
+  // the next one if something already answers there.
+  async function staticAssistApply(adapterName, wantIp, wantMask) {
     const name = sanitizeAdapter(adapterName);
     if (!name) return { ok: false, msg: 'Invalid adapter name' };
-    const inUse = lightAdapters().filter(a => a.ip).map(a => a.ip.split('.').slice(0, 3).join('.'));
-    const base  = ASSIST_BASES.find(b => !inUse.includes(b)) || ASSIST_BASES[0];
-    const newIp = base + '.1';
+    const mask = (wantMask && isValidSubnet(wantMask)) ? wantMask : '255.255.255.0';
+    let candidates;
+    if (wantIp !== undefined && wantIp !== null && String(wantIp).trim()) {
+      if (!isValidIp(String(wantIp).trim())) return { ok: false, msg: 'Not an IP address' };
+      candidates = [String(wantIp).trim()];
+    } else {
+      const inUse = lightAdapters().filter(a => a.ip && a.name !== name).map(a => a.ip.split('.').slice(0, 3).join('.'));
+      candidates = inUse.includes('192.168.0') ? ASSIST_BASES.filter(b => !inUse.includes(b)).map(b => b + '.1') : ASSIST_DEFAULT.slice();
+      if (!candidates.length) candidates = [ASSIST_BASES[0] + '.1'];
+    }
     let prev = { dhcp: true };
     try {
       const cfg = await readAdapterConfig(name);
       if (cfg && cfg.ok) prev = { dhcp: !!cfg.dhcp, ip: cfg.ip || null, mask: cfg.subnet || null, gw: cfg.gateway || null, dns: cfg.dns || null };
     } catch {}
-    store.staticAssist = { adapter: name, applied: newIp, prev, ts: Date.now() };
-    persist();
-    const r = await applyStatic({ adapter: name, ip: newIp, subnet: '255.255.255.0', gateway: '', dns: '' });
-    if (!r.ok) { store.staticAssist = null; persist(); return { ok: false, msg: r.err || 'netsh failed' }; }
-    log(`STATIC ASSIST — ${name} set to ${newIp}/24 (reverts on quit)`, 'ok');
-    await new Promise(res => setTimeout(res, 1500));
-    return { ok: true, adapter: name, ip: newIp, subnet: '255.255.255.0' };
+    // keep the ORIGINAL settings if an assist is already active on this card (re-pick)
+    if (store.staticAssist && store.staticAssist.adapter === name && store.staticAssist.prev) prev = store.staticAssist.prev;
+    let lastErr = null;
+    for (const newIp of candidates) {
+      store.staticAssist = { adapter: name, applied: newIp, prev, ts: Date.now() };
+      persist();
+      const r = await applyStatic({ adapter: name, ip: newIp, subnet: mask, gateway: '', dns: '' });
+      if (!r.ok) { lastErr = r.err || 'netsh failed'; continue; }
+      await new Promise(res => setTimeout(res, 1500));
+      let st = null;
+      try { st = ipAddressState ? await ipAddressState(newIp) : null; } catch {}
+      if (st && /duplicate/i.test(st)) {
+        log(`${newIp} is already taken on this wire (duplicate) — trying the next one`, 'warn');
+        lastErr = `${newIp} is already used by another device`;
+        continue;
+      }
+      log(`LAPTOP IP — ${name} set to ${newIp} (${mask}), reverts on quit`, 'ok');
+      return { ok: true, adapter: name, ip: newIp, subnet: mask };
+    }
+    // nothing stuck — hand the card back the way it was
+    try { await staticAssistRevert(true); } catch {}
+    return { ok: false, msg: lastErr || 'Could not set an address' };
   }
   async function staticAssistRevert(silent) {
     const rec = store.staticAssist;
@@ -911,7 +1029,7 @@ module.exports = function initDhcp(deps) {
     const a = safe ? adapters.find(x => x.name === safe) : adapters.find(x => x.connected);
     if (!a)                      checks.push({ label: 'Network adapter', ok: false, detail: 'No adapter found or selected' });
     else if (!a.connected)       checks.push({ label: 'Network adapter', ok: false, detail: `${a.name}: no link — check the cable` });
-    else if (!a.ip || a.apipa)   checks.push({ label: 'Network adapter', ok: false, detail: `${a.name}: connected but no usable address — use QUICK START to fix` });
+    else if (!a.ip || a.apipa)   checks.push({ label: 'Network adapter', ok: false, detail: `${a.name}: connected but no usable address — set a laptop IP in step 2` });
     else                         checks.push({ label: 'Network adapter', ok: true,  detail: `${a.name} — ${a.ip}` });
     const squatter = await checkPort67();
     checks.push(squatter ? { label: 'DHCP port (UDP 67)', ok: false, detail: `Held by ${squatter} — the engine may not hear requests` }
@@ -977,7 +1095,7 @@ module.exports = function initDhcp(deps) {
     }
     return deriveCfgFromAdapter(a);
   });
-  ipcMain.handle('dhcp-validate-config', async (_e, cfg) => validateCfg(cfg));
+  ipcMain.handle('dhcp-validate-config', async (_e, cfg) => fullValidate(cfg));
   ipcMain.handle('dhcp-set-preview', async (_e, opts) => {
     const v = validateCfg(opts);
     previewCfg = v.ok ? buildEngineCfg(opts) : null;
@@ -989,7 +1107,7 @@ module.exports = function initDhcp(deps) {
   ipcMain.handle('dhcp-serve-all', async (_e, opts) => {
     if (await policyBlocked()) return { ok: false, msg: 'DHCP server disabled by IT policy' };
     if (mode === 'off') return { ok: false, msg: 'Engine is offline' };
-    const v = validateCfg(opts);
+    const v = fullValidate(opts);
     if (!v.ok) return v;
     store.current = storableCfg(opts); persist();
     serveCfg = buildEngineCfg(opts);
@@ -1001,19 +1119,35 @@ module.exports = function initDhcp(deps) {
       return { ok: true, warning };
     } catch (e) { return { ok: false, msg: e.message }; }
   });
-  ipcMain.handle('dhcp-serve-device', async (_e, mac, opts) => {
+  ipcMain.handle('dhcp-serve-device', async (_e, mac, opts, wantIp) => {
     if (await policyBlocked()) return { ok: false, msg: 'DHCP server disabled by IT policy' };
     const m = cleanMac(mac);
     if (!m) return { ok: false, msg: 'Invalid MAC' };
     if (mode === 'off') return { ok: false, msg: 'Engine is offline' };
     if (mode === 'serve-all') return { ok: false, msg: 'Already serving everyone' };
     if (opts) {
-      const v = validateCfg(opts);
+      const v = fullValidate(opts);
       if (!v.ok) return v;
       store.current = storableCfg(opts); persist();
       serveCfg = buildEngineCfg(opts);
     }
     if (!serveCfg) return { ok: false, msg: 'No valid configuration' };
+    // v7.2.0: the address typed on the row — serve the address it will end up on
+    if (wantIp !== undefined && wantIp !== null && String(wantIp).trim()) {
+      const ip = String(wantIp).trim();
+      if (!isValidIp(ip)) return { ok: false, msg: `${ip} is not an IP address` };
+      const mk = ipToNum(serveCfg.subnet), net = ipToNum(serveCfg.adapterIp) & mk;
+      if ((ipToNum(ip) & mk) !== net) return { ok: false, msg: `${ip} is not on the laptop's subnet (${serveCfg.adapterIp})` };
+      const bcast = numToIp((net | (~mk >>> 0)) >>> 0), netAddr = numToIp(net >>> 0);
+      if (ip === serveCfg.adapterIp) return { ok: false, msg: `${ip} is the laptop's own address` };
+      if (ip === netAddr || ip === bcast) return { ok: false, msg: `${ip} is the network/broadcast address` };
+      if (serveCfg.gateway && ip === serveCfg.gateway && serveCfg.gateway !== serveCfg.adapterIp) return { ok: false, msg: `${ip} is the gateway` };
+      for (const [m2, d2] of Object.entries(devices)) if (m2 !== m && d2.ip === ip && ['offered', 'leased', 'static', 'releasing'].includes(d2.state)) return { ok: false, msg: `${ip} is already in use by ${m2}` };
+      for (const [m2, ip2] of Object.entries(store.reservations)) if (m2 !== m && ip2 === ip) return { ok: false, msg: `${ip} is reserved for ${m2}` };
+      for (const [m2, ip2] of Object.entries(chosenIp)) if (m2 !== m && ip2 === ip) return { ok: false, msg: `${ip} is already being served to ${m2}` };
+      chosenIp[m] = ip;
+      quarantinedIps.delete(ip); delete probeCache[ip];
+    }
     targets.add(m);
     try {
       await setMode('serve-targeted');
@@ -1024,12 +1158,12 @@ module.exports = function initDhcp(deps) {
   });
   ipcMain.handle('dhcp-unserve-device', async (_e, mac) => {
     const m = cleanMac(mac);
-    if (m) targets.delete(m);
+    if (m) { targets.delete(m); delete chosenIp[m]; }
     if (mode === 'serve-targeted' && targets.size === 0) { await setMode('listen'); log('No targets left — back to listening'); }
     else if (m) { log(`Target removed: ${m}`); announceMode(); }
     return { ok: true, targets: [...targets] };
   });
-  ipcMain.handle('dhcp-stop-serving', async () => { if (isServing()) { targets.clear(); await setMode('listen'); } return { ok: true }; });
+  ipcMain.handle('dhcp-stop-serving', async () => { if (isServing()) { targets.clear(); for (const k of Object.keys(chosenIp)) delete chosenIp[k]; await setMode('listen'); } return { ok: true }; });
 
   ipcMain.handle('dhcp-quick-start', async () => {
     const adapters = lightAdapters().filter(a => a.connected);
@@ -1039,7 +1173,7 @@ module.exports = function initDhcp(deps) {
     if (usable) return { ok: true, cfg: deriveCfgFromAdapter(usable) };
     return { ok: false, reason: 'needs-static', adapter: wiredFirst[0].name, msg: `${wiredFirst[0].name} is connected but has no usable address.` };
   });
-  ipcMain.handle('dhcp-static-assist-apply',  async (_e, adapter) => staticAssistApply(adapter));
+  ipcMain.handle('dhcp-static-assist-apply',  async (_e, adapter, ip, mask) => staticAssistApply(adapter, ip, mask));
   ipcMain.handle('dhcp-static-assist-revert', async () => staticAssistRevert(false));
   ipcMain.handle('dhcp-static-assist-status', async () => store.staticAssist || null);
 
@@ -1096,7 +1230,7 @@ module.exports = function initDhcp(deps) {
   ipcMain.handle('dhcp-revoke', async (_e, mac) => {
     const m = cleanMac(mac);
     const d = m && devices[m];
-    if (d && (d.state === 'leased' || d.state === 'offered')) { const ip = d.ip; delete devices[m]; log(`REVOKE — ${ip}  ${m}`, 'warn'); emitDevices(); announceTray(); return { ok: true, ip }; }
+    if (d && (d.state === 'leased' || d.state === 'offered' || d.state === 'static')) { const ip = d.ip; delete devices[m]; delete chosenIp[m]; log(`${d.state === 'static' ? 'FORGET' : 'REVOKE'} — ${ip}  ${m}`, 'warn'); emitDevices(); announceTray(); return { ok: true, ip }; }
     return { ok: false };
   });
   ipcMain.handle('dhcp-export-csv', async () => {
