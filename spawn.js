@@ -167,14 +167,19 @@ function next() {
   cur.t0 = Date.now();
   // First job also waits out PowerShell's own start-up (4 s on the bad box).
   const budget = cur.timeoutMs + (S.worker.firstReplyMs === null ? 20000 : 0);
-  cur.timer = setTimeout(() => { countDeath(); workerKill('worker timeout'); }, budget);
+  // v7.3.0: a slow job is not a dead worker — kill and restart it (the job falls back to
+  // one-shot), but only crashes count toward switching the worker off; timeouts get a
+  // separate, higher allowance so a box that is merely slow keeps its worker.
+  cur.timer = setTimeout(() => { S.worker.timeouts = (S.worker.timeouts || 0) + 1; if (S.worker.timeouts >= 8) countDeath(); workerKill('worker timeout'); }, budget);
   const line = `$__r = & { ${cur.script} } 2>$null; $__ok = $?; ($__r | Out-String -Width 4096); '${END}${cur.id}-' + $__ok + '>>>'\n`;
   try { ps.stdin.write(line); } catch { workerKill('worker write failed'); }
 }
 
 function oneShot(script, timeoutMs) {
   return new Promise(resolve => {
-    cp.execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: timeoutMs, windowsHide: true },
+    // v7.3.0: + PowerShell's own start-up (2–4 s on a managed laptop, more under load) —
+    // the caller's budget was meant for the query, not for launching the shell
+    cp.execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: timeoutMs + 10000, windowsHide: true },
       (err, stdout) => resolve({ ok: !err, stdout: err ? '' : String(stdout || '') }));
   });
 }

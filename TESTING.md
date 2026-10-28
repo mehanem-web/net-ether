@@ -16,6 +16,59 @@ into the bug report. That is the only observable on a managed laptop.
 Run twice: once from `dev.bat` (unelevated — chip AMBER, UAC per operation) and
 once from the portable build (UAC once at launch — chip normal, no prompts).
 
+### v7.3.0 — THE ONE PASS (also covers § 7.2.2, § 7.2.1, § 7.2.0 below)
+7.2.x never got its bench round, so 7.3 carries it: do this section, then § 7.2.2 → § 7.2.1 →
+§ 7.2.0 (lines marked *(7.3.0)* changed), at home. Then one real site day on the work laptop
+(MANAGED LAPTOP). Anything that breaks → COPY DIAGNOSTICS → next rc. The fleet only sees 7.3.0.
+
+**Leaving ETHER**
+- [ ] MULTI-IP alias on a card → ─ hides straight away (no banner). Tray click brings it back.
+- [ ] Same, ✕ → quits in one click. Relaunch: the alias is still on the card; amber line under the adapter: `↺ Last session left … 10.0.30.250 … (it was …)`.
+- [ ] APPLY a static on a DHCP card, ✕ → no prompt, app gone. Relaunch → leftover line "static X (it was DHCP)". **↩ PUT BACK (DHCP)** → card back on DHCP, line gone, LOG `leftover_restore` VERIFY OK.
+- [ ] Leave one there, **KEEP** → line gone. Relaunch → doesn't come back.
+- [ ] Leave one, ignore it, quit, relaunch twice → still shown (until dealt with).
+- [ ] Leftover showing, then → DHCP on that card yourself → line disappears on its own.
+- [ ] DHCP card that just got a different lease between launches → **no** leftover line.
+- [ ] Make the window as short as it goes, ✕ → quits (the old prompt hid below the fold here).
+- [ ] REACH on a ◇ SITTING / link-local device, ✕ → the temporary address is gone (LOG `reach_del`). DHCP tab SET LAPTOP IP… and + ALIAS → quit → both **stay** (leftover next launch).
+- [ ] ↩ RESTORE LAUNCH STATE (after any APPLY) → modal lists the changes → RESTORE → card back, LOG VERIFY `restore`.
+
+**APPLY / REVERT**
+- [ ] DHCP card with a gateway → APPLY static 192.168.0.50, gateway 192.168.0.1 → REVERT → back on DHCP (gateway from DHCP).
+- [ ] Static 10.0.0.5 gw 10.0.0.1 → APPLY 192.168.0.50 gw 192.168.0.1 → REVERT → 10.0.0.5 **with gw 10.0.0.1** (7.2 put the new gateway back, or refused and lost the button).
+- [ ] Dismiss the UAC prompt during a REVERT (dev build) → REVERT button is still there.
+- [ ] Dev build: APPLY, leave the UAC prompt up 20 s, click APPLY again → "STILL APPLYING THE LAST CHANGE". Accept → one apply in the LOG, not two.
+
+**Data safety (hardball — use a copy of `%APPDATA%\net-ether` first)**
+- [ ] Quit. Truncate `intel.json` (delete the last 50 characters in Notepad). Launch → notice "A DATA FILE COULD NOT BE READ … kept as intel.corrupt-<date>.json". The corrupt copy is there, byte-identical. LOG `storage` error. Put the good copy back → sites return.
+- [ ] Same with an **empty** `sites.json` and `presets.json` → notice lists them; no crash.
+- [ ] Edit sites fast: rename a site, immediately edit a device, add a credential, repeat ×10 → quit → relaunch → everything there, `intel.json` opens as valid JSON, no `*.tmp` files left in the folder.
+- [ ] `backups\` has an `intel-daily-…` after the first save today.
+- [ ] *(optional, needs a second Windows account)* Copy `intel.json` into the other account's `%APPDATA%\net-ether`, launch there → credentials show "[UNREADABLE …]"; edit a device's notes, save, copy the file back → in your account the credentials still decrypt.
+
+**Cards that change under ETHER**
+- [ ] REACH a device (temporary alias), rename the adapter in Windows, quit → alias removed from the renamed card (LOG names the new name).
+- [ ] REACH on a USB dongle, unplug the dongle, quit → LOG "kept for a retry". Plug it back, launch → alias cleaned up.
+- [ ] RECON SILENT on a USB dongle, pull it mid-listen → listen ends; LOG "card not present". Plug back, relaunch → bindings restored, card gets its address.
+- [ ] SCAN a /24, STOP at ~30 %, change the base, START at once → only the new subnet's rows appear; the scan finishes normally (7.2 stopped it early or mixed rows in).
+- [ ] DHCP: serve a device, pull the laptop's cable → LOG "Link DOWN … nothing is answered"; device DISCOVERs get no answer (and nothing goes out the Wi-Fi). Replug → "back … answering again", device leases.
+- [ ] DHCP tab open, unplug/replug the card → ◇ SITTING rows come back (wire watch restarted — LOG `wire-watch` "restarting").
+- [ ] Wi-Fi chip OFF → ON on the work laptop → status says it can take a minute; result ✓ ENABLED (no FAIL even when it takes 30 s).
+
+**Slow laptop (run these under `dev-slow.bat` — +2 s per launch — then again on the work laptop)**
+- [ ] SCAN a /24 with known live devices → they're all found (7.2 at +2 s: only ARP-cached hosts).
+- [ ] MULTI-IP add on a **DHCP** card → converts to static on the lease address, then adds; the lease address is never lost. LOG has no `alias_add` with a missing conversion.
+- [ ] → DHCP on a card that's already DHCP → ✓ (no error), DNS reset to DHCP.
+- [ ] Wi-Fi OFF/ON, DISABLE/ENABLE, RENEW → no false FAIL, no "ADAPTER NOT FOUND".
+- [ ] DIAGNOSTICS → STATE: PS WORKER still `ready` after an hour of use (not `disabled`).
+- [ ] RECON SILENT 65 s → card rebinds and gets its address back.
+- [ ] Click APPLY, then immediately ADD MULTI-IP on the same card → LOG shows them one after the other, not interleaved; both end up on the card.
+
+**Never stuck, never hidden**
+- [ ] Short window: DHCP tab, a row far down, ▶ SERVE with a mismatched laptop IP → the step-2 guard scrolls into view. IP tab: force an APPLY failure (bad adapter via dev) → COPY COMMANDS box scrolls into view.
+- [ ] SCAN with changes since last scan → the chip sits above the results.
+- [ ] DIAGNOSTICS after a full pass: no `unhandled` rows (any there → send them).
+
 ### Launch & diagnostics
 - [ ] Version chip shows the right version. Click it: STATE lists elevated YES (High) on the portable build, NO (Medium) in dev.
 - [ ] STATE: userData path is `%APPDATA%\net-ether`, data files listed, credentials line present, policy "none set".
@@ -190,8 +243,8 @@ Bench: a dumb switch, the Axis A1210 (or any Axis on AXIS OS 10+), a Bosch or ot
 
 **DHCP tab**
 - [ ] Open the tab: ① card line shows description · link speed · DHCP/static; ② chips list the card's addresses; cable strip reads LAPTOP ── card ── DEVICES GET first – .last.
-- [ ] Card with no address: SET LAPTOP IP… → 192.168.0.1 → LOG OP apply + VERIFY; chip `✓ 192.168.0.1 TEMP`, note "set by ETHER · reverts on quit". With a device already sitting on 192.168.0.1 (set one static there) → it moves to .2 and says so. Quit → card back to DHCP.
-- [ ] + ALIAS 10.0.30.250 → chip appears (ALIAS TEMP), handing out from it; quit → alias gone.
+- [ ] Card with no address: SET LAPTOP IP… → 192.168.0.1 → LOG OP apply + VERIFY; chip `✓ 192.168.0.1` (no TEMP tag since 7.3.0). With a device already sitting on 192.168.0.1 (set one static there) → it moves to .2 and says so. *(7.3.0)* Quit → the card **stays** on 192.168.0.1; next launch shows the leftover line on the IP tab.
+- [ ] + ALIAS 10.0.30.250 → chip appears (ALIAS, no TEMP since 7.3.0), handing out from it. *(7.3.0)* Quit → alias **stays**; next launch shows it in the leftover line.
 - [ ] **Stale settings:** serve on 192.168.0.x, quit, change the card to another subnet (or use a profile saved on another subnet), relaunch → open the tab: status "LAST JOB'S SETTINGS … REFILLED FROM THE CARD". Load the mismatched profile → amber guard with REFILL FROM CARD / + ADD AS ALIAS; SERVE refused with "NOT SERVED — LAPTOP IP IS NOT ON THIS CARD".
 - [ ] Power-cycle the A1210 with the tab open → ASKING within seconds, DEVICE "AXIS A1210 12.2.63", hostname axis-…. Type 192.168.0.150 → ▶ SERVE → SERVED .150 → ↗ OPEN opens its page.
 - [ ] Set it static on 192.168.0.150 in its own UI → within ~3 min (5-min lease) the row turns ✓ STATIC, status "WENT STATIC", log line. Second camera asking → box pre-filled .151.
@@ -234,6 +287,16 @@ Everything above is already proven; this is only what the fleet changes.
 - [ ] Two launches in a row during the EPM delay → one window.
 
 ---
+
+## Deployment notes for IT (v7.3.0 — the fleet update after 7.1.0)
+One install replaces 7.1.x; the v7.2.0 notes below also apply (new mDNS/SSDP sockets and their
+program-scoped firewall rule, one long-lived read-only PowerShell, the launch self-check).
+Same publisher, same install path, same signing — the publisher rule covers it.
+
+- **Addresses the tech sets now stay set on quit.** 7.1 asked on quit and could revert; 7.3 doesn't. A static, a MULTI-IP alias, or the DHCP tab's SET LAPTOP IP… / + ALIAS remain on the card exactly like a manual change in Windows, and the next launch shows them with one-click PUT BACK. Temporary REACH addresses and RECON SILENT unbinds are still undone automatically (on quit, or next launch if the card was unplugged).
+- **No new network behaviour.** No new ports, processes, rules or registry keys beyond 7.2.0's.
+- **Data files** in `%APPDATA%\net-ether` may now include `leftovers.json` and, only if a file was damaged, `<name>.corrupt-<date>.json` (kept on purpose — don't clean them up blindly; they may hold a tech's site credentials, still DPAPI-encrypted).
+- **Crash logging.** Unhandled errors go to the app's own diagnostics log (COPY DIAGNOSTICS); nothing is sent anywhere.
 
 ## Deployment notes for IT (v7.2.0)
 

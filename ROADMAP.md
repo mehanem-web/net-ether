@@ -1,5 +1,14 @@
 # NET//ETHER — Roadmap
 
+## 7.3.0 — the stability release (in progress, started 2026-10-27)
+Goal: one fleet update that lasts. Everything 7.2 added gets its bench round inside 7.3 (TESTING.md § 7.3.0 "the one pass"); rcs stay on Johan's machines; the fleet gets 7.3.0 only, then 7.3.x for things that block work.
+- Quit/hide: ─ always hides, ✕ always quits, no prompts. One rule: what the tech set stays; what ETHER did on its own (REACH, SILENT, DHCP engine) is cleaned up. Leftover line on next launch replaces every quit prompt.
+- Wi-Fi ENABLE timeout (60 s, state decides).
+- Audit round 1 (state files, adapter changes, renderer errors, IPC, below-the-fold prompts) and the process-launch audit (timeouts, read-back after every write, per-card write lock) — see README changelog.
+- Still to do before 7.3.0 final: the bench pass (TESTING.md § 7.3.0), Guide regenerated (minor bump), video script.
+- Left for later on purpose: SCAN still launches one ping.exe per address (budgets fixed; batching or raw ICMP is the real fix); firewall-rule adds aren't read back; tshark's 'error' event on a missing binary isn't watched (detection runs first).
+- Not changed on purpose: launch-snapshot is still retaken every launch (a crash mid-session moves the RESTORE LAUNCH STATE baseline — leftovers now cover the real case); a removed adapter stays selected on the IP tab until refresh (APPLY just fails with netsh's message).
+
 ## Delivered in 7.2.2 (2026-10-24)
 OPEN / REACH choose http or https by asking the device first (AXIS OS 12 ships https-only, so http:// looked like a dead device).
 
@@ -10,6 +19,7 @@ DHCP replies (OFFER/ACK/NAK) and the SCAN WIRE probes go to the serving card's s
 DHCP tab rework (① card / ② laptop address, plain wording, lease in plain time, one-device flow with the address typed on the row, ↗ OPEN, ✓ STATIC detection, model + firmware from the DHCP request, SERVE EVERYONE… confirm-first, QUICK START folded into SET LAPTOP IP… / + ALIAS), stale-settings guard, passive wire watch (mDNS from 5353 + announcements, SSDP NOTIFY, ARP and device LLDP via tshark) with ◇ SITTING rows and REACH to any subnet, wrong-address warning with HEAR THE WIRE on the IP tab, link-local SCAN note, ETHER tab renamed IP, spawn-latency work (launch instrumentation, `cmd /c ver` self-check in DIAGNOSTICS, persistent PowerShell worker, parallel + batched adapter reads, dev latency injector `dev-slow.bat`). Details and reasoning below.
 
 ## Still open after 7.2.2
+- ~~Wi-Fi ENABLE timeout~~ → 7.3.0.
 - Bench: everything in TESTING.md § 7.2.0, § 7.2.1 and § 7.2.2 on the work laptop — especially the PowerShell worker under EPM/CLM, ◇ SITTING for a camera on a fallback static, and ✓ STATIC on a real Axis/Bosch.
 - Spawn latency, the rest: SCAN still launches one `ping.exe` per address (ICMP needs a raw socket Node doesn't have) and the DHCP engine pings each candidate before an offer; both are bounded and parallel, but they are the next things to measure with the injector. Async UI: a full pass over every tab for anything that waits on a launch before drawing.
 - DHCP listen side still hears every card (the socket is on 0.0.0.0; Node can't say which card a broadcast arrived on). With Wi-Fi up, a phone or laptop on the Wi-Fi asking for DHCP shows as a row and, under SERVE EVERYONE, gets an offer that goes out the cable and never reaches it — harmless, noisy. Options: drop rows whose MAC is in the Wi-Fi side's ARP table, or tshark on the card when it's installed.
