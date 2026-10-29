@@ -3793,7 +3793,8 @@ async function loadAdapters(fromApply) {
     if (!fromApply) { autoDetectAdapter(); }
     populateLivePreset(fromApply);
     if (!fromApply) scanAutoDetect(true);
-    if (fromApply === true) setNetStatus('CONFIG APPLIED SUCCESSFULLY', 'ok', 5000);
+    // rc.2: the refresh after a change no longer overwrites the status — each action already
+    // said what happened, and after a failed PUT BACK / RESTORE this line read "SUCCESSFULLY"
     updateAdapterStatus();
     updateMultiIpBadge();
     loadWifi();   // v7.1.0: served from main's Get-NetAdapter cache, no extra spawn

@@ -231,6 +231,7 @@ Started from a day in the field on two addresses where ─ simply refused to hid
 - **One rule for what happens on quit.** What you set stays set: APPLY, MULTI-IP, the DHCP tab's + ALIAS and SET LAPTOP IP… (both used to undo themselves on quit). What ETHER did on its own is still cleaned up: REACH temporary addresses, RECON SILENT bindings, the DHCP engine and its firewall rule.
 - **Leftover line.** Next launch, a card that the last session left on a static (or with extra addresses) gets one amber line under the adapter: ↩ PUT BACK / KEEP. It replaces the DHCP tab's "never reverted — put it back?" modal and persists until dealt with or the card changes. DHCP lease changes never count.
 - **→ DHCP is one click** (the click-again arm is gone).
+- The refresh after any change no longer replaces the result with a generic "CONFIG APPLIED SUCCESSFULLY" (it also did that after a failed PUT BACK / RESTORE).
 - PUT BACK also resets that card's baseline for the session, so a static applied later in the same session is still flagged on the next launch (found in the rc.1 home pass).
 - **↩ RESTORE LAUNCH STATE** confirms in a modal instead of the inline banner, and the result comes from reading the cards back, not from netsh's exit code.
 
