@@ -237,6 +237,7 @@ Started from a day in the field on two addresses where ─ simply refused to hid
 - **SCAN: devices that answered DISCOVER keep a ◎ after their IP**, and the header's `◎ N DISCOVERY` count filters to just them (the pulse was lost in a long list). FOUND counts the scanned subnet only; discovery answers from elsewhere show as `· N ELSEWHERE`, so a sweep of an empty subnet no longer reads "7 HOSTS FOUND".
 - **ETHER is on the taskbar and in Alt+Tab.** ─ is a real minimize; the tray icon stays (alerts, toner, click to bring it forward). Closing the window any way — ✕, Alt+F4, the taskbar — quits.
 - **MULTI-IP / REACH on a DHCP card keep its DNS.** Turning the card static (needed to add an alias) dropped the DNS servers DHCP gave it, so names stopped resolving; they're now carried over as static. Old bug, 7.1 too.
+- **A card with aliases is recorded by its real address** (the one on the gateway's subnet), not whichever line Windows lists first. The leftover line said "static <alias>", and RESTORE LAUNCH STATE could have set the card to the alias's address.
 - PUT BACK also resets that card's baseline for the session, so a static applied later in the same session is still flagged on the next launch (found in the rc.1 home pass).
 - **↩ RESTORE LAUNCH STATE** confirms in a modal instead of the inline banner, and the result comes from reading the cards back, not from netsh's exit code.
 

@@ -4000,9 +4000,18 @@ async function snapshotAdapterConfig(name) {
   if (!block) return null;
 
   const isDhcp  = /DHCP enabled:\s+Yes/i.test(block);
-  const ipMatch = block.match(/IP Address:\s+([\d.]+)/i);
-  const snMatch = block.match(/Subnet Prefix[^(]+\(mask\s+([\d.]+)\)/i);
   const gwMatch = block.match(/Default Gateway:\s+([\d.]+)/i);
+  // rc.2: a card with aliases lists several "IP Address" lines, in no promised order (seen:
+  // the alias first). The primary is the one whose subnet holds the gateway — the rule the
+  // adapter list uses — else the first that isn't 169.254. Taking the first line made the
+  // leftover read "static <alias>" and could have made RESTORE set the card to the alias.
+  const pairs = [...block.matchAll(/IP Address:\s+([\d.]+)\s*\r?\n\s*Subnet Prefix:[^(\r\n]*\(mask\s+([\d.]+)\)/gi)].map(m => ({ ip: m[1], mask: m[2] }));
+  const n4 = x => x.split('.').reduce((a, o) => ((a << 8) + (+o)) >>> 0, 0);
+  const gwIp = gwMatch && isValidIp(gwMatch[1]) ? gwMatch[1] : null;
+  const prim = (gwIp && pairs.find(p => ((n4(p.ip) & n4(p.mask)) >>> 0) === ((n4(gwIp) & n4(p.mask)) >>> 0)))
+            || pairs.find(p => !/^169\.254\./.test(p.ip)) || pairs[0] || null;
+  const ipMatch = prim ? [null, prim.ip] : block.match(/IP Address:\s+([\d.]+)/i);
+  const snMatch = prim ? [null, prim.mask] : block.match(/Subnet Prefix[^(]+\(mask\s+([\d.]+)\)/i);
   const dnsMatch = block.match(/Statically Configured DNS Servers:\s+([\d.]+)/i) ||
                    block.match(/DNS servers configured through DHCP:\s+([\d.]+)/i);
 
