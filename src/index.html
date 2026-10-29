@@ -4416,7 +4416,7 @@ function renderAdapterTools(a) {
   } else wifi.classList.remove('show');
 }
 
-async function setAdapterEnabled(name, enabled, chip) {
+async function setAdapterEnabled(name, enabled, chip, quiet) {
   if (!window.hud || !hud.adapterSetEnabled) return false;
   if (chip) chip.classList.add('busy');
   const isWifi = wifiList.some(w => w.name === name);
@@ -4424,6 +4424,7 @@ async function setAdapterEnabled(name, enabled, chip) {
   let r;
   try { r = await hud.adapterSetEnabled(name, enabled); } catch (err) { r = { ok: false, err: err.message }; }
   if (chip) chip.classList.remove('busy');
+  if (quiet) return r;   // rc.2: the caller (WI-FI chip) sums up several adapters in one line
   if (r.ok) {
     setNetStatus(`✓ ${name.toUpperCase()} ${enabled ? 'ENABLED' : 'DISABLED'}${r.verified ? '' : ' — NOT YET CONFIRMED, REFRESH IN A MOMENT'}`, r.verified ? 'ok' : 'warn', 5000);
     return true;
@@ -4469,10 +4470,26 @@ async function wifiChipClick() {
     if (!go) return;
   }
   const chip = document.getElementById('tool-wifi');
+  // rc.2: one line for the whole click. It showed the LAST adapter's result, so a second Wi-Fi
+  // entry netsh doesn't know (Windows keeps several) put "ADAPTER NOT FOUND" over a success.
+  const on = !anyUp;
+  if (on) setNetStatus('SWITCHING WI-FI ON... IT CAN TAKE UP TO A MINUTE TO RECONNECT', '');
+  else setNetStatus('SWITCHING WI-FI OFF...', '');
+  let ok = 0, failed = [], cancelled = false;
   for (const w of wifiList) {
     if (anyUp && !w.adminUp) continue;      // already off
-    await setAdapterEnabled(w.name, !anyUp, chip);
+    const r = await setAdapterEnabled(w.name, on, chip, true);
+    if (!r) continue;
+    if (r.ok) ok++;
+    else if (r.err === 'UNKNOWN_ADAPTER') continue;            // not switchable — not the tech's problem
+    else if (r.err === 'CANCELLED') { cancelled = true; break; }
+    else failed.push(w.name + (r.err ? ' (' + r.err + ')' : ''));
   }
+  if (cancelled) setNetStatus('CANCELLED — UAC PROMPT DISMISSED', 'warn', 4000);
+  else if (failed.length && !ok) setNetStatus(`WI-FI COULD NOT BE SWITCHED ${on ? 'ON' : 'OFF'} — ${failed.join(', ').toUpperCase()} — COPY DIAGNOSTICS`, 'err', 8000);
+  else if (failed.length) setNetStatus(`WI-FI MOSTLY ${on ? 'ON' : 'OFF'} — ${failed.join(', ').toUpperCase()} DIDN'T SWITCH`, 'warn', 8000);
+  else if (ok) setNetStatus(on ? '✓ WI-FI BACK ON' : '✓ WI-FI OFF — SCAN, DHCP AND PING NOW GO OUT THE WIRE', 'ok', 6000);
+  else setNetStatus(on ? 'WI-FI IS ALREADY ON' : 'WI-FI IS ALREADY OFF', 'ok', 4000);
   setTimeout(loadWifi, 1200);
 }
 
