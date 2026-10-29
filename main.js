@@ -568,7 +568,7 @@ function createTray() {
 
   const buildMenu = () => Menu.buildFromTemplate([
     {
-      label: win.isVisible() ? 'Hide NET//ETHER' : 'Show NET//ETHER',
+      label: win.isVisible() && !win.isMinimized() ? 'Minimize NET//ETHER' : 'Show NET//ETHER',
       click: () => toggleWindow(),
     },
     { type: 'separator' },
@@ -614,6 +614,8 @@ function createTray() {
   });
   win.on('show', () => tray.setContextMenu(buildMenu()));
   win.on('hide', () => tray.setContextMenu(buildMenu()));
+  win.on('minimize', () => tray.setContextMenu(buildMenu()));
+  win.on('restore',  () => tray.setContextMenu(buildMenu()));
   // v7.1.0: a toner toast was clicked — bring the HUD back
   tray.on('balloon-click', () => showWindow());
 
@@ -632,7 +634,7 @@ function toggleWindow() {
   // Hide only when the HUD is unambiguously in front of the user. A window that
   // is "visible" but minimized, unfocused, or that lost its topmost bit (Win+Shift+S
   // does that) gets brought forward instead of hidden.
-  if (win.isVisible() && !win.isMinimized() && win.isFocused()) { win.hide(); return; }
+  if (win.isVisible() && !win.isMinimized() && win.isFocused()) { win.minimize(); return; }   // rc.2: minimize, not hide
   showWindow();
 }
 
@@ -734,7 +736,7 @@ function createWindow() {
     resizable: true,
     minWidth: 430,   // v7.1.0: visible beats small — every adapter chip fits at 430
     minHeight: 300,
-    skipTaskbar: true,
+    skipTaskbar: false,   // rc.2: on the taskbar and in Alt+Tab; the tray icon stays as well
     show: false,
     webPreferences: {
       nodeIntegration: false,
@@ -783,8 +785,10 @@ function createWindow() {
     win.webContents.openDevTools({ mode: 'detach' });
   }
 
+  // rc.2: closing the window (✕, Alt+F4, taskbar "Close window") quits — it used to hide to
+  // the tray, which made sense only while the window had no taskbar button
   win.on('close', (e) => {
-    if (!app.isQuitting) { e.preventDefault(); win.hide(); }
+    if (!app.isQuitting) { e.preventDefault(); shutdownAndQuit(); }
   });
 }
 
@@ -896,7 +900,6 @@ async function shutdownAndQuit() {
   app.exit(0);
 }
 ipcMain.on('win-quit', () => { shutdownAndQuit(); });
-// win-minimize removed — skipTaskbar:true makes minimize a dead end; the button hides to tray.
 // win-move removed — drag uses -webkit-app-region
 
 
@@ -909,6 +912,7 @@ ipcMain.on('win-quit', () => { shutdownAndQuit(); });
 // focused (mouse works, typing goes nowhere) — so if we had focus, take it back.
 function progResize(width, height) {
   if (!winAlive()) return;
+  if (win.isMinimized()) return;   // rc.2: a resize while minimized can pop the window back up on Windows
   const cur = win.getBounds();
   const w = Math.round(width), h = Math.round(height);
   if (w === cur.width && h === cur.height) return;
@@ -987,7 +991,7 @@ ipcMain.handle('win-set-opacity', (e, val) => {
 });
 
 // ── IPC: hide/show ─────────────────────────────────────────
-ipcMain.on('win-hide', () => { if (winAlive()) win.hide(); });
+ipcMain.on('win-minimize', () => { if (winAlive()) win.minimize(); });   // rc.2: ─ is a real minimize
 
 
 // ── IPC: tray state from renderer ─────────────────────────
@@ -2079,7 +2083,7 @@ ipcMain.handle('reach-clear', async () => clearTempAliases('REMOVE clicked'));
 
 ipcMain.on('notify-hidden', (e, { title, body, warn }) => {
   try {
-    if (!winAlive() || win.isVisible() || !tray) return;
+    if (!winAlive() || (win.isVisible() && !win.isMinimized()) || !tray) return;   // rc.2: minimized counts as away
     tray.displayBalloon({
       title:   String(title || 'NET//ETHER').slice(0, 60),
       content: String(body  || '').slice(0, 200),

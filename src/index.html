@@ -2948,7 +2948,7 @@ select.field-input.dhcp-lease { padding: 5px 6px; font-size: 12px; cursor: point
       <div class="win-btn amber" id="btn-opacity" onclick="toggleOpacity()" title="Toggle 50% transparency">◑</div>
       <div class="win-btn" id="btn-palette" onclick="togglePalette(event)" title="Change colour theme">▣</div>
       <div class="win-btn" onclick="openHelp(event)" title="Quick guide for this tab">?</div>
-      <div class="win-btn" onclick="safeHide()" title="Hide to tray (click the tray icon to bring it back)">─</div>
+      <div class="win-btn" onclick="safeHide()" title="Minimize (taskbar, Alt+Tab or the tray icon bring it back)">─</div>
       <div class="win-btn close" onclick="safeQuit()" title="Quit NET//ETHER">✕</div>
     </div>
   </div>
@@ -4806,7 +4806,7 @@ const HELP_CONTENT = {
       ['DISABLE / ENABLE', 'In the ADAPTER line. Drops the link, keeps the IP config, comes back with ENABLE. Blocked while the DHCP server is serving on that adapter.'],
       ['WI-FI',      'Switches every wireless adapter off so SCAN, DHCP and PING go out the wire. The chip stays amber until you turn it back on — and it stays off through a reboot.'],
       ['LEFTOVER LINE', 'Quit never asks or undoes anything — what you set stays set. If the last session left this card on a static it wasn\'t on before, or with extra addresses, one amber line under the adapter says so: ↩ PUT BACK or KEEP.'],
-      ['─ / ✕',      '─ hides to the tray, ✕ quits. One click each, always. Temporary addresses ETHER added for REACH go on quit.'],
+      ['─ / ✕',      '─ minimizes (taskbar, Alt+Tab or the tray icon bring it back), ✕ quits. One click each, always. Temporary addresses ETHER added for REACH go on quit.'],
       ['SITE REPORT', 'Version chip → SITE REPORT. One click copies a markdown summary of this session: adapter, scans and site changes, DHCP leases, ping results, every privileged operation. Paste into the ticket.'],
     ],
     gotcha: 'Modern Axis cameras have no factory IP — they fall back to 169.254.x.x. Use the AXIS tile to join that /16, then find the camera\'s address in its label or the Axis tool.',
@@ -5841,9 +5841,9 @@ async function takeFullSnapshot(adapterName) {
 // checked or undone on the way out: what the tech set stays set (REACH temp aliases, SILENT
 // bindings and the DHCP engine — things ETHER did on its own — are cleaned up in main). If a
 // static or extra addresses are still on a card next launch, the IP tab shows a leftover line.
-function safeHide() {
+function safeHide() {   // rc.2: a real minimize — taskbar button and Alt+Tab bring it back
   try { saveLivePreset(); } catch {}
-  if (window.hud) hud.hide();
+  if (window.hud) hud.minimize();
 }
 function safeQuit() {
   try { saveLivePreset(); } catch {}
