@@ -78,7 +78,8 @@
       "spawn.js",
       "preload.js",
       "src/**/*",
-      "assets/**/*"
+      "assets/**/*",
+      "!assets/*.py"
     ],
     "asarUnpack": [
       "assets/NET-ETHER-Guide.pdf",
