@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, shell, clipboard, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, shell, clipboard, dialog, powerMonitor } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -821,6 +821,8 @@ app.whenReady().then(async () => {
   createWindow();
   createTray();
   initDhcpEngine();
+  // rc.4: pause the DHCP engine / wire watch / PING while the laptop sleeps
+  try { powerMonitor.on('suspend', () => onSystemSuspend()); powerMonitor.on('resume', () => onSystemResume()); } catch {}
   // v7.2.0: start the PowerShell worker now (its start-up cost is paid once, in the
   // background), and time one bare process launch for the diagnostics overlay.
   SPAWN.warmWorker();
@@ -1668,6 +1670,52 @@ function wireWatchStop() {
   WIRE.gen++;
   if (WIRE.watch) { try { WIRE.watch.stop(); } catch {} }
   WIRE.watch = null; WIRE.adapter = null;
+}
+// ── SLEEP / WAKE (rc.4) ────────────────────────────────────
+// A laptop in a closed lid is "asleep" but on these machines (Modern Standby) not off —
+// a listening DHCP engine, a tshark capture and a PING loop kept working in a backpack
+// and ran the battery flat, hot. On sleep: pause what's running and remember it; on
+// wake: give the network cards a moment, then start exactly that again. Locking the
+// screen is not sleep — serving a device through a firmware update with the screen
+// locked keeps working.
+const SLEEP = { asleep: false, since: 0, dhcp: false, wire: null };
+async function onSystemSuspend() {
+  if (SLEEP.asleep) return;
+  SLEEP.asleep = true; SLEEP.since = Date.now();
+  const paused = [];
+  // only flags set here, never cleared — a sleep during the wake delay keeps what's owed
+  try { if (DHCP && DHCP.suspend && await DHCP.suspend('laptop asleep')) SLEEP.dhcp = true; } catch {}
+  if (SLEEP.dhcp) paused.push('DHCP engine');
+  if (WIRE.watch && WIRE.adapter) { SLEEP.wire = { adapter: WIRE.adapter, sender: WIRE.sender }; wireWatchStop(); }
+  if (SLEEP.wire) paused.push('wire watch');
+  try { if (winAlive()) win.webContents.send('power', { state: 'sleep' }); } catch {}
+  diagAdd({ kind: 'app', tag: 'power', ok: true, note: `Laptop going to sleep — paused: ${paused.join(', ') || 'nothing running'} (PING pauses in the window)` });
+  try { diagFlush(); } catch {}
+}
+async function onSystemResume() {
+  if (!SLEEP.asleep) return;
+  SLEEP.asleep = false;
+  const mins = Math.max(0, Math.round((Date.now() - SLEEP.since) / 60000));
+  await new Promise(r => setTimeout(r, 4000));   // network cards come back a few seconds after wake
+  if (SLEEP.asleep) return;                        // went back to sleep meanwhile — the next wake finishes this
+  const back = [], failed = [];
+  if (SLEEP.dhcp) {
+    SLEEP.dhcp = false;
+    let ok = false;
+    try { ok = !!(DHCP && await DHCP.resume()); } catch {}
+    (ok ? back : failed).push('DHCP engine');
+  }
+  if (SLEEP.wire) {
+    const w = SLEEP.wire; SLEEP.wire = null;
+    if (!w.sender || !w.sender.isDestroyed()) {
+      let ok = false;
+      try { ok = !!(await wireWatchStart(w.adapter, w.sender)).ok; } catch {}
+      (ok ? back : failed).push('wire watch');
+    }
+  }
+  try { if (winAlive()) win.webContents.send('power', { state: 'wake', mins, back, failed }); } catch {}
+  diagAdd({ kind: 'app', tag: 'power', ok: !failed.length,
+    note: `Laptop awake after ${mins} min — restarted: ${back.join(', ') || 'nothing to restart'}${failed.length ? ` · could not restart: ${failed.join(', ')}` : ''}` });
 }
 ipcMain.handle('wire-watch-start', (e, adapter) => wireWatchStart(adapter, e.sender));
 ipcMain.handle('wire-watch-stop', () => { wireWatchStop(); return { ok: true }; });

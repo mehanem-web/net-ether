@@ -132,6 +132,7 @@ contextBridge.exposeInMainWorld('hud', {
   diagClear:   ()   => ipcRenderer.invoke('diag-clear'),
   reportError: (msg, where) => ipcRenderer.send('renderer-error', { msg: String(msg || '').slice(0, 400), where: String(where || '').slice(0, 80) }),
   onDiagEntry: (cb) => ipcRenderer.on('diag-entry', (_, d) => cb(d)),
+  onPower: (cb) => { ipcRenderer.removeAllListeners('power'); ipcRenderer.on('power', (_, d) => cb(d)); },   // rc.4: sleep / wake
 
   // ── DHCP server engine (dhcp.js) — fixed, named surface ──
   dhcp: {

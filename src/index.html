@@ -6395,6 +6395,20 @@ function monStop() {
   if (window.hud) { try { hud.traySetMode('idle'); } catch {} }
 }
 
+// rc.4: the laptop going to sleep pauses a running PING (and its toner); waking resumes it.
+// A PING the user paused or stopped stays that way.
+let monSleptRunning = false;
+function monOnPower(d) {
+  if (!d) return;
+  if (d.state === 'sleep') {
+    if (monState === 'running') { monPause(); monSleptRunning = true; monSetStatus('PAUSED — LAPTOP ASLEEP', 'warn'); }
+  } else if (d.state === 'wake') {
+    if (monSleptRunning && monState === 'paused') { monResume(); monSetStatus(`RESUMED AFTER SLEEP (${d.mins || 0} MIN)`, 'ok'); }
+    monSleptRunning = false;
+  }
+}
+if (window.hud && hud.onPower) hud.onPower(monOnPower);
+
 function monUpdateControls() {
   const bStart = document.getElementById('mon-btn-start');
   const bPause = document.getElementById('mon-btn-pause');
