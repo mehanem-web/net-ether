@@ -4822,7 +4822,7 @@ const HELP_CONTENT = {
       ['COPY COMMANDS', 'Shows the exact netsh lines without running them — copy into an admin prompt if APPLY can\'t.'],
       ['MTU',        'Moved to DIAGNOSTICS (version chip → DIAGNOSTICS → TOOLS). Resets MTU to 1500 — fixes "can ping, can\'t load pages."'],
       ['CIDR',       'The CIDR tab in this guide. Click a row to put that mask in the subnet field.'],
-      ['MULTI-IP',   'Adds a second IP without touching the primary. On a DHCP adapter it converts to static first (you\'ll be asked twice). Aliases stay on quit and survive reboots — next launch flags them as a leftover.'],
+      ['MULTI-IP',   'Adds a second IP without touching the primary. On a DHCP adapter it converts to static first, keeping its address, gateway and DNS. Aliases stay on quit and survive reboots — next launch flags them as a leftover.'],
       ['LINK SPEED', 'A connected adapter shows its negotiated speed where CONNECTED used to be. Green 1 Gbps, amber 100 Mbps, red 10. A gigabit port stuck at 100 is a bad crimp, cable or port.'],
       ['DISABLE / ENABLE', 'In the ADAPTER line. Drops the link, keeps the IP config, comes back with ENABLE. Blocked while the DHCP server is serving on that adapter.'],
       ['WI-FI',      'Switches every wireless adapter off so SCAN, DHCP and PING go out the wire. The chip stays amber until you turn it back on — and it stays off through a reboot.'],
@@ -8587,21 +8587,10 @@ async function aliasAdd() {
     return;
   }
 
-  // ── PRE-FLIGHT: DHCP adapter ────────────────────────────
-  // Adding a multi-IP to a DHCP adapter converts it to static (keeping its current
-  // lease values) — that's a real config change to the primary, not just an extra
-  // IP. Require a second click to confirm, armed for 12s.
+  // rc.3: no confirm click. Adding to a DHCP card converts it to static on its own address
+  // first (keeping its gateway and DNS) — that's what the tech asked for, and the status says so.
   const adapterEntry = adapterList.find(a => a.name === adapter);
   const isDhcp = adapterEntry?.isDhcp === true;
-  if (isDhcp && _aliasDhcpArmed !== adapter) {
-    _aliasDhcpArmed = adapter;
-    clearTimeout(_aliasDhcpArmTimer);
-    _aliasDhcpArmTimer = setTimeout(() => { _aliasDhcpArmed = null; }, 12000);
-    setAliasStatus(`${adapter.toUpperCase()} IS DHCP — ADDING WILL SET IT STATIC (KEEPS ${adapterEntry.ip || 'CURRENT IP'}). CLICK ADD AGAIN TO CONFIRM`, 'warn', 12000);
-    return;
-  }
-  _aliasDhcpArmed = null;
-  clearTimeout(_aliasDhcpArmTimer);
 
   setAliasStatus(isDhcp ? 'CONVERTING TO STATIC, THEN ADDING...' : 'ADDING MULTI-IP...', '');
   const res = await hud.aliasAdd({ adapter, ip, subnet });
@@ -8630,8 +8619,6 @@ async function aliasAdd() {
     setAliasStatus('ERROR: ' + (res.err || 'unknown').toUpperCase() + ' — CMD BELOW, DETAILS IN DIAGNOSTICS', 'err');
   }
 }
-let _aliasDhcpArmed = null;
-let _aliasDhcpArmTimer = null;
 
 async function aliasCopyCmd(action) {
   const adapter = getAliasAdapter();
