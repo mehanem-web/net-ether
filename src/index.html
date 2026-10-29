@@ -5930,7 +5930,7 @@ async function executeRestoreLaunchState(adapterNames) {
   try {
     const result = await hud.restoreLaunchState(adapterNames);
     if (result.ok) {
-      setNetStatus('LAUNCH STATE RESTORED — REFRESHING...', 'ok');
+      setNetStatus('✓ LAUNCH STATE RESTORED', 'ok', 6000);   // rc.3: no "..." — nothing overwrites it any more
       _launchDeltaCache = null;
       const btn = document.getElementById('restore-launch-btn');
       if (btn) btn.classList.add('hidden');
@@ -6590,7 +6590,7 @@ async function applyDhcp() {
   try {
     const result = await hud.applyDhcp(adapter, revertInProgress ? 'revert' : undefined);
     if (result.ok) {
-      setNetStatus(`✓ ${adapter.toUpperCase()} IS BACK ON DHCP — REFRESHING...`, 'ok');
+      setNetStatus(`✓ ${adapter.toUpperCase()} IS BACK ON DHCP`, 'ok', 6000);   // rc.3: was "— REFRESHING...", which animated forever
       clearIpApplied();
       previousConfig = null;
       hideRevertBtn();
