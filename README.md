@@ -222,11 +222,11 @@ NET-ETHER/
 
 ## CHANGELOG
 
-### v7.3.0 (in progress — rc.2, 2026-10-28)
+### v7.3.0 (in progress — rc.3, 2026-10-28)
 The stability release: what 7.2 added, plus a full bug hunt, so the fleet gets one update that lasts.
 Started from a day in the field on two addresses where ─ simply refused to hide the window.
 
-**rc.3 — from the rc.2 check (2026-10-28)**
+**rc.3 — from the rc.2 check, same night (2026-10-28)**
 - **Discovery rows get a violet frame** (plus a violet ◎ and filter chip) — the ◎ alone was too quiet. Violet because amber/orange already mean camera/NVR; the left edge keeps the device-type colour.
 - **MULTI-IP on a DHCP card no longer says "REQUIRES STATIC IP"** in red. That message predates the automatic conversion, and the 15 s refresh could drop it on top of ADD's "click ADD again", so it looked like a dead end. The panel now just hints "DHCP — ADD SETS IT STATIC".
 - **MULTI-IP on a DHCP card is one click** too — no "click ADD again". It converts the card to static on its own address (gateway and DNS kept) and says so.
