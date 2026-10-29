@@ -530,7 +530,7 @@ function startTrayAnimation() {
     trayState.frame = (trayState.frame + 1) % 4;
     try {
       const img = nativeImage.createFromPath(iconPath(trayState.mode, trayState.frame));
-      tray.setImage(img);
+      if (!img.isEmpty()) tray.setImage(img);   // rc.3: a frame that won't load keeps the last good icon, never a blank
     } catch {}
   }, FRAME_MS[trayState.mode]);
 }
