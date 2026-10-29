@@ -21,7 +21,7 @@ log (OP = privileged command with full output, VERIFY = result check, APP = even
 | LIVE poll | Every 15 s while the IP tab is on the LIVE preset **and the window is visible**: started together — `netsh interface show interface`, `netsh interface ip show config`, one `Get-NetAdapter -IncludeHidden` (speed, media, descriptions, GUIDs) through the PowerShell worker, one `reg query …\Interfaces /s /v EnableDHCP` for every adapter. A refresh already running is shared, not repeated | no | nothing | — |
 | PowerShell worker (7.2.0) | One hidden `powershell -NoProfile -NonInteractive -Command -` started at launch; read-only one-line queries go to it over stdin once its warm-up job has answered. Timeout / crash / multi-line → that query runs one-shot as before; 3 deaths → off for the session | no | nothing | — |
 | Process-launch self-check (7.2.0) | 1.5 s after launch: `cmd /c ver` timed → PROCESS LAUNCH row in STATE with a verdict. Every launch is timed (LAUNCHES row). `NET_ETHER_SPAWN_DELAY_MS` / `--spawn-delay=` holds every callback-style launch that long (dev only) | no | nothing | APP `spawn-check` |
-| Tray | Minimize (─) hides to tray — always, whatever is on the cards (7.3.0); tray click restores; icon animates red while any PING target is failing | — | — | — |
+| Tray | rc.2: ETHER has a taskbar button and shows in Alt+Tab; ─ minimizes (always, whatever is on the cards). The tray icon stays: click brings the window forward (or minimizes it when it's already in front); icon animates red while any PING target is failing | — | — | — |
 | Version chip | Amber when the app is **not** elevated (every netsh will prompt UAC) | — | — | — |
 | Always-on-top | Re-asserted on focus/show when another window stripped it | — | — | APP `window` |
 | Quit (✕) | One click, no prompts (7.3.0). Addresses the tech set — APPLY, MULTI-IP, + ALIAS, SET LAPTOP IP… — stay as they are. DHCP engine shut down (firewall rule removed); REACH aliases removed (+ adapter back to DHCP if REACH converted it); tshark allowed to exit, then SILENT bindings restored with retries and verified (message box if that fails); diagnostics flushed; hard-exit watchdog | yes (cleanups) | nothing | OP `dhcp-fw-del`, OP `reach_del`, OP `recon-rebind`, VERIFY `recon-rebind` |
@@ -41,8 +41,8 @@ log (OP = privileged command with full output, VERIFY = result check, APP = even
 | ◐ theme | Cycles the 6 presets; custom palette via the picker; stored in `localStorage` | — | — | — |
 | ▣ opacity | Steps window opacity | — | — | — |
 | ? | Help overlay for the current tab | — | — | — |
-| ─ | Hide to tray (not a real minimize — `skipTaskbar` would make that unrecoverable) | — | — | — |
-| ✕ | Quit (see Always on) — one click | — | — | — |
+| ─ | Minimize (rc.2 — was hide-to-tray). Taskbar, Alt+Tab or the tray icon bring it back | — | — | — |
+| ✕ | Quit (see Always on) — one click. Alt+F4 and the taskbar's Close window quit too (rc.2) | — | — | — |
 
 ---
 
@@ -60,7 +60,7 @@ log (OP = privileged command with full output, VERIFY = result check, APP = even
 | DISABLE / ENABLE chip | Modal (louder if it's the adapter in use) → `netsh interface set interface "<n>" admin=…` → poll ≤6 s → list refresh. Refused while the DHCP engine is serving on that adapter | yes | nothing | OP `adapter-disable`/`adapter-enable`, VERIFY |
 | IP / SUBNET / GATEWAY / DNS fields | Validated live (renderer) and again in main before any netsh. 169.254.x.x allowed (mask note). Changes mark the form dirty | — | — | — |
 | APPLY CONFIG | Snapshot current config (for REVERT) → duplicate-IP check (ARP for the target) → `netsh interface ip set address "<n>" static <ip> <mask> [gw]` (+ `set dns … validate=no`) → verify via live interfaces / netsh / registry **whatever netsh returned** (7.3.0: the read-back decides; address OK + DNS step failed = ✓ with a DNS warning, REVERT armed). Snapshot holds the card's *old* gateway/DNS (7.3.0) → history entry | yes | 1 ARP probe for the duplicate check | OP `apply`, VERIFY `apply` |
-| → DHCP (badge or button) | `netsh interface ip set address "<n>" dhcp`, then `set dns dhcp` as a separate step (7.3.0 — "already enabled" no longer stops DNS) → verify via netsh, registry fallback; the read-back decides | yes | DHCP DISCOVER by Windows | OP `dhcp`, VERIFY `dhcp` |
+| → DHCP (badge or button) | One click (rc.2; was click-twice). `netsh interface ip set address "<n>" dhcp`, then `set dns dhcp` as a separate step (7.3.0 — "already enabled" no longer stops DNS) → verify via netsh, registry fallback; the read-back decides | yes | DHCP DISCOVER by Windows | OP `dhcp`, VERIFY `dhcp` |
 | REVERT | Re-applies the pre-APPLY snapshot (static fields or back to DHCP) | yes | as APPLY | OP `revert`, VERIFY `revert` |
 | MTU → 1500 | `netsh interface ipv4 set subinterface "<n>" mtu=1500 store=persistent` → MTU re-read (7.3.0: also after a timeout/error — the read decides) | yes | nothing | OP `mtu`, VERIFY `mtu` |
 | CMD / COPY COMMANDS | Shows/copies the exact netsh lines APPLY would run; nothing executes | — | — | — |

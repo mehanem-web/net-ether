@@ -68,12 +68,12 @@ Manage static IP configuration for any wired adapter. (The tab was called ETHER 
 
 - **Presets** — 4 slots (LIVE, +3 saved). LIVE auto-populates from the active adapter and never persists to disk.
 - **Factory defaults** — manufacturer out-of-box addresses, beside SAVE TO PRESET. A tile fills the device's subnet and puts you one address above it. The **AXIS** tile is link-local (`169.254.1.1 / 255.255.0.0`): current Axis cameras ship DHCP-only and fall back to a random `169.254` address, so joining that /16 is how you reach one without a DHCP server or the Axis tool.
-- **Adapter dropdown** — every wired adapter with live status, IP, DHCP/STATIC badge, and connection state. On a static adapter a **→ DHCP** action sits beside the badge: click twice to hand the adapter back to DHCP.
+- **Adapter dropdown** — every wired adapter with live status, IP, DHCP/STATIC badge, and connection state. On a static adapter a **→ DHCP** action sits beside the badge: one click hands the adapter back to DHCP.
 - **APPLY CONFIG** — writes IP / subnet / gateway / DNS via `netsh`, then re-reads the adapter to confirm it took. A verified change shows three ways: green stripe on the status bar, **✓ ACTIVE** on the IP field, and a flash of the new address in the top bar. A failed one turns the field red.
 - **COPY COMMANDS** — shows the exact `netsh` lines without running them
 - **MTU** — in DIAGNOSTICS (version chip) → TOOLS: reads current MTU and resets to 1500 (fixes the classic "can ping but can't browse" symptom)
 - **CIDR** — in the **?** quick guide: prefix ↔ mask ↔ hosts; click a row to fill the subnet field
-- **REVERT** — snapshots the previous config before applying; one click to restore
+- **REVERT** — undoes the last APPLY (rc.2: it used to go back to before the session's first APPLY). Back to how the card was at launch: ↩ RESTORE LAUNCH STATE.
 - **Connection History** — last 10 applied configs, click any to reload
 - `169.254.x.x` is allowed (with a mask hint). `0.x.x.x` and an APIPA DNS server are still rejected.
 - **Leftover line** (7.3.0) — quit never asks or undoes anything. If the last session left this card on a static it wasn't on before, or with extra addresses, one amber line under the adapter says so: **↩ PUT BACK** restores what it was (and reads it back), **KEEP** forgets the note.
@@ -222,9 +222,23 @@ NET-ETHER/
 
 ## CHANGELOG
 
-### v7.3.0 (in progress — rc.1, 2026-10-27)
+### v7.3.0 (in progress — rc.2, 2026-10-28)
 The stability release: what 7.2 added, plus a full bug hunt, so the fleet gets one update that lasts.
 Started from a day in the field on two addresses where ─ simply refused to hide the window.
+
+**rc.2 — from the first home pass (2026-10-28)**
+- **→ DHCP is one click** (the click-again arm is gone).
+- The refresh after any change no longer replaces the result with a generic "CONFIG APPLIED SUCCESSFULLY" (it also did that after a failed PUT BACK / RESTORE).
+- **REVERT undoes the last APPLY**, not everything since the first one (DHCP → 10.0.0.5 → 192.168.0.50 → REVERT now lands on 10.0.0.5). RESTORE LAUNCH STATE is the full way back.
+- APPLY stops if the gateway is the laptop's own address (always a typo).
+- **SCAN: devices that answered DISCOVER keep a ◎ after their IP**, and the header's `◎ N DISCOVERY` count filters to just them (the pulse was lost in a long list). FOUND counts the scanned subnet only; discovery answers from elsewhere show as `· N ELSEWHERE`, so a sweep of an empty subnet no longer reads "7 HOSTS FOUND".
+- **ETHER is on the taskbar and in Alt+Tab.** ─ is a real minimize; the tray icon stays (alerts, toner, click to bring it forward). Closing the window any way — ✕, Alt+F4, the taskbar — quits.
+- **MULTI-IP / REACH on a DHCP card keep its DNS.** Turning the card static (needed to add an alias) dropped the DNS servers DHCP gave it, so names stopped resolving; they're now carried over as static. Old bug, 7.1 too.
+- **A card with aliases is recorded by its real address** (the one on the gateway's subnet), not whichever line Windows lists first. The leftover line said "static <alias>", and RESTORE LAUNCH STATE could have set the card to the alias's address.
+- **WI-FI chip reports once for the whole click.** With several Wi-Fi entries in Windows it showed the last one's result, so a ghost entry's "ADAPTER NOT FOUND" sat over a successful switch.
+- PUT BACK also resets that card's baseline for the session, so a static applied later in the same session is still flagged on the next launch (found in the rc.1 home pass).
+
+**rc.1**
 
 **Leaving ETHER**
 - **─ always hides, ✕ always quits — one click.** No alias check, no "press ✕ again", no SESSION CHANGES prompt. Those prompts sat inline in the IP tab, so on a short window ✕ just looked dead.

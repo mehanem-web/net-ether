@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('hud', {
   // ── Window controls ──────────────────────────────────────
   quit:         ()   => ipcRenderer.send('win-quit'),
-  hide:         ()   => ipcRenderer.send('win-hide'),
+  minimize:     ()   => ipcRenderer.send('win-minimize'),
   // setSize now only sets height — width is user-controlled
   setSize:      (h)  => ipcRenderer.invoke('win-set-size', h),
   setOpacity:   (v)  => ipcRenderer.invoke('win-set-opacity', v),

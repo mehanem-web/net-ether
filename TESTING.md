@@ -21,8 +21,19 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 § 7.2.0 (lines marked *(7.3.0)* changed), at home. Then one real site day on the work laptop
 (MANAGED LAPTOP). Anything that breaks → COPY DIAGNOSTICS → next rc. The fleet only sees 7.3.0.
 
+**rc.2 additions (home pass 2026-10-28 found these)**
+- [ ] ─ minimizes to the taskbar; Alt+Tab and the taskbar button bring it back; tray icon still there and brings it forward. Alt+F4 and taskbar "Close window" quit.
+- [ ] → DHCP: one click.
+- [ ] After → DHCP the status says "… IS BACK ON DHCP", not "CONFIG APPLIED SUCCESSFULLY".
+- [ ] APPLY with gateway = the IP itself → stopped with "GATEWAY IS THIS LAPTOP'S OWN ADDRESS".
+- [ ] MULTI-IP add on a DHCP card → a website still loads afterwards (DNS kept). DNS field shows the router's DNS.
+- [ ] Card with an alias, quit, relaunch → leftover reads "left <alias> on this card (it was <your IP>)", not "static <alias>".
+- [ ] Apply static, quit, relaunch → PUT BACK → apply a static again, quit, relaunch → the line shows again.
+- [ ] WI-FI chip off/on → one green line each way, no red "ADAPTER NOT FOUND".
+- [ ] SCAN your subnet → devices that answered DISCOVER have a ◎ after the IP; header `◎ N DISCOVERY` click → only those; click again → all. Scan an empty base (10.0.0) → "NO HOSTS ON THIS SUBNET · N ELSEWHERE".
+
 **Leaving ETHER**
-- [ ] MULTI-IP alias on a card → ─ hides straight away (no banner). Tray click brings it back.
+- [ ] MULTI-IP alias on a card → ─ minimizes straight away (no banner).
 - [ ] Same, ✕ → quits in one click. Relaunch: the alias is still on the card; amber line under the adapter: `↺ Last session left … 10.0.30.250 … (it was …)`.
 - [ ] APPLY a static on a DHCP card, ✕ → no prompt, app gone. Relaunch → leftover line "static X (it was DHCP)". **↩ PUT BACK (DHCP)** → card back on DHCP, line gone, LOG `leftover_restore` VERIFY OK.
 - [ ] Leave one there, **KEEP** → line gone. Relaunch → doesn't come back.
@@ -35,7 +46,7 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 
 **APPLY / REVERT**
 - [ ] DHCP card with a gateway → APPLY static 192.168.0.50, gateway 192.168.0.1 → REVERT → back on DHCP (gateway from DHCP).
-- [ ] Static 10.0.0.5 gw 10.0.0.1 → APPLY 192.168.0.50 gw 192.168.0.1 → REVERT → 10.0.0.5 **with gw 10.0.0.1** (7.2 put the new gateway back, or refused and lost the button).
+- [ ] APPLY 10.0.0.5 gw 10.0.0.1 → APPLY 192.168.0.50 gw 192.168.0.1 → REVERT → 10.0.0.5 **with gw 10.0.0.1** (rc.2: REVERT is one step; 7.2 put the new gateway back, or refused and lost the button).
 - [ ] Dismiss the UAC prompt during a REVERT (dev build) → REVERT button is still there.
 - [ ] Dev build: APPLY, leave the UAC prompt up 20 s, click APPLY again → "STILL APPLYING THE LAST CHANGE". Accept → one apply in the LOG, not two.
 
@@ -58,7 +69,6 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 **Slow laptop (run these under `dev-slow.bat` — +2 s per launch — then again on the work laptop)**
 - [ ] SCAN a /24 with known live devices → they're all found (7.2 at +2 s: only ARP-cached hosts).
 - [ ] MULTI-IP add on a **DHCP** card → converts to static on the lease address, then adds; the lease address is never lost. LOG has no `alias_add` with a missing conversion.
-- [ ] → DHCP on a card that's already DHCP → ✓ (no error), DNS reset to DHCP.
 - [ ] Wi-Fi OFF/ON, DISABLE/ENABLE, RENEW → no false FAIL, no "ADAPTER NOT FOUND".
 - [ ] DIAGNOSTICS → STATE: PS WORKER still `ready` after an hour of use (not `disabled`).
 - [ ] RECON SILENT 65 s → card rebinds and gets its address back.

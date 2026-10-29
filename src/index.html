@@ -2586,7 +2586,6 @@ html, body {
 }
 .adapter-dhcp-action.show { display: inline-block; }
 .adapter-dhcp-action:hover { color: var(--amber); border-color: var(--amber); background: rgba(255,204,0,0.12); }
-.adapter-dhcp-action.armed { color: #000; background: var(--amber); border-color: var(--amber); animation: cursor-blink 0.8s steps(1) infinite; }
 /* v7.2.0: wrong-address warning under the adapter row */
 .adapter-warn { margin-top: 6px; border: 1px solid rgba(255,204,0,0.45); background: rgba(255,204,0,0.06); border-radius: var(--radius); padding: 6px 9px; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.45; color: var(--amber); }
 .adapter-warn .aw-btns { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
@@ -2701,6 +2700,15 @@ html, body {
 .scan-result-row.off-subnet .scan-result-ms { color: var(--amber); }
 @keyframes disc-pulse { 0% { box-shadow: 0 0 0 0 rgba(var(--ar),var(--ag),var(--ab),0.55); } 100% { box-shadow: 0 0 0 10px rgba(var(--ar),var(--ag),var(--ab),0); } }
 .scan-result-row.disc-pulse { animation: disc-pulse 1.4s ease-out 2; }
+/* rc.2: a row that answered DISCOVER keeps a ◎ after its IP (the pulse alone was lost in a long list).
+   A pseudo-element, so the IP's textContent — read all over the place — is unchanged. */
+.scan-result-row.disc-hit .scan-result-ip::after { content: ' ◎'; color: var(--green); font-weight: 900; }
+.scan-result-row.off-subnet { opacity: 0.72; }
+.scan-results.only-disc .scan-result-row:not(.disc-hit) { display: none; }
+.scan-found-count .sfc-disc { margin-left: 8px; padding: 1px 6px; border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.4); border-radius: var(--radius-sm); color: var(--green); cursor: pointer; }
+.scan-found-count .sfc-disc:hover { background: var(--green-ghost); }
+.scan-found-count .sfc-disc.on { background: rgba(var(--ar),var(--ag),var(--ab),0.18); border-color: var(--green); }
+.scan-found-count .sfc-off { margin-left: 8px; color: var(--amber); }
 .scan-opt-row { justify-content: flex-end; }
 .scan-btn-row { display: flex; gap: 6px; }
 .scan-btn-row .scan-start-btn { flex: 2 1 0; min-width: 0; }
@@ -2940,7 +2948,7 @@ select.field-input.dhcp-lease { padding: 5px 6px; font-size: 12px; cursor: point
       <div class="win-btn amber" id="btn-opacity" onclick="toggleOpacity()" title="Toggle 50% transparency">◑</div>
       <div class="win-btn" id="btn-palette" onclick="togglePalette(event)" title="Change colour theme">▣</div>
       <div class="win-btn" onclick="openHelp(event)" title="Quick guide for this tab">?</div>
-      <div class="win-btn" onclick="safeHide()" title="Hide to tray (click the tray icon to bring it back)">─</div>
+      <div class="win-btn" onclick="safeHide()" title="Minimize (taskbar, Alt+Tab or the tray icon bring it back)">─</div>
       <div class="win-btn close" onclick="safeQuit()" title="Quit NET//ETHER">✕</div>
     </div>
   </div>
@@ -3024,7 +3032,7 @@ select.field-input.dhcp-lease { padding: 5px 6px; font-size: 12px; cursor: point
         <div class="adapter-selector-badges" id="adapter-selector-badges">
           <span class="adapter-status-state" id="adapter-status-state">—</span>
           <span class="dhcp-status-badge" id="dhcp-status-badge" style="display:none"></span>
-          <span class="adapter-dhcp-action" id="adapter-dhcp-action" onclick="event.stopPropagation(); adapterDhcpClick()" title="Hand this adapter back to DHCP (click twice)">→ DHCP</span>
+          <span class="adapter-dhcp-action" id="adapter-dhcp-action" onclick="event.stopPropagation(); adapterDhcpClick()" title="Hand this adapter back to DHCP">→ DHCP</span>
         </div>
         <span class="adapter-selector-chevron" id="adapter-selector-chevron">▾</span>
       </div>
@@ -3684,7 +3692,7 @@ let presets = JSON.parse(JSON.stringify(DEFAULT_PRESETS));
 let activePreset = 0;
 let isDirty = false;
 let cmdVisible = false;
-let previousConfig = null; // snapshot before last successful apply
+let previousConfig = null; // snapshot before the last successful APPLY (rc.2: REVERT steps back one APPLY)
 let revertInProgress = false; // bypass no-change check during revert
 let applyInFlight = false;     // v7.3.0: an APPLY is running (lock lasts as long as it does)
 let _applyBackstop = null;
@@ -3794,7 +3802,8 @@ async function loadAdapters(fromApply) {
     if (!fromApply) { autoDetectAdapter(); }
     populateLivePreset(fromApply);
     if (!fromApply) scanAutoDetect(true);
-    if (fromApply === true) setNetStatus('CONFIG APPLIED SUCCESSFULLY', 'ok', 5000);
+    // rc.2: the refresh after a change no longer overwrites the status — each action already
+    // said what happened, and after a failed PUT BACK / RESTORE this line read "SUCCESSFULLY"
     updateAdapterStatus();
     updateMultiIpBadge();
     loadWifi();   // v7.1.0: served from main's Get-NetAdapter cache, no extra spawn
@@ -4407,7 +4416,7 @@ function renderAdapterTools(a) {
   } else wifi.classList.remove('show');
 }
 
-async function setAdapterEnabled(name, enabled, chip) {
+async function setAdapterEnabled(name, enabled, chip, quiet) {
   if (!window.hud || !hud.adapterSetEnabled) return false;
   if (chip) chip.classList.add('busy');
   const isWifi = wifiList.some(w => w.name === name);
@@ -4415,6 +4424,7 @@ async function setAdapterEnabled(name, enabled, chip) {
   let r;
   try { r = await hud.adapterSetEnabled(name, enabled); } catch (err) { r = { ok: false, err: err.message }; }
   if (chip) chip.classList.remove('busy');
+  if (quiet) return r;   // rc.2: the caller (WI-FI chip) sums up several adapters in one line
   if (r.ok) {
     setNetStatus(`✓ ${name.toUpperCase()} ${enabled ? 'ENABLED' : 'DISABLED'}${r.verified ? '' : ' — NOT YET CONFIRMED, REFRESH IN A MOMENT'}`, r.verified ? 'ok' : 'warn', 5000);
     return true;
@@ -4460,10 +4470,26 @@ async function wifiChipClick() {
     if (!go) return;
   }
   const chip = document.getElementById('tool-wifi');
+  // rc.2: one line for the whole click. It showed the LAST adapter's result, so a second Wi-Fi
+  // entry netsh doesn't know (Windows keeps several) put "ADAPTER NOT FOUND" over a success.
+  const on = !anyUp;
+  if (on) setNetStatus('SWITCHING WI-FI ON... IT CAN TAKE UP TO A MINUTE TO RECONNECT', '');
+  else setNetStatus('SWITCHING WI-FI OFF...', '');
+  let ok = 0, failed = [], cancelled = false;
   for (const w of wifiList) {
     if (anyUp && !w.adminUp) continue;      // already off
-    await setAdapterEnabled(w.name, !anyUp, chip);
+    const r = await setAdapterEnabled(w.name, on, chip, true);
+    if (!r) continue;
+    if (r.ok) ok++;
+    else if (r.err === 'UNKNOWN_ADAPTER') continue;            // not switchable — not the tech's problem
+    else if (r.err === 'CANCELLED') { cancelled = true; break; }
+    else failed.push(w.name + (r.err ? ' (' + r.err + ')' : ''));
   }
+  if (cancelled) setNetStatus('CANCELLED — UAC PROMPT DISMISSED', 'warn', 4000);
+  else if (failed.length && !ok) setNetStatus(`WI-FI COULD NOT BE SWITCHED ${on ? 'ON' : 'OFF'} — ${failed.join(', ').toUpperCase()} — COPY DIAGNOSTICS`, 'err', 8000);
+  else if (failed.length) setNetStatus(`WI-FI MOSTLY ${on ? 'ON' : 'OFF'} — ${failed.join(', ').toUpperCase()} DIDN'T SWITCH`, 'warn', 8000);
+  else if (ok) setNetStatus(on ? '✓ WI-FI BACK ON' : '✓ WI-FI OFF — SCAN, DHCP AND PING NOW GO OUT THE WIRE', 'ok', 6000);
+  else setNetStatus(on ? 'WI-FI IS ALREADY ON' : 'WI-FI IS ALREADY OFF', 'ok', 4000);
   setTimeout(loadWifi, 1200);
 }
 
@@ -4787,8 +4813,8 @@ const HELP_CONTENT = {
     rows: [
       ['PRESETS',    'LIVE always mirrors the adapter right now. Slots 2–4 are yours — fill the fields, SAVE TO PRESET.'],
       ['FACTORY DEFAULTS', 'Manufacturer out-of-box addresses. A tile fills in that device\'s subnet and puts YOU one address above it.'],
-      ['APPLY',      'Writes IP / mask / gateway / DNS, then verifies. Green stripe, ✓ ACTIVE on the IP field and a flash in the top bar mean it really took. REVERT undoes it.'],
-      ['→ DHCP',     'Beside the STATIC badge in the adapter row. Click twice to hand the adapter back to DHCP.'],
+      ['APPLY',      'Writes IP / mask / gateway / DNS, then verifies. Green stripe, ✓ ACTIVE on the IP field and a flash in the top bar mean it really took. REVERT undoes the last APPLY.'],
+      ['→ DHCP',     'Beside the STATIC badge in the adapter row. One click hands the adapter back to DHCP.'],
       ['COPY COMMANDS', 'Shows the exact netsh lines without running them — copy into an admin prompt if APPLY can\'t.'],
       ['MTU',        'Moved to DIAGNOSTICS (version chip → DIAGNOSTICS → TOOLS). Resets MTU to 1500 — fixes "can ping, can\'t load pages."'],
       ['CIDR',       'The CIDR tab in this guide. Click a row to put that mask in the subnet field.'],
@@ -4797,7 +4823,7 @@ const HELP_CONTENT = {
       ['DISABLE / ENABLE', 'In the ADAPTER line. Drops the link, keeps the IP config, comes back with ENABLE. Blocked while the DHCP server is serving on that adapter.'],
       ['WI-FI',      'Switches every wireless adapter off so SCAN, DHCP and PING go out the wire. The chip stays amber until you turn it back on — and it stays off through a reboot.'],
       ['LEFTOVER LINE', 'Quit never asks or undoes anything — what you set stays set. If the last session left this card on a static it wasn\'t on before, or with extra addresses, one amber line under the adapter says so: ↩ PUT BACK or KEEP.'],
-      ['─ / ✕',      '─ hides to the tray, ✕ quits. One click each, always. Temporary addresses ETHER added for REACH go on quit.'],
+      ['─ / ✕',      '─ minimizes (taskbar, Alt+Tab or the tray icon bring it back), ✕ quits. One click each, always. Temporary addresses ETHER added for REACH go on quit.'],
       ['SITE REPORT', 'Version chip → SITE REPORT. One click copies a markdown summary of this session: adapter, scans and site changes, DHCP leases, ping results, every privileged operation. Paste into the ticket.'],
     ],
     gotcha: 'Modern Axis cameras have no factory IP — they fall back to 169.254.x.x. Use the AXIS tile to join that /16, then find the camera\'s address in its label or the Axis tool.',
@@ -5275,6 +5301,12 @@ async function applyConfig() {
   // ── SAFEGUARD: Gateway outside subnet warning ──────────
   // v7.3.0: a REVERT puts back what the card really had — the heuristics below are for typed
   // input and used to stop a revert dead (old IP + odd gateway), losing the way back
+  // rc.2: the laptop is never its own gateway — that's always a typo
+  if (f.gateway && !revertInProgress && f.gateway === f.ip) {
+    setNetStatus('GATEWAY IS THIS LAPTOP\'S OWN ADDRESS — LEAVE IT BLANK, OR USE THE ROUTER\'S', 'warn', 7000);
+    document.getElementById('gateway').classList.add('changed');
+    return;
+  }
   if (f.gateway && !revertInProgress && !gatewayInSubnet(f.ip, f.subnet, f.gateway)) {
     setNetStatus(`WARNING: GATEWAY ${f.gateway} IS OUTSIDE SUBNET — CHECK YOUR CONFIG`, 'warn', 7000);
     document.getElementById('gateway').classList.add('changed');
@@ -5370,7 +5402,7 @@ async function applyConfig() {
   // Grab the ACTUAL live IP + MTU right now via IPC before anything changes
   // Skip snapshot during a revert — we don't want to re-arm the revert button after reverting
   let snapshot = null;
-  if (window.hud && previousConfig === null && !revertInProgress) {
+  if (window.hud && !revertInProgress) {   // rc.2: every APPLY records what it replaced
     try {
       const live = await hud.getCurrentIp(f.adapter || '');
       if (live && live.ip) {
@@ -5417,7 +5449,7 @@ async function applyConfig() {
       } catch {}
     }
   }
-  if (!snapshot && previousConfig === null && !revertInProgress) {
+  if (!snapshot && !revertInProgress) {
     snapshot = { adapter: f.adapter, ip: '—', subnet: f.subnet, gateway: f.gateway, dns: f.dns, dhcp: false };
   }
 
@@ -5442,11 +5474,10 @@ async function applyConfig() {
       });
       if (result.ok) {
         unlockApplyBtn();
-        // Only capture snapshot on first apply this session — never overwrite it
-        // (cleared only by explicit revert or DHCP switch). v7.3.0: and only one REVERT can use
-        if (previousConfig === null && snapshot && (snapshot.dhcp || isValidIP(snapshot.ip))) {
-          previousConfig = snapshot;
-        }
+        // rc.2: REVERT = undo the last APPLY. It used to hold the state from before the
+        // session's FIRST apply, so DHCP → 10.x → 192.x → REVERT jumped back to DHCP, not 10.x.
+        // "Back to how it was at launch" is ↩ RESTORE LAUNCH STATE.
+        if (snapshot && (snapshot.dhcp || isValidIP(snapshot.ip))) previousConfig = snapshot;
         clearDirtyState();
         if (previousConfig) showRevertBtn(previousConfig);
         else hideRevertBtn();
@@ -5827,9 +5858,9 @@ async function takeFullSnapshot(adapterName) {
 // checked or undone on the way out: what the tech set stays set (REACH temp aliases, SILENT
 // bindings and the DHCP engine — things ETHER did on its own — are cleaned up in main). If a
 // static or extra addresses are still on a card next launch, the IP tab shows a leftover line.
-function safeHide() {
+function safeHide() {   // rc.2: a real minimize — taskbar button and Alt+Tab bring it back
   try { saveLivePreset(); } catch {}
-  if (window.hud) hud.hide();
+  if (window.hud) hud.minimize();
 }
 function safeQuit() {
   try { saveLivePreset(); } catch {}
@@ -6510,20 +6541,15 @@ function tracertClose() {
 // ── DHCP ───────────────────────────────────────────────────
 // v7.0.0: the DHCP button moved into the adapter row as "→ DHCP" (only shown
 // on a static adapter). Two clicks: arm, then fire — same pattern as alias add.
-let _adapterDhcpArmed = null;
-function adapterDhcpClick() {
+// rc.2: one click. The two-click arm annoyed more than it protected — a wrong → DHCP is
+// undone with APPLY (or REVERT), and the status bar says what happened.
+let _adapterDhcpBusy = false;
+async function adapterDhcpClick() {
   const btn = document.getElementById('adapter-dhcp-action');
-  if (!btn) return;
+  if (!btn || _adapterDhcpBusy) return;
   if (btn.dataset.mode === 'renew') { adapterRenew(); return; }
-  if (_adapterDhcpArmed) {
-    clearTimeout(_adapterDhcpArmed); _adapterDhcpArmed = null;
-    btn.classList.remove('armed'); btn.textContent = '→ DHCP';
-    applyDhcp();
-    return;
-  }
-  btn.classList.add('armed'); btn.textContent = 'CLICK AGAIN';
-  setNetStatus('CLICK → DHCP AGAIN TO HAND THIS ADAPTER BACK TO DHCP', 'warn', 4000);
-  _adapterDhcpArmed = setTimeout(() => { _adapterDhcpArmed = null; btn.classList.remove('armed'); btn.textContent = '→ DHCP'; }, 4000);
+  _adapterDhcpBusy = true;
+  try { await applyDhcp(); } finally { _adapterDhcpBusy = false; }
 }
 function updateAdapterDhcpAction(a) {
   const btn = document.getElementById('adapter-dhcp-action');
@@ -6531,8 +6557,8 @@ function updateAdapterDhcpAction(a) {
   // v7.1.0: static → "→ DHCP"; DHCP but no address → "RENEW". Both regardless of link.
   const renew = !!(a && a.isDhcp === true && a.noAddress);
   btn.dataset.mode = renew ? 'renew' : 'dhcp';
-  if (!_adapterDhcpArmed) btn.textContent = renew ? 'RENEW' : '→ DHCP';
-  btn.title = renew ? 'Ask the DHCP server for a lease again (ipconfig /renew)' : 'Hand this adapter back to DHCP (click twice)';
+  btn.textContent = renew ? 'RENEW' : '→ DHCP';
+  btn.title = renew ? 'Ask the DHCP server for a lease again (ipconfig /renew)' : 'Hand this adapter back to DHCP';
   btn.classList.toggle('show', !!(a && (a.isDhcp === false || renew)));
 }
 async function adapterRenew() {
@@ -6924,6 +6950,7 @@ function startScan() {
   scanCancelNamePrompt();
 
   document.getElementById('scan-results').querySelectorAll('.scan-result-row').forEach(r => r.remove());
+  document.getElementById('scan-results').classList.remove('only-disc');
   document.getElementById('scan-empty').style.display = 'none';
   document.getElementById('scan-results-header').style.display = 'none';
   document.getElementById('scan-progress-wrap').classList.add('visible');
@@ -7093,9 +7120,18 @@ function markScanRowSelf(ip) {
   if (ipEl) ipEl.insertAdjacentElement('afterend', badge); else row.prepend(badge);
 }
 
+// rc.2: rows on the scanned subnet vs. discovery answers from elsewhere on the wire
+function scanCounts() {
+  const rows = [...document.querySelectorAll('#scan-results .scan-result-row')];
+  const off = rows.filter(r => r.classList.contains('off-subnet')).length;
+  return { on: rows.length - off, off, all: rows.length };
+}
 function finishScan(aborted) {
   scanRunning = false;
-  sessionScans.push({ ts: Date.now(), base: document.getElementById('scan-base').value.trim(), found: scanFound, changes: '' });   // v7.1.0: site report
+  const cnt = scanCounts();
+  const found = cnt.on;
+  sessionScans.push({ ts: Date.now(), base: document.getElementById('scan-base').value.trim(), found, changes: '' });   // v7.1.0: site report
+  const elsewhere = cnt.off ? ` · ${cnt.off} ELSEWHERE ON THE WIRE (DISCOVERY)` : '';
 
   const btn = document.getElementById('scan-start-btn');
   btn.textContent = '▶ SCAN SUBNET';
@@ -7103,7 +7139,7 @@ function finishScan(aborted) {
 
   // v7.2.0: a 169.254 base sweeps one /24 of a /16 — empty there doesn't mean empty
   const llBase = /^169\.254\./.test((document.getElementById('scan-base')?.value || '').trim() + '.');
-  if (scanFound === 0 && !aborted) {
+  if (cnt.all === 0 && !aborted) {
     document.getElementById('scan-empty').textContent = llBase
       ? 'NOTHING IN THIS /24 — 169.254 IS A /16: USE DISCOVER, OR THE DHCP TAB\'S ◇ SITTING LIST'
       : 'NO HOSTS FOUND ON THIS SUBNET';
@@ -7112,13 +7148,13 @@ function finishScan(aborted) {
   }
 
   if (aborted) {
-    setScanStatus('SCAN STOPPED — ' + scanFound + ' HOST' + (scanFound !== 1 ? 'S' : '') + ' FOUND', 'warn');
+    setScanStatus('SCAN STOPPED — ' + found + ' HOST' + (found !== 1 ? 'S' : '') + ' FOUND' + elsewhere, 'warn');
   } else {
     setScanStatus(
-      scanFound > 0
-        ? `SCAN COMPLETE — ${scanFound} HOST${scanFound !== 1 ? 'S' : ''} ALIVE — PROBING PORTS...`
-        : (llBase ? 'SCAN COMPLETE — LINK-LOCAL: ONLY ONE /24 OF 169.254 WAS SWEPT. TRY DISCOVER' : 'SCAN COMPLETE — NO HOSTS FOUND'),
-      scanFound > 0 ? 'ok' : (llBase ? 'warn' : '')
+      found > 0
+        ? `SCAN COMPLETE — ${found} HOST${found !== 1 ? 'S' : ''} ALIVE — PROBING PORTS...`
+        : (llBase ? 'SCAN COMPLETE — LINK-LOCAL: ONLY ONE /24 OF 169.254 WAS SWEPT. TRY DISCOVER' : 'SCAN COMPLETE — NO HOSTS ON THIS SUBNET' + elsewhere),
+      found > 0 ? 'ok' : (llBase || cnt.off ? 'warn' : '')
     );
   }
 
@@ -7876,7 +7912,7 @@ function updateScanRowPorts(host, ports) {
 
   // Update status bar once all probing settles
   if (document.querySelectorAll('.port-badge.probing').length === 0) {
-    setScanStatus(`SCAN COMPLETE — ${scanFound} HOST${scanFound !== 1 ? 'S' : ''} FOUND — PORTS MAPPED`, 'ok');
+    { const f = scanCounts().on; setScanStatus(`SCAN COMPLETE — ${f} HOST${f !== 1 ? 'S' : ''} FOUND — PORTS MAPPED`, 'ok'); }
     // Second ARP pass — TCP connections from port probes warm the cache
     const base = document.getElementById('scan-base').value.trim();
     if (window.hud && base) {
@@ -7917,6 +7953,7 @@ function scanOpenWeb(ip, port) {
 function clearScanResults() {
   if (scanRunning) return;
   document.querySelectorAll('#scan-results .scan-result-row').forEach(r => r.remove());
+  document.getElementById('scan-results').classList.remove('only-disc');
   document.getElementById('scan-results-header').style.display = 'none';
   document.getElementById('scan-progress-wrap').classList.remove('visible');
   document.getElementById('scan-empty').textContent = 'ENTER BASE IP AND START SCAN';
@@ -8011,6 +8048,7 @@ function applyDiscovery(d) {
   } else if (d.mac && !row.querySelector('.scan-result-mac')) {
     enrichScanResult(d.ip, d.mac, d.vendor || '');
   }
+  row.classList.add('disc-hit');   // rc.2: stays for as long as the row does
   const msEl = row.querySelector('.scan-result-ms');
   // the source goes where the ms would be when nothing pinged this row (off-subnet, or DISCOVER alone)
   if (msEl && (d.offSubnet || /^[—-]$/.test(msEl.textContent.trim()))) {
@@ -8073,9 +8111,23 @@ function applyDiscovery(d) {
   scanAddCaptureBtn(row, d.ip);
 }
 function updateScanFoundCount() {
-  const n = document.querySelectorAll('#scan-results .scan-result-row').length;
+  // rc.2: FOUND counts the scanned subnet only; rows that answered DISCOVER get a clickable
+  // ◎ count (shows just those — a long list hid them); off-subnet discovery rows are counted
+  // apart, so a sweep of an empty subnet no longer reads "7 HOSTS FOUND"
   const el = document.getElementById('scan-found-count');
-  if (el) el.textContent = `${n} HOST${n !== 1 ? 'S' : ''} FOUND`;
+  if (!el) return;
+  const rows = [...document.querySelectorAll('#scan-results .scan-result-row')];
+  const off  = rows.filter(r => r.classList.contains('off-subnet')).length;
+  const disc = rows.filter(r => r.classList.contains('disc-hit')).length;
+  const n = rows.length - off;
+  const list = document.getElementById('scan-results');
+  const only = !!(list && list.classList.contains('only-disc'));
+  if (only && !disc && list) list.classList.remove('only-disc');
+  el.innerHTML = `${n} HOST${n !== 1 ? 'S' : ''} FOUND` +
+    (disc ? `<span class="sfc-disc${only ? ' on' : ''}" title="${only ? 'Show every row' : 'Show only devices that answered DISCOVER (mDNS / SSDP / WSD / ONVIF)'}">◎ ${disc} DISCOVERY</span>` : '') +
+    (off ? `<span class="sfc-off" title="Answered DISCOVER but aren't on the subnet you scanned">· ${off} ELSEWHERE</span>` : '');
+  const chip = el.querySelector('.sfc-disc');
+  if (chip) chip.onclick = () => { list.classList.toggle('only-disc'); updateScanFoundCount(); autoResize(); };
 }
 
 // ── v7.1.0: REACH — temporary link-local alias ─────────────

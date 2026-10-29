@@ -568,7 +568,7 @@ function createTray() {
 
   const buildMenu = () => Menu.buildFromTemplate([
     {
-      label: win.isVisible() ? 'Hide NET//ETHER' : 'Show NET//ETHER',
+      label: win.isVisible() && !win.isMinimized() ? 'Minimize NET//ETHER' : 'Show NET//ETHER',
       click: () => toggleWindow(),
     },
     { type: 'separator' },
@@ -614,6 +614,8 @@ function createTray() {
   });
   win.on('show', () => tray.setContextMenu(buildMenu()));
   win.on('hide', () => tray.setContextMenu(buildMenu()));
+  win.on('minimize', () => tray.setContextMenu(buildMenu()));
+  win.on('restore',  () => tray.setContextMenu(buildMenu()));
   // v7.1.0: a toner toast was clicked — bring the HUD back
   tray.on('balloon-click', () => showWindow());
 
@@ -632,7 +634,7 @@ function toggleWindow() {
   // Hide only when the HUD is unambiguously in front of the user. A window that
   // is "visible" but minimized, unfocused, or that lost its topmost bit (Win+Shift+S
   // does that) gets brought forward instead of hidden.
-  if (win.isVisible() && !win.isMinimized() && win.isFocused()) { win.hide(); return; }
+  if (win.isVisible() && !win.isMinimized() && win.isFocused()) { win.minimize(); return; }   // rc.2: minimize, not hide
   showWindow();
 }
 
@@ -734,7 +736,7 @@ function createWindow() {
     resizable: true,
     minWidth: 430,   // v7.1.0: visible beats small — every adapter chip fits at 430
     minHeight: 300,
-    skipTaskbar: true,
+    skipTaskbar: false,   // rc.2: on the taskbar and in Alt+Tab; the tray icon stays as well
     show: false,
     webPreferences: {
       nodeIntegration: false,
@@ -783,8 +785,10 @@ function createWindow() {
     win.webContents.openDevTools({ mode: 'detach' });
   }
 
+  // rc.2: closing the window (✕, Alt+F4, taskbar "Close window") quits — it used to hide to
+  // the tray, which made sense only while the window had no taskbar button
   win.on('close', (e) => {
-    if (!app.isQuitting) { e.preventDefault(); win.hide(); }
+    if (!app.isQuitting) { e.preventDefault(); shutdownAndQuit(); }
   });
 }
 
@@ -896,7 +900,6 @@ async function shutdownAndQuit() {
   app.exit(0);
 }
 ipcMain.on('win-quit', () => { shutdownAndQuit(); });
-// win-minimize removed — skipTaskbar:true makes minimize a dead end; the button hides to tray.
 // win-move removed — drag uses -webkit-app-region
 
 
@@ -909,6 +912,7 @@ ipcMain.on('win-quit', () => { shutdownAndQuit(); });
 // focused (mouse works, typing goes nowhere) — so if we had focus, take it back.
 function progResize(width, height) {
   if (!winAlive()) return;
+  if (win.isMinimized()) return;   // rc.2: a resize while minimized can pop the window back up on Windows
   const cur = win.getBounds();
   const w = Math.round(width), h = Math.round(height);
   if (w === cur.width && h === cur.height) return;
@@ -987,7 +991,7 @@ ipcMain.handle('win-set-opacity', (e, val) => {
 });
 
 // ── IPC: hide/show ─────────────────────────────────────────
-ipcMain.on('win-hide', () => { if (winAlive()) win.hide(); });
+ipcMain.on('win-minimize', () => { if (winAlive()) win.minimize(); });   // rc.2: ─ is a real minimize
 
 
 // ── IPC: tray state from renderer ─────────────────────────
@@ -1858,6 +1862,8 @@ async function readAdapterDhcpState(safeAdapter) {
       ip:   (block.match(/IP Address:\s+([\d.]+)/i) || [])[1] || null,
       mask: (block.match(/Subnet Prefix[^(]+\(mask\s+([\d.]+)\)/i) || [])[1] || null,
       gw:   (block.match(/Default Gateway:\s+([\d.]+)/i) || [])[1] || null,
+      // rc.2: the DNS servers DHCP gave it (first two) — carried over when the card goes static
+      dns:  (() => { const m = block.match(/DNS servers configured through DHCP:\s+([\d.]+)(?:\s*\r?\n\s+([\d.]+))?/i); return m ? [m[1], m[2]].filter(x => x && isValidIp(x)) : []; })(),
     };
   }
   try {
@@ -1893,6 +1899,11 @@ async function addAliasCoreUnlocked(safeAdapter, ip, subnet, tag = 'alias_add') 
       ? `netsh interface ip set address "${safeAdapter}" static ${st.ip} ${sn} ${st.gw}`
       : `netsh interface ip set address "${safeAdapter}" static ${st.ip} ${sn}`;
     cmd = `${setStatic}; ${cmd}`;
+    // rc.2: a card switched to static loses the DNS servers DHCP gave it — names stop resolving
+    // (browsing dies, ping by IP still works). Keep them, as static, after the alias is on.
+    const dns = Array.isArray(st.dns) ? st.dns : [];
+    if (dns[0]) cmd += `; netsh interface ip set dns "${safeAdapter}" static ${dns[0]} validate=no`;
+    if (dns[1]) cmd += `; netsh interface ip add dns "${safeAdapter}" ${dns[1]} index=2 validate=no`;
     converted = true;
   }
   const result = await runElevated(cmd, { tag, timeoutMs: 25000 });
@@ -2079,7 +2090,7 @@ ipcMain.handle('reach-clear', async () => clearTempAliases('REMOVE clicked'));
 
 ipcMain.on('notify-hidden', (e, { title, body, warn }) => {
   try {
-    if (!winAlive() || win.isVisible() || !tray) return;
+    if (!winAlive() || (win.isVisible() && !win.isMinimized()) || !tray) return;   // rc.2: minimized counts as away
     tray.displayBalloon({
       title:   String(title || 'NET//ETHER').slice(0, 60),
       content: String(body  || '').slice(0, 200),
@@ -3989,9 +4000,18 @@ async function snapshotAdapterConfig(name) {
   if (!block) return null;
 
   const isDhcp  = /DHCP enabled:\s+Yes/i.test(block);
-  const ipMatch = block.match(/IP Address:\s+([\d.]+)/i);
-  const snMatch = block.match(/Subnet Prefix[^(]+\(mask\s+([\d.]+)\)/i);
   const gwMatch = block.match(/Default Gateway:\s+([\d.]+)/i);
+  // rc.2: a card with aliases lists several "IP Address" lines, in no promised order (seen:
+  // the alias first). The primary is the one whose subnet holds the gateway — the rule the
+  // adapter list uses — else the first that isn't 169.254. Taking the first line made the
+  // leftover read "static <alias>" and could have made RESTORE set the card to the alias.
+  const pairs = [...block.matchAll(/IP Address:\s+([\d.]+)\s*\r?\n\s*Subnet Prefix:[^(\r\n]*\(mask\s+([\d.]+)\)/gi)].map(m => ({ ip: m[1], mask: m[2] }));
+  const n4 = x => x.split('.').reduce((a, o) => ((a << 8) + (+o)) >>> 0, 0);
+  const gwIp = gwMatch && isValidIp(gwMatch[1]) ? gwMatch[1] : null;
+  const prim = (gwIp && pairs.find(p => ((n4(p.ip) & n4(p.mask)) >>> 0) === ((n4(gwIp) & n4(p.mask)) >>> 0)))
+            || pairs.find(p => !/^169\.254\./.test(p.ip)) || pairs[0] || null;
+  const ipMatch = prim ? [null, prim.ip] : block.match(/IP Address:\s+([\d.]+)/i);
+  const snMatch = prim ? [null, prim.mask] : block.match(/Subnet Prefix[^(]+\(mask\s+([\d.]+)\)/i);
   const dnsMatch = block.match(/Statically Configured DNS Servers:\s+([\d.]+)/i) ||
                    block.match(/DNS servers configured through DHCP:\s+([\d.]+)/i);
 
@@ -4251,7 +4271,16 @@ ipcMain.handle('leftovers-restore', async (e, adapter) => {
   const safe = sanitizeAdapter(o.adapter);
   if (!safe) return { ok: false, err: 'Invalid adapter name' };
   const r = await restoreAdapterTo(safe, o.was, 'leftover_restore');
-  if (r.ok) writeLeftovers(readLeftovers().filter(x => x.adapter !== adapter));
+  if (r.ok) {
+    writeLeftovers(readLeftovers().filter(x => x.adapter !== adapter));
+    // rc.2: the card is back to its clean state — make that this session's baseline too.
+    // This launch's snapshot was taken while the leftover was still on the card, so a static
+    // applied later this session looked like "no change" and was never flagged next launch.
+    try {
+      const snap = readJsonSafe(LAUNCH_SNAPSHOT_PATH, null);
+      if (snap && snap.adapters) { snap.adapters[o.adapter] = { ...o.was }; writeJsonAtomic(LAUNCH_SNAPSHOT_PATH, snap); }
+    } catch {}
+  }
   return r;
 });
 
