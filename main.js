@@ -1884,6 +1884,9 @@ async function addAliasCore(safeAdapter, ip, subnet, tag = 'alias_add') {
   return withAdapterLock(safeAdapter, () => addAliasCoreUnlocked(safeAdapter, ip, subnet, tag));
 }
 async function addAliasCoreUnlocked(safeAdapter, ip, subnet, tag = 'alias_add') {
+  // rc.3: already on the card (a repeat click, or it was there before) — nothing to do; don't
+  // run netsh just to log a red "object already exists"
+  if (adapterIpv4s(safeAdapter).includes(ip)) return { ok: true, verified: true, converted: false, already: true, mode: 'none', steps: [] };
   // If the adapter is on DHCP, netsh "add address" silently replaces the DHCP lease instead of
   // adding a second IP. So: switch to static first (keeping the current IP/mask/gateway), then
   // add — one chain that stops if the conversion fails. v7.3.0: if we can't tell whether the

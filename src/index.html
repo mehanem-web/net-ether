@@ -8573,7 +8573,13 @@ async function loadAliasTab() {
   autoResize();
 }
 
+let _aliasAddBusy = false;   // rc.3: fast repeat clicks queued extra adds
 async function aliasAdd() {
+  if (_aliasAddBusy) return;
+  _aliasAddBusy = true;
+  try { await aliasAddRun(); } finally { _aliasAddBusy = false; }
+}
+async function aliasAddRun() {
   const adapter = getAliasAdapter();
   const ip     = document.getElementById('alias-new-ip').value.trim();
   const subnet = document.getElementById('alias-new-subnet').value.trim() || '255.255.255.0';
@@ -8606,7 +8612,7 @@ async function aliasAdd() {
     await loadAliasTab();
     updateMultiIpBadge();
     if (confirmed) {
-      setAliasStatus('MULTI-IP ADDED: ' + ip + (res.converted ? ' — ADAPTER NOW STATIC' : ''), 'ok', 5000);
+      setAliasStatus(res.already ? ip + ' IS ALREADY ON THIS CARD' : 'MULTI-IP ADDED: ' + ip + (res.converted ? ' — ADAPTER NOW STATIC (DNS KEPT)' : ''), 'ok', 5000);
     } else {
       // netsh exited 0 but the IP never appeared — output is in DIAGNOSTICS
       setAliasStatus('COMMAND RAN — IP NOT DETECTED. SEE DIAGNOSTICS (VERSION CHIP)', 'warn', 8000);
