@@ -135,6 +135,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.resolve.outputs.tag }}
+          # v7.3.0: any tag with a suffix (v7.3.0-rc.1, v7.0.0-rc2) is a pre-release — never
+          # marked "Latest", so nobody grabs an rc thinking it's the release.
+          prerelease: ${{ contains(steps.resolve.outputs.tag, '-') }}
           # Only the shippable files - skips win-unpacked/, builder-debug.yml, etc.
           files: |
             dist/NET-ETHER-Installer-*.exe

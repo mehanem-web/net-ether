@@ -157,7 +157,11 @@ function detectElevation() {
   if (privReady) return privReady;
   privReady = (async () => {
     try {
-      const out = await execAsync('whoami /groups', { timeout: 5000, windowsHide: true });
+      // v7.3.0: 15 s and one retry — a 5 s timeout on a slow laptop cached "unknown" for the
+      // whole session and sent every write through the UAC path
+      let out;
+      try { out = await execAsync('whoami /groups', { timeout: 15000, windowsHide: true }); }
+      catch { out = await execAsync('whoami /groups', { timeout: 15000, windowsHide: true }); }
       if (/S-1-16-16384/.test(out))      { PRIV.elevated = true;  PRIV.integrity = 'System'; }
       else if (/S-1-16-12288/.test(out)) { PRIV.elevated = true;  PRIV.integrity = 'High'; }
       else if (/S-1-16-8192/.test(out))  { PRIV.elevated = false; PRIV.integrity = 'Medium'; }
@@ -318,11 +322,12 @@ async function runElevated(cmdString, { tag = 'run', timeoutMs = 30000 } = {}) {
   let ok = !cancelled && !failed && steps.length === cmds.length;
   let errMsg = null;
   if (cancelled)     errMsg = 'CANCELLED';
+  else if (failed && failed.code === 'TIMEOUT') errMsg = `TIMEOUT after ${Math.round(timeoutMs / 1000)} s`;   // v7.3.0: say it, so callers can branch on it
   else if (failed)   errMsg = failed.out ? failed.out.split('\n').filter(Boolean).pop() : `netsh exited ${failed.code}`;
   else if (!ok)      errMsg = 'Command chain did not complete';
 
   diagAdd({ kind: 'op', tag, ok, mode, ms, steps, note: errMsg });
-  return { ok, err: errMsg, mode, ms, steps };
+  return { ok, err: errMsg, mode, ms, steps, timedOut: !!(failed && failed.code === 'TIMEOUT') };
 }
 
 // ── POWERSHELL HELPERS (replace deprecated wmic) ─────────
@@ -347,7 +352,7 @@ async function getAdapterGuidUncached(adapterName) {
   // found nothing for names like "Johan's Port".
   const safe = sanitizeAdapter(adapterName);
   if (!safe) return null;
-  const script = `(Get-NetAdapter -Name '${safe.replace(/'/g, "''")}' -IncludeHidden -ErrorAction SilentlyContinue).InterfaceGuid`;
+  const script = `(Get-NetAdapter -Name ${psQuote(safe)} -IncludeHidden -ErrorAction SilentlyContinue).InterfaceGuid`;
   const out = (await SPAWN.psRun(script, { timeoutMs: 8000 })).stdout || '';   // v7.2.0: persistent worker
   const m = out.match(/\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}/);
   return m ? m[0] : null;
@@ -388,6 +393,9 @@ async function getNetAdapterInfo() {
   try {
     let arr = JSON.parse(out.trim() || '[]');
     if (!Array.isArray(arr)) arr = [arr];
+    // v7.3.0: rebuild the GUID cache from this full list — a dock swap can reuse a name
+    // ("Ethernet 3") for a different card, and a stale GUID points tshark at the wrong NPF device
+    if (arr.some(a => a && a.Name && a.InterfaceGuid)) guidCache.clear();
     for (const a of arr) {
       if (!a || !a.Name) continue;
       const media = String(a.PhysicalMediaType || '');
@@ -406,23 +414,77 @@ async function getNetAdapterInfo() {
       byName[rec.name.toLowerCase()] = rec;
       // v7.2.0: GUIDs ride along — fills the cache so no per-adapter PowerShell is ever needed
       const g = String(a.InterfaceGuid || '').match(/\{[0-9A-Fa-f-]{36}\}/);
-      if (g) guidCache.set(rec.name.toLowerCase(), g[0]);
+      if (g) { guidCache.set(rec.name.toLowerCase(), g[0]); rec.guid = g[0].toLowerCase(); }
       // real radios only — -IncludeHidden also lists "Wi-Fi Direct Virtual Adapter" entries,
       // and driver reinstalls leave "Not Present" ghosts of the same card behind
       if (rec.wifi && status !== 'Not Present' && !/virtual|direct|hosted network/i.test(rec.desc)) wifi.push(rec);
     }
   } catch {}
+  // v7.3.0: an empty answer (slow PowerShell, timeout) keeps the last good list — it used to
+  // wipe the WI-FI chip and every cached GUID until the next good read
+  if (!Object.keys(byName).length && Object.keys(netAdapterCache.byName || {}).length) return netAdapterCache;
   netAdapterCache = { ts: Date.now(), byName, wifi };
   return netAdapterCache;
 }
 
-// Generic JSON file loader — shared by presets-load and sites-load
-async function loadJsonFile(filePath, fallback) {
-  try {
-    const data = await fs.promises.readFile(filePath, 'utf8');
-    return JSON.parse(data);
-  } catch { return fallback; }
+// v7.3.0: records that outlive a session (temp aliases, SILENT bindings) carry the card's GUID.
+// Resolve it to the card's *current* name (renamed since) and presence (dongle unplugged → keep
+// the record and try again later instead of dropping it).
+async function resolveRecordedAdapter(rec) {
+  const name = rec && rec.adapter;
+  if (!rec || !rec.guid) return { name, present: true };
+  try { if (Date.now() - netAdapterCache.ts > 3000) await getNetAdapterInfo(); } catch {}
+  const g = String(rec.guid).toLowerCase();
+  const hit = Object.values(netAdapterCache.byName || {}).find(r => r.guid === g);
+  if (!hit) return { name, present: !Object.keys(netAdapterCache.byName || {}).length };   // no list → assume present
+  return { name: hit.name, present: hit.status !== 'Not Present', renamed: hit.name !== name };
 }
+
+// ── JSON files on disk (v7.3.0 hardening) ─────────────────
+// Write: synchronous on purpose — Node can't interleave two sync writes, so overlapping saves
+// from the renderer (rename a site, then edit a device) can no longer mix two payloads in one
+// temp file. Unique temp name, flushed to disk, renamed over the old file; the rename is
+// retried because AV / the search indexer briefly holds files on Windows. Throws on failure.
+let _jsonTmpN = 0;
+function _sleepSync(ms) { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch {} }
+function writeJsonAtomic(file, obj) {
+  const tmp = `${file}.${process.pid}.${++_jsonTmpN}.tmp`;
+  const fd = fs.openSync(tmp, 'w');
+  try { fs.writeSync(fd, JSON.stringify(obj, null, 2)); try { fs.fsyncSync(fd); } catch {} }
+  finally { fs.closeSync(fd); }
+  let lastErr = null;
+  for (const wait of [0, 80, 250, 600]) {
+    if (wait) _sleepSync(wait);
+    try { fs.renameSync(tmp, file); return; } catch (err) { lastErr = err; }
+  }
+  try { fs.unlinkSync(tmp); } catch {}
+  throw lastErr;
+}
+
+// Read: a missing file is normal (first run). A file that exists but won't parse is never
+// silently treated as empty — it is copied aside as <name>.corrupt-<stamp>.json first, logged,
+// and listed for the renderer (STORAGE_PROBLEMS), so the next save can't destroy the only copy.
+const STORAGE_PROBLEMS = [];
+const _quarantined = new Set();
+function quarantineCorrupt(filePath, why) {
+  if (_quarantined.has(filePath)) return null;   // once per file per run
+  _quarantined.add(filePath);
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const dest = filePath.replace(/\.json$/i, '') + `.corrupt-${stamp}.json`;
+  try { fs.copyFileSync(filePath, dest); } catch {}
+  STORAGE_PROBLEMS.push({ file: path.basename(filePath), savedAs: path.basename(dest), why });
+  try { diagAdd({ kind: 'error', tag: 'storage', ok: false, note: `${path.basename(filePath)} could not be read (${why}) — kept as ${path.basename(dest)}` }); } catch {}
+  return dest;
+}
+function readJsonSafe(filePath, fallback) {
+  let data;
+  try { data = fs.readFileSync(filePath, 'utf8'); }
+  catch (err) { if (err.code !== 'ENOENT') quarantineCorrupt(filePath, err.code || err.message); return fallback; }
+  try { return JSON.parse(data); }
+  catch (err) { quarantineCorrupt(filePath, data.trim() ? 'not valid JSON' : 'empty file'); return fallback; }
+}
+// Generic JSON file loader — shared by presets-load and sites-load
+async function loadJsonFile(filePath, fallback) { return readJsonSafe(filePath, fallback); }
 
 const PRESETS_PATH = path.join(app.getPath('userData'), 'presets.json');
 const IS_DEV = process.argv.includes('--dev');
@@ -734,6 +796,9 @@ app.whenReady().then(async () => {
     await session.defaultSession.clearCache();
   } catch { /* non-fatal */ }
   diagLoad();
+  // v7.3.0: check the data files before the window asks for them, so the storage-problems
+  // notice is complete on first paint (reads only; a bad file is copied aside, never changed)
+  try { for (const f of [SITEKB_PATH, SITES_PATH, PRESETS_PATH]) readJsonSafe(f, null); } catch {}
   createWindow();
   createTray();
   initDhcpEngine();
@@ -749,7 +814,7 @@ app.whenReady().then(async () => {
   }, 1500);
   // Snapshot all connected adapters immediately at launch — this is the
   // "restore to launch state" baseline. Runs async, doesn't block UI.
-  takeLaunchSnapshot();
+  LAUNCH_SNAPSHOT_READY = takeLaunchSnapshot();
   readPolicy();
   detectTools();
   // v7.1.0: a crash can leave a REACH alias behind — clean up once we know we're elevated
@@ -770,6 +835,22 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => { /* stay in tray */ });
+
+// v7.3.0: nothing fails silently. An unhandled rejection or exception in main (or one the
+// renderer reports) lands in DIAGNOSTICS, so COPY DIAGNOSTICS shows it.
+let _errBurst = 0;
+function logUnhandled(where, err) {
+  if (++_errBurst > 50) return;            // a loop of the same failure can't flood the ring log
+  setTimeout(() => { _errBurst = Math.max(0, _errBurst - 1); }, 60000);
+  const msg = (err && (err.stack || err.message)) || String(err);
+  try { diagAdd({ kind: 'error', tag: 'unhandled', ok: false, note: `${where}: ${String(msg).split('\n').slice(0, 3).join(' | ').slice(0, 400)}` }); } catch {}
+}
+process.on('unhandledRejection', r => logUnhandled('main (promise)', r));
+process.on('uncaughtException',  e => logUnhandled('main (exception)', e));
+ipcMain.on('renderer-error', (e, info) => {
+  if (!info || typeof info !== 'object') return;
+  logUnhandled('window', { message: String(info.msg || '').slice(0, 400) + (info.where ? ` @ ${String(info.where).slice(0, 80)}` : '') });
+});
 app.on('before-quit', (e) => {
   // Anything that quits outside shutdownAndQuit() (e.g. Windows shutdown)
   // still gets a best-effort DHCP teardown.
@@ -781,7 +862,6 @@ app.on('before-quit', (e) => {
 // down while a late IPC is still in flight. Bail rather than throw on a dead ref.
 const winAlive = () => win && !win.isDestroyed();
 
-ipcMain.on('win-close',    () => { if (winAlive()) win.hide(); });
 // Quit goes through one path so the DHCP engine can revert a static-assist
 // address, release UDP 67 and remove its firewall rule before the process ends.
 let quitInProgress = false;
@@ -905,7 +985,6 @@ ipcMain.handle('win-set-opacity', (e, val) => {
   win.setOpacity(val);
   setTrayMode(val < 0.99 ? 'dim' : 'idle');
 });
-ipcMain.handle('win-get-opacity', () => winAlive() ? win.getOpacity() : 1);
 
 // ── IPC: hide/show ─────────────────────────────────────────
 ipcMain.on('win-hide', () => { if (winAlive()) win.hide(); });
@@ -1266,7 +1345,10 @@ ipcMain.handle('get-wifi', async () => {
 // have no other way to kill Wi-Fi on the bench. Name must match a real
 // adapter exactly — wired (selector list) or wireless (WI-FI chip).
 async function readAdminStates() {
-  const out = (await execAsync('netsh interface show interface', { timeout: 4000 }).catch(() => '')).replace(/\r/g, '');
+  // v7.3.0: 10 s, and one retry on an empty answer — a 4 s timeout came back empty and the
+  // user was told "ADAPTER NOT FOUND"
+  let out = (await execAsync('netsh interface show interface', { timeout: 10000 }).catch(() => '')).replace(/\r/g, '');
+  if (!out.trim()) out = (await execAsync('netsh interface show interface', { timeout: 10000 }).catch(() => '')).replace(/\r/g, '');
   const map = {};
   out.split('\n').forEach(line => {
     const m = line.match(/^(Enabled|Disabled)\s+(Connected|Disconnected|Not Present)\s+\S+\s+(.+)$/i);
@@ -1280,7 +1362,8 @@ ipcMain.handle('adapter-set-enabled', async (e, { adapter, enabled }) => {
   if (!safe) return { ok: false, err: 'INVALID_ADAPTER' };
   const states = await readAdminStates();
   const key = safe.toLowerCase();
-  if (!(key in states)) return { ok: false, err: 'UNKNOWN_ADAPTER' };
+  // an empty read is "couldn't tell", not "not found" — let netsh try (it names a bad adapter itself)
+  if (Object.keys(states).length && !(key in states)) return { ok: false, err: 'UNKNOWN_ADAPTER' };
   const want = enabled ? 'enabled' : 'disabled';
   if (states[key] === want) return { ok: true, verified: true, already: true };
   // Never pull the wire out from under the DHCP engine.
@@ -1291,8 +1374,11 @@ ipcMain.handle('adapter-set-enabled', async (e, { adapter, enabled }) => {
       return { ok: false, err: 'DHCP_SERVING' };
     }
   } catch {}
-  const r = await runElevated(`netsh interface set interface "${safe}" admin=${want}`, { tag: enabled ? 'adapter-enable' : 'adapter-disable' });
-  if (!r.ok) return { ok: false, err: r.err, mode: r.mode };
+  // v7.3.0: enabling Wi-Fi makes netsh block until the radio reconnects (25–30 s on the work
+  // laptop) and once ran past the old 30 s timeout — FAIL logged while Wi-Fi came back anyway.
+  // Give enable 60 s, and whatever netsh says, the admin state decides.
+  const r = await withAdapterLock(safe, () => runElevated(`netsh interface set interface "${safe}" admin=${want}`,
+    { tag: enabled ? 'adapter-enable' : 'adapter-disable', timeoutMs: enabled ? 60000 : 30000 }));
   // Verify: poll the admin state for up to 6 s (Wi-Fi radios can take a moment)
   let verified = false;
   for (let i = 0; i < 10 && !verified; i++) {
@@ -1301,8 +1387,9 @@ ipcMain.handle('adapter-set-enabled', async (e, { adapter, enabled }) => {
     if (now[key] === want) verified = true;
   }
   diagVerify(enabled ? 'adapter-enable' : 'adapter-disable', verified,
-    `${safe}: ${verified ? 'now ' + want : 'netsh ok but state still ' + (states[key] || 'unknown') + ' after 6 s'}`);
+    `${safe}: ${verified ? 'now ' + want + (r.ok ? '' : ` (netsh reported ${r.err || 'an error'} — the state says it worked)`) : (r.ok ? 'netsh ok but' : 'netsh failed and') + ' state still ' + (states[key] || 'unknown') + ' after 6 s'}`);
   try { await getNetAdapterInfo(); } catch {}
+  if (!verified && !r.ok) return { ok: false, err: r.err, mode: r.mode };
   return { ok: true, verified, mode: r.mode };
 });
 
@@ -1312,10 +1399,15 @@ ipcMain.handle('adapter-set-enabled', async (e, { adapter, enabled }) => {
 ipcMain.handle('adapter-renew', async (e, adapter) => {
   const safe = sanitizeAdapter(adapter);
   if (!safe) return { ok: false, err: 'INVALID_ADAPTER' };
-  const r = await runElevated(`ipconfig /renew "${safe}"`, { tag: 'renew', timeoutMs: 25000 });
-  if (!r.ok) return { ok: false, err: r.err };
+  // v7.3.0: ipconfig reads * and ? in a name as wildcards (it would renew other cards)
+  if (/[*?]/.test(safe)) return { ok: false, err: 'This adapter name has * or ? in it — rename it in Windows to renew from here' };
+  // ipconfig /renew waits for a lease or gives up (~60 s with a slow or missing server) —
+  // 70 s, and the address decides, not the exit code
+  const r = await withAdapterLock(safe, () => runElevated(`ipconfig /renew "${safe}"`, { tag: 'renew', timeoutMs: 70000 }));
+  if (r.err === 'CANCELLED') return { ok: false, err: r.err };
   const got = await new Promise(res => setTimeout(() => res(adapterIpv4s(safe).some(ip => !/^169\.254\./.test(ip))), 3000));
-  diagVerify('renew', got, `${safe}: ${got ? 'lease obtained' : 'no address 3 s after renew — server slow, or none on this segment'}`);
+  diagVerify('renew', got, `${safe}: ${got ? 'lease obtained' : 'no address 3 s after renew — server slow, or none on this segment'}${r.ok ? '' : ' (ipconfig: ' + (r.err || 'error') + ')'}`);
+  if (!got && !r.ok) return { ok: false, err: r.err };
   return { ok: true, verified: got };
 });
 
@@ -1526,7 +1618,15 @@ async function removeDiscoveryRule() {
 async function wireWatchStart(adapter, sender) {
   const safe = sanitizeAdapter(adapter);
   if (!DISCOVER || !safe) return { ok: false, err: !DISCOVER ? 'NOT_LOADED' : 'INVALID_ADAPTER' };
-  if (WIRE.watch && WIRE.adapter === safe) { WIRE.sender = sender || WIRE.sender; return { ok: true, adapter: safe, list: WIRE.last, reused: true }; }
+  // v7.3.0: reuse only a watch that still works — same addresses on the card (its sockets were
+  // bound to them) and tshark still running. After a replug or a new address it restarts.
+  if (WIRE.watch && WIRE.adapter === safe) {
+    const w = WIRE.watch;
+    const same = (w.ifaceIps || []).slice().sort().join(',') === adapterIpv4s(safe).slice().sort().join(',');
+    const alive = typeof w.tsharkAlive !== 'function' || w.tsharkAlive();
+    if (same && alive) { WIRE.sender = sender || WIRE.sender; return { ok: true, adapter: safe, list: WIRE.last, reused: true }; }
+    diagAdd({ kind: 'app', tag: 'wire-watch', ok: true, note: `${safe}: ${same ? 'capture had stopped' : 'addresses changed'} — restarting the watch` });
+  }
   wireWatchStop();
   const gen = ++WIRE.gen;          // a second start while this one awaits wins; this one then gives up
   WIRE.adapter = safe; WIRE.sender = sender || null; WIRE.last = [];
@@ -1552,7 +1652,6 @@ function wireWatchStop() {
 }
 ipcMain.handle('wire-watch-start', (e, adapter) => wireWatchStart(adapter, e.sender));
 ipcMain.handle('wire-watch-stop', () => { wireWatchStop(); return { ok: true }; });
-ipcMain.handle('wire-watch-list', () => ({ adapter: WIRE.adapter, list: WIRE.last }));
 // IP tab: listen N seconds on a card with no usable address, return what subnets were heard
 ipcMain.handle('wire-hint', async (e, { adapter, seconds }) => {
   const safe = sanitizeAdapter(adapter);
@@ -1587,8 +1686,8 @@ ipcMain.handle('wire-hint', async (e, { adapter, seconds }) => {
 // on quit, and — via recon-silent.json — on the next elevated launch if we
 // crashed in between. A tech never gets left with a dead NIC.
 const RECON_SILENT_FILE = path.join(app.getPath('userData'), 'recon-silent.json');
-function readSilentState() { try { return JSON.parse(fs.readFileSync(RECON_SILENT_FILE, 'utf8')); } catch { return null; } }
-function writeSilentState(obj) { try { if (obj) fs.writeFileSync(RECON_SILENT_FILE, JSON.stringify(obj)); else if (fs.existsSync(RECON_SILENT_FILE)) fs.unlinkSync(RECON_SILENT_FILE); } catch {} }
+function readSilentState() { const j = readJsonSafe(RECON_SILENT_FILE, null); return j && typeof j === 'object' ? j : null; }
+function writeSilentState(obj) { try { if (obj) writeJsonAtomic(RECON_SILENT_FILE, obj); else if (fs.existsSync(RECON_SILENT_FILE)) fs.unlinkSync(RECON_SILENT_FILE); } catch {} }
 // Elevated PowerShell with the script passed as -EncodedCommand (base64 UTF-16LE).
 // -Command re-joins and re-parses its arguments, so an adapter name with an apostrophe
 // or odd quoting breaks it ("Johan's Port" → TerminatorExpectedAtEndOfString).
@@ -1599,16 +1698,18 @@ function psElevated(script, opts) {
   diagAdd({ kind: 'app', tag: (opts && opts.tag) || 'ps', ok: true, note: 'PS> ' + script });
   return runElevated(`powershell -NoProfile -NonInteractive -EncodedCommand ${b64}`, opts);
 }
-const psQuote = s => "'" + String(s).replace(/'/g, "''") + "'";
+// v7.3.0: PowerShell treats ‘ ’ ‚ ‛ as single quotes too — double them all, or a name with a
+// curly apostrophe ends the string early
+const psQuote = s => "'" + String(s).replace(/['\u2018\u2019\u201A\u201B]/g, m => m + m) + "'";
 async function setIpBindings(safeAdapter, enabled) {
   const verb = enabled ? 'Enable-NetAdapterBinding' : 'Disable-NetAdapterBinding';
-  return psElevated(`${verb} -Name ${psQuote(safeAdapter)} -ComponentID ms_tcpip,ms_tcpip6`, { tag: enabled ? 'recon-rebind' : 'recon-unbind', timeoutMs: 20000 });
+  return withAdapterLock(safeAdapter, () => psElevated(`${verb} -Name ${psQuote(safeAdapter)} -ComponentID ms_tcpip,ms_tcpip6`, { tag: enabled ? 'recon-rebind' : 'recon-unbind', timeoutMs: 45000 }));
 }
 // Does Windows actually have an IPv4 interface on this adapter? The binding flag can
 // say "enabled" while the interface object was never recreated (seen after a 6800
 // transaction conflict). This is the real test, not Get-NetAdapterBinding.
 async function ipv4InterfaceExists(safeAdapter) {
-  const script = `(Get-NetIPInterface -InterfaceAlias '${safeAdapter.replace(/'/g, "''")}' -AddressFamily IPv4 -ErrorAction SilentlyContinue | Measure-Object).Count`;
+  const script = `(Get-NetIPInterface -InterfaceAlias ${psQuote(safeAdapter)} -AddressFamily IPv4 -ErrorAction SilentlyContinue | Measure-Object).Count`;
   const out = String((await SPAWN.psRun(script, { timeoutMs: 8000 })).stdout || '');
   return parseInt(out.trim(), 10) > 0;
 }
@@ -1633,12 +1734,19 @@ function restoreSilent(reason) {
 async function restoreSilentOnce(reason) {
   const st = readSilentState();
   if (!st || !st.adapter) return { ok: true, skipped: true };
-  const safe = sanitizeAdapter(st.adapter);
+  // v7.3.0: follow the card by GUID — renamed since, or unplugged (keep the record, retry later)
+  const where = await resolveRecordedAdapter(st);
+  if (!where.present) {
+    diagAdd({ kind: 'app', tag: 'recon-rebind', ok: false, note: `${st.adapter}: card not present — IP bindings will be restored when it's back (next launch) (${reason})` });
+    return { ok: false, absent: true };
+  }
+  const safe = sanitizeAdapter(where.name);
   if (!safe) { writeSilentState(null); return { ok: true, skipped: true }; }
+  if (where.renamed) diagAdd({ kind: 'app', tag: 'recon-rebind', ok: true, note: `${st.adapter} is now called ${safe} — restoring it under that name` });
   let r = null, ok = false;
   for (let attempt = 1; attempt <= 3 && !ok; attempt++) {
     r = await setIpBindings(safe, true);
-    ok = r.ok;
+    ok = r.ok || await ipv4InterfaceExists(safe).catch(() => false);   // v7.3.0: a timeout isn't proof it failed
     if (!ok) await sleep(attempt * 1500);          // 6800 = NetCfg lock held by someone else; it clears
   }
   let exists = ok && await ipv4InterfaceExists(safe);
@@ -1660,7 +1768,8 @@ async function restoreSilentOnce(reason) {
       try {
         if (!(await adapterIsDhcp(safe))) return;
         if (adapterIpv4s(safe).some(ip => !/^169\.254\./.test(ip))) return;
-        const rr = await runElevated(`ipconfig /renew "${safe}"`, { tag: 'recon-renew', timeoutMs: 25000 });
+        if (/[*?]/.test(safe)) return;
+        const rr = await withAdapterLock(safe, () => runElevated(`ipconfig /renew "${safe}"`, { tag: 'recon-renew', timeoutMs: 70000 }));
         diagAdd({ kind: 'app', tag: 'recon-renew', ok: rr.ok, note: `${safe}: no address after rebind — DHCP renew ${rr.ok ? 'sent' : 'failed: ' + (rr.err || '')}` });
       } catch {}
     }, 3000);
@@ -1684,9 +1793,15 @@ ipcMain.handle('recon-start', async (e, { adapter, durationS, silent }) => {
     if (!PRIV.elevated) return { ok: false, err: 'SILENT_NEEDS_ELEVATION' };
     // the DHCP engine listens on this stack — step it aside for the duration
     try { if (DHCP && DHCP.suspend) dhcpSuspended = await DHCP.suspend('RECON SILENT on ' + safe); } catch {}
+    // v7.3.0: record first, then unbind — a crash in between used to leave the card unbound
+    // with no record, so nothing ever put it back
+    writeSilentState({ adapter: safe, guid: guid.toLowerCase(), ts: Date.now() });
     const r = await setIpBindings(safe, false);
-    if (!r.ok) { if (dhcpSuspended) { try { await DHCP.resume(); } catch {} } return { ok: false, err: 'UNBIND_FAILED: ' + (r.err || 'unknown') }; }
-    writeSilentState({ adapter: safe, ts: Date.now() });
+    if (!r.ok) {
+      try { await restoreSilent('unbind failed'); } catch {}   // part of it may have happened — make sure it's whole
+      if (dhcpSuspended) { try { await DHCP.resume(); } catch {} }
+      return { ok: false, err: 'UNBIND_FAILED: ' + (r.err || 'unknown') };
+    }
     unbound = true;
   }
   diagAdd({ kind: 'app', tag: 'recon', ok: true, note: `listening on ${safe} for ${dur}s${silent ? ' (SILENT — IP unbound)' : ''}` });
@@ -1712,42 +1827,99 @@ ipcMain.handle('recon-verdicts', (e, ev, opts) => (DISCOVER && ev && typeof ev =
 // in temp-aliases.json, and removes it on quit or on request. A crash leaves
 // the file behind; the next elevated launch cleans up and logs it.
 const TEMP_ALIAS_FILE = path.join(app.getPath('userData'), 'temp-aliases.json');
-function readTempAliases() { try { const j = JSON.parse(fs.readFileSync(TEMP_ALIAS_FILE, 'utf8')); return Array.isArray(j) ? j : []; } catch { return []; } }
-function writeTempAliases(list) { try { if (list.length) fs.writeFileSync(TEMP_ALIAS_FILE, JSON.stringify(list)); else if (fs.existsSync(TEMP_ALIAS_FILE)) fs.unlinkSync(TEMP_ALIAS_FILE); } catch {} }
+function readTempAliases() { const j = readJsonSafe(TEMP_ALIAS_FILE, []); return Array.isArray(j) ? j : []; }
+function writeTempAliases(list) { try { if (list.length) writeJsonAtomic(TEMP_ALIAS_FILE, list); else if (fs.existsSync(TEMP_ALIAS_FILE)) fs.unlinkSync(TEMP_ALIAS_FILE); } catch {} }
 
-async function addAliasCore(safeAdapter, ip, subnet, tag = 'alias_add') {
-  let cmd = `netsh interface ip add address "${safeAdapter}" ${ip} ${subnet}`;
-  let converted = false;
+// v7.3.0: one write sequence per card at a time. Each feature only locked its own button, so
+// APPLY, MULTI-IP, REACH, SET LAPTOP IP, a restore and the launch clean-up could all touch one
+// card at once — two alias adds on a DHCP card both read "DHCP", both set static, and the
+// second wiped the first alias. Wrap every read-config → write → verify sequence in this.
+const _adapterLocks = new Map();
+function withAdapterLock(name, fn) {
+  const key = String(name || '').toLowerCase();
+  const prev = _adapterLocks.get(key) || Promise.resolve();
+  const run = prev.catch(() => {}).then(fn);
+  const tail = run.catch(() => {});
+  _adapterLocks.set(key, tail);
+  tail.then(() => { if (_adapterLocks.get(key) === tail) _adapterLocks.delete(key); });
+  return run;
+}
+
+// v7.3.0: is the card on DHCP? netsh show config first (it also gives the current address);
+// if that read times out or doesn't list the card, the registry's EnableDHCP decides. null =
+// we really don't know — callers that would otherwise clobber a lease must stop on null.
+async function readAdapterDhcpState(safeAdapter) {
+  const cfg = await execAsync('netsh interface ip show config', { timeout: 12000 }).catch(() => '');
+  const blocks = cfg.split(/\r?\n(?=Configuration for interface)/i);
+  const block  = findAdapterBlock(blocks, safeAdapter);
+  if (block) {
+    return {
+      dhcp: /DHCP enabled:\s+Yes/i.test(block),
+      ip:   (block.match(/IP Address:\s+([\d.]+)/i) || [])[1] || null,
+      mask: (block.match(/Subnet Prefix[^(]+\(mask\s+([\d.]+)\)/i) || [])[1] || null,
+      gw:   (block.match(/Default Gateway:\s+([\d.]+)/i) || [])[1] || null,
+    };
+  }
   try {
-    const cfg = await execAsync('netsh interface ip show config', { timeout: 5000 }).catch(() => '');
-    const blocks = cfg.split(/\r?\n(?=Configuration for interface)/i);
-    const block  = findAdapterBlock(blocks, safeAdapter);
-    if (block && /DHCP enabled:\s+Yes/i.test(block)) {
-      const currentIp  = (block.match(/IP Address:\s+([\d.]+)/i)         || [])[1];
-      const currentSn  = (block.match(/Subnet Prefix[^(]+\(mask\s+([\d.]+)\)/i) || [])[1] || '255.255.255.0';
-      const currentGw  = (block.match(/Default Gateway:\s+([\d.]+)/i)    || [])[1];
-      if (!currentIp) return { ok: false, err: 'DHCP adapter has no current IP — apply a static IP first', converted };
-      const setStatic = currentGw
-        ? `netsh interface ip set address "${safeAdapter}" static ${currentIp} ${currentSn} ${currentGw}`
-        : `netsh interface ip set address "${safeAdapter}" static ${currentIp} ${currentSn}`;
-      cmd = `${setStatic}; ${cmd}`;
-      converted = true;
+    const guid = await getAdapterGuid(safeAdapter);
+    if (guid) {
+      const reg = (await execAsync(`reg query "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\${guid}" /v EnableDHCP`, { timeout: 8000 }).catch(() => '')).replace(/\r/g, '');
+      const m = reg.match(/EnableDHCP\s+REG_DWORD\s+(0x\w+)/i);
+      if (m) {
+        const v4 = (os.networkInterfaces()[Object.keys(os.networkInterfaces()).find(k => k.toLowerCase() === safeAdapter.toLowerCase())] || []).find(a => a.family === 'IPv4' && !a.internal && !/^169\.254\./.test(a.address));
+        return { dhcp: parseInt(m[1], 16) !== 0, ip: v4 ? v4.address : null, mask: v4 ? v4.netmask : null, gw: null, fromRegistry: true };
+      }
     }
   } catch {}
+  return null;
+}
+
+async function addAliasCore(safeAdapter, ip, subnet, tag = 'alias_add') {
+  return withAdapterLock(safeAdapter, () => addAliasCoreUnlocked(safeAdapter, ip, subnet, tag));
+}
+async function addAliasCoreUnlocked(safeAdapter, ip, subnet, tag = 'alias_add') {
+  // If the adapter is on DHCP, netsh "add address" silently replaces the DHCP lease instead of
+  // adding a second IP. So: switch to static first (keeping the current IP/mask/gateway), then
+  // add — one chain that stops if the conversion fails. v7.3.0: if we can't tell whether the
+  // card is on DHCP (the config read timed out), stop rather than risk the lease.
+  const st = await readAdapterDhcpState(safeAdapter);
+  if (!st) return { ok: false, err: 'Could not read the card\'s settings (Windows was slow to answer) — try again in a moment', converted: false };
+  let cmd = `netsh interface ip add address "${safeAdapter}" ${ip} ${subnet}`;
+  let converted = false;
+  if (st.dhcp) {
+    if (!st.ip) return { ok: false, err: 'DHCP adapter has no current IP — apply a static IP first', converted };
+    const sn = isValidSubnet(st.mask) ? st.mask : '255.255.255.0';
+    const setStatic = st.gw && isValidIp(st.gw)
+      ? `netsh interface ip set address "${safeAdapter}" static ${st.ip} ${sn} ${st.gw}`
+      : `netsh interface ip set address "${safeAdapter}" static ${st.ip} ${sn}`;
+    cmd = `${setStatic}; ${cmd}`;
+    converted = true;
+  }
   const result = await runElevated(cmd, { tag, timeoutMs: 25000 });
-  if (!result.ok) return { ...result, converted };
+  if (!result.ok) {
+    // v7.3.0: the conversion went through but the add didn't — the card is now static on its old
+    // lease address with nothing recording it. Put it back on DHCP right away.
+    if (converted && result.steps && result.steps[0] && result.steps[0].code === 0 && !adapterIpv4s(safeAdapter).includes(ip)) {
+      const back = await runElevated(`netsh interface ip set address "${safeAdapter}" dhcp; netsh interface ip set dns "${safeAdapter}" dhcp`, { tag: tag + '_rollback', timeoutMs: 30000 });
+      diagAdd({ kind: 'app', tag, ok: back.ok, note: `alias add failed after the card was set static — ${back.ok ? 'card handed back to DHCP' : 'COULD NOT hand it back to DHCP: ' + (back.err || '')}` });
+      return { ...result, converted: !back.ok, rolledBack: back.ok };
+    }
+    // a timeout isn't proof: if the address is there, it worked
+    if (!(await pollAliasState(safeAdapter, ip, true, 3000))) return { ...result, converted };
+    diagAdd({ kind: 'app', tag, ok: true, note: `${ip}: netsh reported ${result.err || 'an error'} but the address is on ${safeAdapter}` });
+  }
   const verified = await pollAliasState(safeAdapter, ip, true, 5000);
   diagVerify(tag, verified, verified
     ? `${ip}/${subnet} present on ${safeAdapter}${converted ? ' (adapter converted DHCP→static)' : ''}`
     : `${ip} not seen on ${safeAdapter} after 5s${converted ? ' (conversion chain ran)' : ''}`);
-  return { ...result, verified, converted };
+  return { ...result, ok: true, verified, converted };
 }
 
 // v7.2.0: REACH works for any device the wire watch hears, not just link-local ones —
 // a camera on its fallback 192.168.0.90 gets the laptop a temporary 192.168.0.250 next to
-// it. `alias` (+ `mask`) lets the DHCP tab's "+ ALIAS" chip add a chosen temporary address.
-// Either way the address is temporary by contract: recorded in temp-aliases.json, removed
-// on quit or REMOVE, cleaned up on the next launch after a crash.
+// it. `alias` (+ `mask`) lets the DHCP tab's "+ ALIAS" chip add a chosen address.
+// v7.3.0: only the REACH-picked address is temporary (temp-aliases.json, removed on quit or
+// REMOVE, cleaned up on the next launch after a crash); a chosen + ALIAS stays.
 ipcMain.handle('reach-add', async (e, { adapter, target, alias: wantAlias, mask: wantMask }) => {
   const safe = sanitizeAdapter(adapter);
   if (!safe) return { ok: false, err: 'Invalid adapter name' };
@@ -1755,7 +1927,8 @@ ipcMain.handle('reach-add', async (e, { adapter, target, alias: wantAlias, mask:
   let altAliases = null;
   const toNum = ipStr => ipStr.split('.').reduce((n, o) => ((n << 8) + (+o)) >>> 0, 0);
   let alias, mask;
-  if (wantAlias !== undefined && wantAlias !== null && String(wantAlias).trim()) {
+  const userChosen = wantAlias !== undefined && wantAlias !== null && !!String(wantAlias).trim();
+  if (userChosen) {
     alias = String(wantAlias).trim();
     mask = (wantMask && isValidSubnet(wantMask)) ? wantMask : '255.255.255.0';
     if (!isValidIp(alias)) return { ok: false, err: 'Not an IP address' };
@@ -1785,23 +1958,46 @@ ipcMain.handle('reach-add', async (e, { adapter, target, alias: wantAlias, mask:
   } else return { ok: false, err: 'Invalid target' };
   // v7.2.0: add, then ask Windows whether the address is a duplicate on the wire (an NVR or
   // switch already on .250). Duplicate → take it off again and try the next candidate.
-  let r = null;
+  let r = null, convertedAny = false;   // v7.3.0: a conversion on an earlier candidate still counts
   for (const cand of [alias, ...(altAliases || [])]) {
     alias = cand;
     r = await addAliasCore(safe, alias, mask, 'reach_add');
-    if (!r.ok) return r;
+    if (r.converted) convertedAny = true;
+    if (!r.ok) break;
     const st = await ipAddrState(alias).catch(() => null);
     if (!st || !/duplicate/i.test(st)) break;
     diagAdd({ kind: 'app', tag: 'reach', ok: false, note: `${alias} is already used on the wire (duplicate) — removing it` });
-    await runElevated(`netsh interface ip delete address "${safe}" ${alias}`, { tag: 'reach_del', timeoutMs: 20000 });
+    const del = await withAdapterLock(safe, () => runElevated(`netsh interface ip delete address "${safe}" ${alias}`, { tag: 'reach_del', timeoutMs: 20000 }));
+    // v7.3.0: if the duplicate didn't come off, record it so quit / next launch removes it,
+    // and stop — don't stack a second candidate on top
+    if (!del.ok && !(await pollAliasState(safe, alias, false, 3000))) {
+      let guid = null; try { guid = await getAdapterGuid(safe); } catch {}
+      const list = readTempAliases().filter(t => !(t.adapter === safe && t.ip === alias));
+      list.push({ adapter: safe, guid: guid ? guid.toLowerCase() : null, ip: alias, ts: Date.now(), target, converted: convertedAny });
+      writeTempAliases(list);
+      return { ok: false, err: `${alias} is used by another device and could not be taken off this card — it will be removed on quit` };
+    }
     r = { ok: false, err: `${alias} is already used by another device on this wire` };
   }
-  if (!r || !r.ok) return r || { ok: false, err: 'Could not add an address' };
-  const list = readTempAliases().filter(t => !(t.adapter === safe && t.ip === alias));
-  list.push({ adapter: safe, ip: alias, ts: Date.now(), target, converted: !!r.converted });
-  writeTempAliases(list);
-  diagAdd({ kind: 'app', tag: 'reach', ok: true, note: `temporary alias ${alias}/${mask} on ${safe}${target ? ' for ' + target : ''}${r.converted ? ' (adapter converted DHCP→static)' : ''}` });
-  return { ok: true, alias, verified: r.verified, converted: r.converted };
+  if (!r || !r.ok) {
+    // every candidate failed after an earlier one turned the card static — hand it back to DHCP
+    if (convertedAny && !userChosen) {
+      const back = await withAdapterLock(safe, () => runElevated(`netsh interface ip set address "${safe}" dhcp; netsh interface ip set dns "${safe}" dhcp`, { tag: 'reach_rollback', timeoutMs: 30000 }));
+      diagAdd({ kind: 'app', tag: 'reach', ok: back.ok, note: `no usable address — ${back.ok ? 'card handed back to DHCP' : 'could not hand the card back to DHCP: ' + (back.err || '')}` });
+    }
+    return r || { ok: false, err: 'Could not add an address' };
+  }
+  // v7.3.0: only REACH (ETHER picked the address) is temporary. A chosen address (the DHCP
+  // tab's + ALIAS) is the tech's — it stays like any MULTI-IP, and shows as a leftover next launch.
+  const temp = !userChosen;
+  if (temp) {
+    let guid = null; try { guid = await getAdapterGuid(safe); } catch {}
+    const list = readTempAliases().filter(t => !(t.adapter === safe && t.ip === alias));
+    list.push({ adapter: safe, guid: guid ? guid.toLowerCase() : null, ip: alias, ts: Date.now(), target, converted: convertedAny });
+    writeTempAliases(list);
+  }
+  diagAdd({ kind: 'app', tag: 'reach', ok: true, note: `${temp ? 'temporary ' : ''}alias ${alias}/${mask} on ${safe}${target ? ' for ' + target : ''}${r.converted ? ' (adapter converted DHCP→static)' : ''}` });
+  return { ok: true, alias, verified: r.verified, converted: convertedAny, temp };
 });
 ipcMain.handle('reach-list', () => readTempAliases());
 
@@ -1838,22 +2034,46 @@ ipcMain.handle('port-blink', async (e, { host, seconds }) => {
 async function clearTempAliases(reason) {
   const list = readTempAliases();
   if (!list.length) return { ok: true, removed: 0 };
+  // v7.3.0: a record is dropped only once its alias is really gone. A card that was renamed is
+  // found by GUID; one that's unplugged keeps its record for the next launch (Windows keeps the
+  // address per card, so it comes back with the dongle). Five failed tries → give up and log it.
   let removed = 0, restored = 0;
+  const done = new Set(), retry = new Map();
   for (const t of list) {
-    const safe = sanitizeAdapter(t.adapter);
-    if (!safe || !isValidIp(t.ip)) continue;
+    const id = `${t.adapter}|${t.ip}`;
+    if (!isValidIp(t.ip)) { done.add(id); continue; }
+    const where = await resolveRecordedAdapter(t);
+    const safe = sanitizeAdapter(where.name);
+    if (!safe) { done.add(id); continue; }
+    if (!where.present) { retry.set(id, { ...t, tries: (t.tries || 0) + 1, absent: true }); continue; }
+    // "gone" needs proof: os.networkInterfaces() lists a card's addresses only while it has link
+    const aliasGone = () => { const ips = adapterIpv4s(safe); return ips.length > 0 && !ips.includes(t.ip); };
+    if (aliasGone() && !t.converted) { done.add(id); removed++; continue; }   // already gone
     // The alias add converted a DHCP adapter to static — we were the only reason, so hand it back.
     // One chain: drop the alias, then DHCP for address and DNS.
     const cmd = t.converted
       ? `netsh interface ip delete address "${safe}" ${t.ip}; netsh interface ip set address "${safe}" dhcp; netsh interface ip set dns "${safe}" dhcp`
       : `netsh interface ip delete address "${safe}" ${t.ip}`;
-    const r = await runElevated(cmd, { tag: 'reach_del', timeoutMs: 20000 });
-    if (r.ok) { removed++; if (t.converted) restored++; }
-    else if (t.converted && r.steps && r.steps[0] && r.steps[0].code === 0) removed++;   // alias went, DHCP step failed
+    const r = await withAdapterLock(safe, () => runElevated(cmd, { tag: 'reach_del', timeoutMs: 20000 }));
+    const gone = aliasGone();
+    if (r.ok || gone) { done.add(id); removed++; if (t.converted && r.ok) restored++; }
+    else if (t.converted && r.steps && r.steps[0] && r.steps[0].code === 0) { done.add(id); removed++; }   // alias went, DHCP step failed
+    else retry.set(id, { ...t, adapter: safe, tries: (t.tries || 0) + 1 });
   }
-  writeTempAliases([]);
-  diagAdd({ kind: 'app', tag: 'reach', ok: removed === list.length, note: `${reason}: removed ${removed}/${list.length} link-local alias(es)${restored ? `, ${restored} adapter(s) back to DHCP` : ''}` });
-  return { ok: removed === list.length, removed, total: list.length };
+  // re-read: a REACH added while this ran must not be wiped
+  const now = readTempAliases();
+  const next = [];
+  for (const t of now) {
+    const id = `${t.adapter}|${t.ip}`;
+    if (done.has(id)) continue;
+    const r = retry.get(id);
+    if (r && r.tries >= 5) { diagAdd({ kind: 'error', tag: 'reach', ok: false, note: `gave up removing ${t.ip} from ${t.adapter} after 5 tries — remove it in MULTI-IP` }); continue; }
+    next.push(r || t);
+  }
+  writeTempAliases(next);
+  const left = list.length - removed;
+  diagAdd({ kind: 'app', tag: 'reach', ok: left === 0, note: `${reason}: removed ${removed}/${list.length} temporary alias(es)${restored ? `, ${restored} adapter(s) back to DHCP` : ''}${left ? ` — ${left} kept for a retry (card unplugged or busy)` : ''}` });
+  return { ok: left === 0, removed, total: list.length };
 }
 ipcMain.handle('reach-clear', async () => clearTempAliases('REMOVE clicked'));
 
@@ -2205,6 +2425,7 @@ function lookupVendor(mac) {
 
 let scanAbortFlag = false;
 let scanRunningMain = false; // guard against concurrent scan-start calls
+let scanGen = 0;            // v7.3.0: run generation (see scan-start)
 
 // Shared ARP output parser — used by scan-start and arp-sweep.
 // Returns { [ip]: mac } for the given subnet base, filtered to [rangeStart, rangeEnd].
@@ -2236,6 +2457,13 @@ ipcMain.on('scan-start', async (e, { baseIp, concurrency, scanStart, scanEnd }) 
   }
   scanRunningMain = true;
   scanAbortFlag = false;
+  // v7.3.0: every run has a generation. STOP then a quick restart used to clear the abort flag
+  // while the old run's workers were still pinging — they carried on, their results mixed into
+  // the new scan, and their scan-done ended it early. Now an old run stops itself and its
+  // messages are dropped.
+  const gen = ++scanGen;
+  const live = () => gen === scanGen && !scanAbortFlag;
+  const post = (ch, payload) => { if (gen === scanGen && !e.sender.isDestroyed()) e.sender.send(ch, payload); };
   const start   = Math.max(1,   Math.min(254, parseInt(scanStart, 10) || 1));
   const end     = Math.max(1,   Math.min(254, parseInt(scanEnd,   10) || 254));
   const TOTAL   = end - start + 1;
@@ -2247,7 +2475,9 @@ ipcMain.on('scan-start', async (e, { baseIp, concurrency, scanStart, scanEnd }) 
 
   function icmpPing(host) {
     const pingStart = Date.now();
-    return execAsync(`ping -n 1 -w ${PING_MS} ${host}`, { timeout: PING_MS + 500 })
+    // v7.3.0: the kill timer must cover launching ping.exe too — at 2–4 s per launch on a
+    // managed laptop, 800 ms killed every ping and SCAN showed only ARP-cached hosts
+    return execAsync(`ping -n 1 -w ${PING_MS} ${host}`, { timeout: PING_MS + 6000 })
       .then(stdout => {
         const ok = /TTL=/i.test(stdout);
         return { ok, ms: ok ? Date.now() - pingStart : 0 };
@@ -2264,7 +2494,7 @@ ipcMain.on('scan-start', async (e, { baseIp, concurrency, scanStart, scanEnd }) 
     preScanMacMap = parseArpOutput(arpOut, baseIp, start, end);
     if (!e.sender.isDestroyed()) {
       Object.entries(preScanMacMap).forEach(([ip, mac]) => {
-        e.sender.send('scan-result', {
+        post('scan-result', {
           host: ip, ok: true, ms: 0, done: 0, total: TOTAL,
           fromArp: true, mac, vendor: lookupVendor(mac),
         });
@@ -2283,13 +2513,13 @@ ipcMain.on('scan-start', async (e, { baseIp, concurrency, scanStart, scanEnd }) 
   let lastProgressDone = 0;
   const progressTimer = setInterval(() => {
     if (done !== lastProgressDone && !e.sender.isDestroyed()) {
-      e.sender.send('scan-progress', { done, total: TOTAL });
+      post('scan-progress', { done, total: TOTAL });
       lastProgressDone = done;
     }
   }, 200);
 
   async function worker() {
-    while (cursor < TOTAL && !scanAbortFlag) {
+    while (cursor < TOTAL && live()) {
       const idx  = cursor++;
       const host = hosts[idx];
       let result;
@@ -2302,7 +2532,7 @@ ipcMain.on('scan-start', async (e, { baseIp, concurrency, scanStart, scanEnd }) 
       pingResults[host] = result;
       // Only push alive hosts over IPC — dead hosts are covered by scan-progress.
       if (result.ok && !e.sender.isDestroyed()) {
-        e.sender.send('scan-result', {
+        post('scan-result', {
           host, ok: true, ms: result.ms, done, total: TOTAL,
         });
       }
@@ -2317,11 +2547,11 @@ ipcMain.on('scan-start', async (e, { baseIp, concurrency, scanStart, scanEnd }) 
 
   clearInterval(progressTimer);
   // Final progress flush so the bar reaches 100%
-  if (!e.sender.isDestroyed()) e.sender.send('scan-progress', { done: TOTAL, total: TOTAL });
+  if (!e.sender.isDestroyed()) post('scan-progress', { done: TOTAL, total: TOTAL });
 
-  if (scanAbortFlag) {
-    scanRunningMain = false;
-    if (!e.sender.isDestroyed()) e.sender.send('scan-done', { aborted: true });
+  if (!live()) {
+    if (gen === scanGen) scanRunningMain = false;
+    if (!e.sender.isDestroyed()) post('scan-done', { aborted: true });
     return;
   }
 
@@ -2347,22 +2577,22 @@ ipcMain.on('scan-start', async (e, { baseIp, concurrency, scanStart, scanEnd }) 
       if (!pingResults[ip] || !pingResults[ip].ok) {
         // Host visible in ARP but missed by ICMP — and not already sent in pre-scan
         if (!preScanMacMap[ip]) {
-          e.sender.send('scan-result', { host: ip, ok: true, ms: 0, done: TOTAL, total: TOTAL, fromArp: true, mac, vendor });
+          post('scan-result', { host: ip, ok: true, ms: 0, done: TOTAL, total: TOTAL, fromArp: true, mac, vendor });
         }
       } else {
         // Enrich a confirmed ICMP hit with its MAC + vendor
-        e.sender.send('scan-enrich', { host: ip, mac, vendor });
+        post('scan-enrich', { host: ip, mac, vendor });
       }
     });
   }
 
   if (!e.sender.isDestroyed()) {
-    e.sender.send('scan-done', { aborted: false, macMap });
+    post('scan-done', { aborted: false, macMap });
   }
-  scanRunningMain = false;
+  if (gen === scanGen) scanRunningMain = false;
 });
 
-ipcMain.on('scan-stop', () => { scanAbortFlag = true; scanRunningMain = false; });
+ipcMain.on('scan-stop', () => { scanAbortFlag = true; scanRunningMain = false; });   // the run's own gen check stops its workers
 
 // ── IPC: duplicate IP check ────────────────────────────────
 // ARP-pings a specific IP to see if anything is already using it.
@@ -2371,9 +2601,9 @@ ipcMain.handle('check-duplicate-ip', async (e, ip) => {
   if (!isValidIp(ip)) return { conflict: false };
   try {
     // Ping once to populate ARP cache
-    await execAsync(`ping -n 1 -w 800 ${ip}`, { timeout: 3000 }).catch(() => {});
+    await execAsync(`ping -n 1 -w 800 ${ip}`, { timeout: 8000 }).catch(() => {});   // v7.3.0: + launch time
     // Read ARP table for that specific IP
-    const arpOut = await execAsync('arp -a', { timeout: 3000 }).catch(() => '');
+    const arpOut = await execAsync('arp -a', { timeout: 8000 }).catch(() => '');
     for (const line of arpOut.split('\n')) {
       const m = line.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+([\w-]+)\s+(dynamic|static)/i);
       if (!m) continue;
@@ -2400,7 +2630,8 @@ ipcMain.on('tracert-start', async (e, { host }) => {
   if (tracertProc) { try { tracertProc.kill(); } catch {} tracertProc = null; }
 
   try {
-    const proc = exec(`tracert -d -h 20 -w 800 ${safeHost}`, { timeout: 60000 });
+    // v7.3.0: execFile, not exec — killing the cmd.exe wrapper left tracert itself running
+    const proc = execFile('tracert', ['-d', '-h', '20', '-w', '800', safeHost], { timeout: 60000, windowsHide: true });
     tracertProc = proc;
     proc.stdout.on('data', chunk => {
       if (e.sender.isDestroyed()) { proc.kill(); tracertProc = null; return; }
@@ -2762,15 +2993,11 @@ loadVendorCache();
 // ── IPC: site database ─────────────────────────────────────
 const SITES_PATH = path.join(app.getPath('userData'), 'sites.json');
 
-// Atomic JSON write: temp file + rename, so a crash mid-write never leaves a
-// truncated presets/sites/intel file behind.
-async function writeJsonAtomic(filePath, obj) {
-  const tmp = filePath + '.tmp';
-  await fs.promises.writeFile(tmp, JSON.stringify(obj, null, 2), 'utf8');
-  await fs.promises.rename(tmp, filePath);
-}
+// (writeJsonAtomic lives next to loadJsonFile — v7.3.0)
 
 ipcMain.handle('sites-load', () => loadJsonFile(SITES_PATH, {}));
+// v7.3.0: files that existed but couldn't be read this run (kept aside as *.corrupt-*.json)
+ipcMain.handle('storage-problems', () => STORAGE_PROBLEMS.slice());
 
 ipcMain.handle('sites-save', async (e, sites) => {
   try {
@@ -2792,7 +3019,7 @@ ipcMain.handle('sites-save', async (e, sites) => {
 // Encrypted value shape inside a cred: val = { $enc: '<base64>' }
 const SITEKB_PATH        = path.join(app.getPath('userData'), 'intel.json');
 const SITEKB_BACKUP_DIR  = path.join(app.getPath('userData'), 'backups');
-const SITEKB_BACKUP_KEEP = 5;
+const SITEKB_BACKUP_KEEP = 10;   // v7.3.0: daily backups share the folder
 const CRED_UNREADABLE   = '[UNREADABLE — encrypted by another user or machine]';
 
 function credCryptoAvailable() {
@@ -2816,6 +3043,10 @@ function encryptSites(sites) {
   const out = JSON.parse(JSON.stringify(sites));
   let n = 0;
   walkCreds(out, c => {
+    // v7.3.0: a credential this machine couldn't decrypt keeps its original ciphertext — writing
+    // the placeholder text back encrypted would destroy it for good
+    if (c.val === CRED_UNREADABLE && typeof c.$keep === 'string') { c.val = { $enc: c.$keep }; delete c.$keep; return; }
+    delete c.$keep;
     if (typeof c.val === 'string' && c.val.length) {
       c.val = { $enc: safeStorage.encryptString(c.val).toString('base64') };
       n++;
@@ -2831,7 +3062,7 @@ function decryptSites(sites) {
   walkCreds(out, c => {
     if (c.val && typeof c.val === 'object' && typeof c.val.$enc === 'string') {
       try { c.val = safeStorage.decryptString(Buffer.from(c.val.$enc, 'base64')); n++; }
-      catch { c.val = CRED_UNREADABLE; failed++; }
+      catch { c.$keep = c.val.$enc; c.val = CRED_UNREADABLE; failed++; }
     }
   });
   return { sites: out, count: n, failed };
@@ -2851,8 +3082,11 @@ async function intelBackup(label = 'pre-import') {
     const dest  = path.join(SITEKB_BACKUP_DIR, `intel-${label}-${stamp}.json`);
     await fs.promises.copyFile(SITEKB_PATH, dest);
     // Prune: keep the newest SITEKB_BACKUP_KEEP
+    // v7.3.0: oldest first by time — sorting by name grouped by label, not age
     const files = (await fs.promises.readdir(SITEKB_BACKUP_DIR))
-      .filter(f => /^intel-.*\.json$/.test(f)).sort();
+      .filter(f => /^intel-.*\.json$/.test(f))
+      .map(f => { let t = 0; try { t = fs.statSync(path.join(SITEKB_BACKUP_DIR, f)).mtimeMs; } catch {} return { f, t }; })
+      .sort((a, b) => a.t - b.t).map(x => x.f);
     for (const f of files.slice(0, Math.max(0, files.length - SITEKB_BACKUP_KEEP))) {
       try { await fs.promises.unlink(path.join(SITEKB_BACKUP_DIR, f)); } catch {}
     }
@@ -2864,7 +3098,19 @@ async function intelBackup(label = 'pre-import') {
   }
 }
 
+let _intelDailyBackup = '';
 async function intelWrite(sites) {
+  // v7.3.0: a backup on the first save of each day, and before any save that would empty a
+  // database that has sites in it — the per-import / per-delete backups alone left gaps
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    if (_intelDailyBackup !== today && fs.existsSync(SITEKB_PATH)) { _intelDailyBackup = today; await intelBackup('daily'); }
+    if (!Object.keys(sites || {}).length && fs.existsSync(SITEKB_PATH)) {
+      const cur = readJsonSafe(SITEKB_PATH, null);
+      const n = cur && typeof cur === 'object' ? Object.keys(cur.format === 2 ? (cur.sites || {}) : cur).length : 0;
+      if (n) await intelBackup('before-empty');
+    }
+  } catch {}
   if (credCryptoAvailable()) {
     const { sites: enc } = encryptSites(sites);
     await writeJsonAtomic(SITEKB_PATH, { format: 2, creds: 'safeStorage', sites: enc });
@@ -2881,7 +3127,10 @@ ipcMain.handle('sitekb-load', async () => {
   if (raw.format === 2 && raw.sites && typeof raw.sites === 'object') {
     if (raw.creds === 'safeStorage') {
       const { sites, failed } = decryptSites(raw.sites);
-      if (failed) diagAdd({ kind: 'error', tag: 'creds', ok: false, note: `${failed} credential(s) could not be decrypted (DPAPI is per user + machine)` });
+      if (failed) {
+        diagAdd({ kind: 'error', tag: 'creds', ok: false, note: `${failed} credential(s) could not be decrypted (DPAPI is per user + machine) — their ciphertext is kept` });
+        await intelBackup('unreadable-creds');
+      }
       return sites;
     }
     return raw.sites;
@@ -3284,8 +3533,8 @@ ipcMain.handle('fix-mtu', async (e, { adapter, mtu }) => {
   if (!safeAdapter) return { ok: false, err: 'Invalid adapter name' };
   const targetMtu = clampMtu(mtu);
   const cmd = `netsh interface ipv4 set subinterface "${safeAdapter}" mtu=${targetMtu} store=persistent`;
-  const result = await runElevated(cmd, { tag: 'mtu', timeoutMs: 15000 });
-  if (!result.ok) return result;
+  const result = await withAdapterLock(safeAdapter, () => runElevated(cmd, { tag: 'mtu', timeoutMs: 15000 }));
+  if (result.err === 'CANCELLED') return result;   // v7.3.0: otherwise the read-back below decides
 
   // Verify: re-read the subinterface table (poll briefly — the change is near-instant
   // but the adapter may bounce). netsh exit 0 alone is not proof the value took.
@@ -3300,7 +3549,7 @@ ipcMain.handle('fix-mtu', async (e, { adapter, mtu }) => {
     ? `${safeAdapter} MTU now ${targetMtu}`
     : `${safeAdapter} MTU expected ${targetMtu}, read ${seen === null ? 'nothing' : seen}`);
   if (!verified) {
-    return { ...result, ok: false, err: `MTU command ran but adapter still reports ${seen === null ? 'no MTU' : seen}`, verified: false };
+    return { ...result, ok: false, err: result.ok ? `MTU command ran but adapter still reports ${seen === null ? 'no MTU' : seen}` : result.err, verified: false };
   }
   return { ...result, ok: true, mtu: targetMtu, verified: true };
 });
@@ -3332,7 +3581,7 @@ ipcMain.handle('presets-save', async (e, presets) => {
 // Kept short: the PING cycle waits for its slowest host, so a dead :port
 // target must not stretch everyone else's second.
 async function hostAlive(safeHost) {
-  const ok = await execAsync(`ping -n 1 -w 600 ${safeHost}`, { timeout: 1500 }).then(o => /TTL=/i.test(o)).catch(() => false);
+  const ok = await execAsync(`ping -n 1 -w 600 ${safeHost}`, { timeout: 7000 }).then(o => /TTL=/i.test(o)).catch(() => false);   // v7.3.0: + launch time
   if (ok) return true;
   return new Promise(resolve => {
     const socket = new net.Socket();
@@ -3420,7 +3669,7 @@ function findAdapterBlock(blocks, adapterName) {
 }
 
 async function applyNetworkConfig({ adapter, ip, subnet, gateway, dns, tag }) {
-  const opTag = tag === 'revert' ? 'revert' : 'apply';   // v7.1.0: REVERT is logged as what it is
+  const opTag = ['revert', 'restore', 'leftover_restore'].includes(tag) ? tag : 'apply';   // v7.1.0: REVERT is logged as what it is
   const safeAdapter = sanitizeAdapter(adapter);
   if (!safeAdapter)           return { ok: false, err: 'Invalid adapter name' };
   if (!isValidIp(ip))         return { ok: false, err: 'Invalid IP address' };
@@ -3437,38 +3686,44 @@ async function applyNetworkConfig({ adapter, ip, subnet, gateway, dns, tag }) {
     dns && dns.trim() ? `netsh interface ip set dns "${safeAdapter}" static ${dns.trim()} validate=no` : null,
   ].filter(Boolean).join('; ');
 
+  return withAdapterLock(safeAdapter, async () => {
   const result = await runElevated(cmdLines, { tag: opTag, timeoutMs: 30000 });
-  if (!result.ok) return { ...result, err: explainNetshError(result.err, ip) };
-
-  // Verify the change took — poll netsh up to 3x, but also check registry
-  // as netsh drops the IP line for disconnected adapters even after a successful apply.
+  if (result.err === 'CANCELLED') return result;
+  // v7.3.0: read the card back whatever netsh said. A timeout, or the address step working
+  // and the DNS step failing, used to report ERROR for an address that was on the card — and
+  // the renderer then never armed REVERT for it.
+  const seen = await verifyStaticIp(safeAdapter, ip);
+  if (seen) {
+    diagVerify(opTag, true, `${safeAdapter} now ${ip}/${subnet}${gateway && gateway.trim() ? ' gw ' + gateway.trim() : ''} (${seen})${result.ok ? '' : ' — netsh reported: ' + (result.err || 'an error')}`);
+    return { ...result, ok: true, verified: true, partial: !result.ok, partialErr: result.ok ? null : result.err };
+  }
+  if (!result.ok) { diagVerify(opTag, false, `${safeAdapter} expected ${ip} — ${result.err || 'netsh failed'}`); return { ...result, err: explainNetshError(result.err, ip) }; }
+  diagVerify(opTag, false, `${safeAdapter} expected ${ip} — not seen in netsh or registry after 4.5s`);
+  return { ...result, ok: false, verified: false, err: 'Command ran but IP did not change — check adapter name or admin rights' };
+  });
+}
+// Is `ip` configured on the card? os.networkInterfaces (free) → netsh → registry (disconnected
+// static cards), polled 3× 1.5 s. Every read survives its own timeout. Returns where it was
+// seen, or null.
+async function verifyStaticIp(safeAdapter, ip) {
   for (let attempt = 0; attempt < 3; attempt++) {
     await new Promise(r => setTimeout(r, 1500));
+    if (adapterIpv4s(safeAdapter).includes(ip)) return 'live';
+    const cfg = await execAsync('netsh interface ip show config', { timeout: 12000 }).catch(() => '');
+    const block = findAdapterBlock(cfg.split(/\r?\n(?=Configuration for interface)/i), safeAdapter);
+    if (block && block.includes(ip)) return 'netsh';
     try {
-      // Primary: netsh (works for connected adapters)
-      const cfg = await execAsync('netsh interface ip show config', { timeout: 5000 });
-      const blocks = cfg.split(/\r?\n(?=Configuration for interface)/i);
-      const block = findAdapterBlock(blocks, safeAdapter);
-      if (block && block.includes(ip)) {
-        diagVerify(opTag, true, `${safeAdapter} now ${ip}/${subnet}${gateway && gateway.trim() ? ' gw ' + gateway.trim() : ''} (netsh)`);
-        return { ...result, ok: true, verified: true };
-      }
-      // Fallback: registry (works for disconnected static adapters)
       const guid = await getAdapterGuid(safeAdapter);
       if (guid) {
         const regOut = (await execAsync(
           `reg query "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\${guid}" /v IPAddress`,
-          { timeout: 3000 }
+          { timeout: 8000 }
         ).catch(() => '')).replace(/\r/g, '');
-        if (regOut.includes(ip)) {
-          diagVerify(opTag, true, `${safeAdapter} now ${ip}/${subnet} (registry — netsh view not updated yet, or adapter disconnected)`);
-          return { ...result, ok: true, verified: true };
-        }
+        if (regOut.includes(ip)) return 'registry';
       }
     } catch {}
   }
-  diagVerify(opTag, false, `${safeAdapter} expected ${ip} — not seen in netsh or registry after 4.5s`);
-  return { ...result, ok: false, verified: false, err: 'Command ran but IP did not change — check adapter name or admin rights' };
+  return null;
 }
 // netsh's "The object already exists." means the address is already on the adapter (a DHCP
 // lease or an alias) — say that instead of parroting netsh.
@@ -3480,50 +3735,40 @@ ipcMain.handle('apply-network-config', async (e, args) => applyNetworkConfig(arg
 
 // ── IPC: apply DHCP (elevated) ────────────────────────────
 async function applyDhcpConfig({ adapter, tag }) {
-  const opTag = tag === 'revert' ? 'revert' : 'dhcp';
+  const opTag = ['revert', 'restore', 'leftover_restore'].includes(tag) ? tag : 'dhcp';
   const safeAdapter = sanitizeAdapter(adapter);
   if (!safeAdapter) return { ok: false, err: 'Invalid adapter name' };
-  const psLines = [
-    `netsh interface ip set address "${safeAdapter}" dhcp`,
-    `netsh interface ip set dns "${safeAdapter}" dhcp`,
-  ].join('; ');
-  const result = await runElevated(psLines, { tag: opTag, timeoutMs: 30000 });
-  if (!result.ok) return result;
+  return withAdapterLock(safeAdapter, async () => {
+  // v7.3.0: address and DNS run separately. On a card that's already DHCP, netsh's
+  // "DHCP is already enabled" exits 1 — that stopped the chain before DNS was reset and
+  // reported an error for a card that was where the tech wanted it.
+  const addr = await runElevated(`netsh interface ip set address "${safeAdapter}" dhcp`, { tag: opTag, timeoutMs: 30000 });
+  if (addr.err === 'CANCELLED') return addr;
+  const already = !addr.ok && /already enabled/i.test(addr.err || '');
+  const dnsR = await runElevated(`netsh interface ip set dns "${safeAdapter}" dhcp`, { tag: opTag + '_dns', timeoutMs: 30000 });
+  const result = { ...addr, ok: (addr.ok || already) && dnsR.ok, err: (addr.ok || already) ? (dnsR.ok ? null : 'DNS: ' + dnsR.err) : addr.err };
 
-  // Verify the change actually took by polling netsh up to 3 times with a short delay
-  for (let attempt = 0; attempt < 3; attempt++) {
+  // Verify — netsh, then the registry (a disconnected card never shows DHCP in netsh until it
+  // has a lease). Whatever netsh said, this decides.
+  let on = false, where = '';
+  for (let attempt = 0; attempt < 3 && !on; attempt++) {
     await new Promise(r => setTimeout(r, 1500));
-    try {
-      const cfg = await execAsync('netsh interface ip show config', { timeout: 5000 });
-      const blocks = cfg.split(/\r?\n(?=Configuration for interface)/i);
-      const block = findAdapterBlock(blocks, safeAdapter);
-      if (block && /DHCP enabled:\s+Yes/i.test(block)) {
-        diagVerify(opTag, true, `${safeAdapter} DHCP enabled (netsh)`);
-        return { ...result, ok: true, verified: true };
-      }
-    } catch {}
+    const cfg = await execAsync('netsh interface ip show config', { timeout: 12000 }).catch(() => '');
+    const block = findAdapterBlock(cfg.split(/\r?\n(?=Configuration for interface)/i), safeAdapter);
+    if (block && /DHCP enabled:\s+Yes/i.test(block)) { on = true; where = 'netsh'; }
   }
-  // netsh verify failed — try registry as ground truth (catches disconnected adapters
-  // where netsh show config never updates until a lease is obtained)
-  try {
-    const guid = await getAdapterGuid(safeAdapter);
-    if (guid) {
-      const regOut = (await execAsync(
-        `reg query "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\${guid}" /v EnableDHCP`,
-        { timeout: 3000 }
-      ).catch(() => '')).replace(/\r/g, '');
-      const enableMatch = regOut.match(/EnableDHCP\s+REG_DWORD\s+(0x\w+)/i);
-      if (enableMatch && parseInt(enableMatch[1], 16) !== 0) {
-        diagVerify(opTag, true, `${safeAdapter} EnableDHCP=1 (registry — netsh view not updated yet, or adapter disconnected)`);
-        return { ...result, ok: true, verified: true };
-      }
-    }
-  } catch {}
-  // netsh exited 0 but DHCP didn't take — adapter name mismatch, policy block, or
-  // a netsh message that came back on stdout with a zero exit code. The captured
-  // output is in the diagnostics log either way.
-  diagVerify(opTag, false, `${safeAdapter} still static after 4.5s`);
+  if (!on) {
+    const st = await readAdapterDhcpState(safeAdapter).catch(() => null);
+    if (st && st.dhcp) { on = true; where = 'registry'; }
+  }
+  if (on) {
+    diagVerify(opTag, true, `${safeAdapter} DHCP enabled (${where})${already ? ' — was already' : ''}${dnsR.ok ? '' : ' · DNS step: ' + (dnsR.err || 'failed')}`);
+    return { ...result, ok: true, verified: true, partial: !dnsR.ok };
+  }
+  diagVerify(opTag, false, `${safeAdapter} still static after 4.5s${result.err ? ' — ' + result.err : ''}`);
+  if (!result.ok) return result;
   return { ...result, ok: false, verified: false, err: 'DHCP command ran but adapter is still static — check adapter name and run as admin' };
+  });
 }
 ipcMain.handle('apply-dhcp', async (e, args) => applyDhcpConfig(args || {}));
 
@@ -3578,38 +3823,8 @@ ipcMain.handle('alias-add', async (e, { adapter, ip, subnet }) => {
   if (!safeAdapter)           return { ok: false, err: 'Invalid adapter name' };
   if (!isValidIp(ip))         return { ok: false, err: 'Invalid IP address' };
   if (!isValidSubnet(subnet)) return { ok: false, err: 'Invalid subnet mask' };
-
-  // If the adapter is on DHCP, netsh "add address" silently replaces the DHCP
-  // lease instead of adding a second IP. Fix: switch to static first (preserving
-  // the current IP/subnet/gateway), then add the alias — as one chain that stops
-  // if the conversion fails. The renderer shows a pre-flight confirm before this.
-  let cmd = `netsh interface ip add address "${safeAdapter}" ${ip} ${subnet}`;
-  let converted = false;
-  try {
-    const cfg = await execAsync('netsh interface ip show config', { timeout: 5000 }).catch(() => '');
-    const blocks = cfg.split(/\r?\n(?=Configuration for interface)/i);
-    const block  = findAdapterBlock(blocks, safeAdapter);
-    if (block && /DHCP enabled:\s+Yes/i.test(block)) {
-      const currentIp  = (block.match(/IP Address:\s+([\d.]+)/i)         || [])[1];
-      const currentSn  = (block.match(/Subnet Prefix[^(]+\(mask\s+([\d.]+)\)/i) || [])[1] || '255.255.255.0';
-      const currentGw  = (block.match(/Default Gateway:\s+([\d.]+)/i)    || [])[1];
-      if (!currentIp) return { ok: false, err: 'DHCP adapter has no current IP — apply a static IP first before adding multi-IP' };
-      const setStatic = currentGw
-        ? `netsh interface ip set address "${safeAdapter}" static ${currentIp} ${currentSn} ${currentGw}`
-        : `netsh interface ip set address "${safeAdapter}" static ${currentIp} ${currentSn}`;
-      cmd = `${setStatic}; ${cmd}`;
-      converted = true;
-    }
-  } catch { /* fall through to plain add */ }
-
-  const result = await runElevated(cmd, { tag: 'alias_add', timeoutMs: 25000 });
-  if (!result.ok) return { ...result, converted };
-
-  const verified = await pollAliasState(safeAdapter, ip, true, 5000);
-  diagVerify('alias_add', verified, verified
-    ? `${ip}/${subnet} present on ${safeAdapter}${converted ? ' (adapter converted DHCP→static)' : ''}`
-    : `${ip} not seen on ${safeAdapter} after 5s${converted ? ' (conversion chain ran)' : ''}`);
-  return { ...result, verified, converted };
+  // v7.3.0: same path as REACH (DHCP check that can't be fooled by a slow read, rollback, lock)
+  return addAliasCore(safeAdapter, ip, subnet, 'alias_add');
 });
 
 // Remove a secondary IP from an adapter (elevated)
@@ -3618,14 +3833,16 @@ ipcMain.handle('alias-remove', async (e, { adapter, ip }) => {
   if (!safeAdapter)   return { ok: false, err: 'Invalid adapter name' };
   if (!isValidIp(ip)) return { ok: false, err: 'Invalid IP address' };
   const cmd = `netsh interface ip delete address "${safeAdapter}" ${ip}`;
-  const result = await runElevated(cmd, { tag: 'alias_del', timeoutMs: 20000 });
-  if (!result.ok) return result;
-
-  const verified = await pollAliasState(safeAdapter, ip, false, 5000);
-  diagVerify('alias_del', verified, verified
-    ? `${ip} removed from ${safeAdapter}`
-    : `${ip} still present on ${safeAdapter} after 5s`);
-  return { ...result, verified };
+  return withAdapterLock(safeAdapter, async () => {
+    const result = await runElevated(cmd, { tag: 'alias_del', timeoutMs: 20000 });
+    // v7.3.0: verify either way — a timeout, or "element not found" for an alias that's already
+    // gone, used to report FAIL while the card was exactly as the tech wanted
+    const verified = await pollAliasState(safeAdapter, ip, false, 5000);
+    diagVerify('alias_del', verified, verified
+      ? `${ip} removed from ${safeAdapter}${result.ok ? '' : ' (netsh said ' + (result.err || 'error') + ')'}`
+      : `${ip} still present on ${safeAdapter} after 5s`);
+    return { ...result, ok: verified, verified, err: verified ? null : result.err || `${ip} is still on the card` };
+  });
 });
 
 // Build netsh commands for aliases without elevating (CMD fallback)
@@ -3676,6 +3893,7 @@ function initDhcpEngine() {
       // v7.2.0: Windows' duplicate-address detection result for a freshly applied address
       // (Preferred / Tentative / Duplicate). Read through the PowerShell worker.
       ipAddressState: ipAddrState,
+      readJsonSafe, writeJsonAtomic,   // v7.3.0: shared safe file I/O
     });
   } catch (err) {
     diagAdd({ kind: 'error', tag: 'dhcp', ok: false, note: 'DHCP engine failed to load: ' + err.message });
@@ -3744,7 +3962,6 @@ async function buildDiagState() {
 
 ipcMain.handle('diag-get', async () => ({ state: await buildDiagState(), log: diagLog.slice() }));
 // v7.2.0: re-run the process-launch self-check from the diagnostics overlay
-ipcMain.handle('spawn-check', async () => { await SPAWN.selfCheck(); return SPAWN.stats(); });
 ipcMain.handle('diag-clear', () => {
   diagLog = [];
   diagFlush();
@@ -3762,6 +3979,7 @@ const SNAPSHOT_PATH = path.join(app.getPath('userData'), 'last-snapshot.json');
 // a full session restore on quit. Stored separately from last-snapshot.json
 // so the per-apply revert flow is unaffected.
 const LAUNCH_SNAPSHOT_PATH = path.join(app.getPath('userData'), 'launch-snapshot.json');
+let LAUNCH_SNAPSHOT_READY = Promise.resolve();   // v7.3.0: set at launch; leftovers wait on it
 
 async function snapshotAdapterConfig(name) {
   // Shared helper — reads one adapter's full config from netsh + registry + subinterfaces
@@ -3824,8 +4042,47 @@ async function snapshotAdapterConfig(name) {
   };
 }
 
+
+// v7.3.0: LEFTOVERS FROM LAST SESSION
+// Quit no longer asks or reverts anything — what the tech set stays set. Instead, the next
+// launch compares the previous session's launch snapshot (read before it's overwritten) with
+// now: a card that is static now, or carries extra addresses, and wasn't like that when ETHER
+// last started is a leftover. It shows as one amber line on the IP tab with PUT BACK / ✕ and
+// stays (across launches) until dismissed, put back, or the card changes. DHCP→DHCP lease
+// changes are never leftovers. Free at quit: no process launches on the way out.
+const LEFTOVERS_PATH = path.join(app.getPath('userData'), 'leftovers.json');
+function readLeftovers() { const j = readJsonSafe(LEFTOVERS_PATH, []); return Array.isArray(j) ? j : []; }
+function writeLeftovers(list) {
+  try {
+    if (list.length) writeJsonAtomic(LEFTOVERS_PATH, list);
+    else if (fs.existsSync(LEFTOVERS_PATH)) fs.unlinkSync(LEFTOVERS_PATH);
+  } catch {}
+}
+function computeLeftovers(prev, cur) {
+  if (!prev || !prev.adapters || !cur) return [];
+  const temp = new Set(readTempAliases().map(t => t.ip));   // REACH aliases are cleaned separately
+  const out = [];
+  for (const [name, now] of Object.entries(cur)) {
+    const was = prev.adapters[name];
+    if (!was || !now) continue;
+    const extras = Array.isArray(was.ips) && Array.isArray(now.ips)
+      ? now.ips.filter(ip => ip !== now.ip && !was.ips.includes(ip) && !temp.has(ip))
+      : [];
+    const newStatic = !now.isDhcp && (was.isDhcp || was.ip !== now.ip);
+    if (!newStatic && !extras.length) continue;
+    out.push({ adapter: name, since: prev.ts || null,
+      now: { isDhcp: now.isDhcp, ip: now.ip, subnet: now.subnet, ips: now.ips || [] },
+      was, extras, newStatic });
+  }
+  return out;
+}
+
 async function takeLaunchSnapshot() {
   try {
+    // v7.3.0: the previous session's snapshot is the baseline for leftovers — read it first
+    let prevSnap = null;
+    prevSnap = readJsonSafe(LAUNCH_SNAPSHOT_PATH, null);
+
     const ifaces = os.networkInterfaces();
     const adapterNames = Object.keys(ifaces).filter(name => {
       const addrs = ifaces[name];
@@ -3836,13 +4093,35 @@ async function takeLaunchSnapshot() {
     await Promise.all(adapterNames.map(async name => {
       try {
         const snap = await snapshotAdapterConfig(name);
-        if (snap) snapshots[name] = snap;
+        if (snap) {
+          snap.ips = (ifaces[name] || []).filter(a => a.family === 'IPv4' && !a.internal).map(a => a.address);
+          snapshots[name] = snap;
+        }
       } catch {}
     }));
 
+    // leftovers: new ones from the last session, plus older ones the card still matches
+    try {
+      const fresh = computeLeftovers(prevSnap, snapshots);
+      const kept = readLeftovers().filter(o => {
+        if (fresh.some(f => f.adapter === o.adapter)) return false;
+        const now = snapshots[o.adapter];
+        if (!now) return true;   // card not up right now — can't tell, keep the note
+        if (o.newStatic && (now.isDhcp || now.ip !== o.now.ip)) return false;
+        const extrasLeft = (o.extras || []).filter(ip => (now.ips || []).includes(ip));
+        if (!o.newStatic && !extrasLeft.length) return false;
+        o.extras = extrasLeft;
+        return true;
+      });
+      const all = [...kept, ...fresh];
+      writeLeftovers(all);
+      if (fresh.length) diagAdd({ kind: 'app', tag: 'leftover', ok: true,
+        note: fresh.map(f => `${f.adapter}: ${f.newStatic ? 'static ' + f.now.ip : ''}${f.extras.length ? (f.newStatic ? ' + ' : '') + f.extras.length + ' extra address(es)' : ''} from last session`).join(' · ') });
+    } catch (err) { console.warn('[Leftovers] Failed:', err.message); }
+
     if (Object.keys(snapshots).length > 0) {
       const payload = { ts: Date.now(), adapters: snapshots };
-      await fs.promises.writeFile(LAUNCH_SNAPSHOT_PATH, JSON.stringify(payload, null, 2), 'utf8');
+      writeJsonAtomic(LAUNCH_SNAPSHOT_PATH, payload);
       console.log(`[LaunchSnapshot] Captured ${Object.keys(snapshots).length} adapter(s)`);
     }
   } catch (err) {
@@ -3867,13 +4146,6 @@ ipcMain.handle('get-full-snapshot', async (e, adapter) => {
   }
 });
 
-ipcMain.handle('get-saved-snapshot', async () => {
-  try {
-    const raw = await fs.promises.readFile(SNAPSHOT_PATH, 'utf8');
-    return { ok: true, snapshot: JSON.parse(raw) };
-  } catch { return { ok: false }; }
-});
-
 // ── ADAPTER LIVE CONFIG (autofill, no disk write) ─────────
 // Lightweight version of get-full-snapshot — reads live IP/subnet/gateway/DNS
 // for autofilling fields on adapter select without touching the revert snapshot.
@@ -3888,34 +4160,7 @@ ipcMain.handle('get-adapter-config', async (e, adapter) => {
   } catch { return { ok: false }; }
 });
 
-// ── ACTIVE ALIAS CHECK ────────────────────────────────────
-// Returns all adapters that have more than one IP assigned (i.e. active aliases).
-// Called on hide/quit to warn user before they leave.
-ipcMain.handle('check-active-aliases', async () => {
-  try {
-    const ifaces = os.networkInterfaces();
-    const warnings = [];
-    for (const [name, addrs] of Object.entries(ifaces)) {
-      const v4addrs = addrs.filter(a => a.family === 'IPv4' && !a.internal);
-      if (v4addrs.length > 1) {
-        warnings.push({ adapter: name, count: v4addrs.length, ips: v4addrs.map(a => a.address) });
-      }
-    }
-    return { ok: true, warnings };
-  } catch (err) {
-    return { ok: false, err: err.message, warnings: [] };
-  }
-});
-
 // ── LAUNCH SNAPSHOT IPC ───────────────────────────────────
-
-// Return the full launch snapshot payload to the renderer
-ipcMain.handle('get-launch-snapshot', async () => {
-  try {
-    const raw = await fs.promises.readFile(LAUNCH_SNAPSHOT_PATH, 'utf8');
-    return { ok: true, ...JSON.parse(raw) };
-  } catch { return { ok: false }; }
-});
 
 // Compare current live adapter state against launch snapshot.
 // Returns only adapters that actually changed — empty array means nothing to restore.
@@ -3945,59 +4190,69 @@ ipcMain.handle('get-launch-deltas', async () => {
   } catch { return { ok: false, deltas: [] }; }
 });
 
+// v7.3.0: one restore path for RESTORE LAUNCH STATE and the leftover PUT BACK — apply a saved
+// config to one card, then read it back. netsh "set address" (dhcp or static) replaces every
+// static address on the card, so extra aliases go with it.
+async function restoreAdapterTo(safeAdapter, snap, tag) {
+  // v7.3.0: the same locked, read-back paths as APPLY and → DHCP — an "already DHCP" card no
+  // longer stops before DNS, and a timeout isn't taken as failure
+  let r;
+  if (snap.isDhcp) r = await applyDhcpConfig({ adapter: safeAdapter, tag });
+  else {
+    if (!isValidIp(snap.ip)) return { ok: false, err: 'Saved state has no usable address' };
+    r = await applyNetworkConfig({ adapter: safeAdapter, ip: snap.ip, subnet: isValidSubnet(snap.subnet) ? snap.subnet : '255.255.255.0',
+      gateway: snap.gateway && isValidIp(snap.gateway) ? snap.gateway : '', dns: snap.dns && isValidIp(snap.dns) ? snap.dns : '', tag });
+    if (r.ok && !(snap.dns && isValidIp(snap.dns)))
+      await withAdapterLock(safeAdapter, () => runElevated(`netsh interface ip set dns "${safeAdapter}" dhcp`, { tag: tag + '_dns', timeoutMs: 30000 }));
+  }
+  if (r.ok && snap.mtu && snap.mtu !== 1500) {
+    const m = await withAdapterLock(safeAdapter, () => runElevated(`netsh interface ipv4 set subinterface "${safeAdapter}" mtu=${snap.mtu} store=persistent`, { tag: tag + '_mtu', timeoutMs: 15000 }));
+    const now = await readAdapterMtu(safeAdapter).catch(() => null);
+    diagVerify(tag + '_mtu', now === snap.mtu, `${safeAdapter} MTU ${now === snap.mtu ? 'back to ' + snap.mtu : 'expected ' + snap.mtu + ', read ' + now}${m.ok ? '' : ' (' + (m.err || 'netsh failed') + ')'}`);
+  }
+  return { ok: !!r.ok, err: r.ok ? null : (r.err || 'Card did not take the old settings') };
+}
+
 // Restore all adapters in the launch snapshot to their saved state (elevated).
 ipcMain.handle('restore-launch-state', async (e, adapterNames) => {
   try {
     const raw = await fs.promises.readFile(LAUNCH_SNAPSHOT_PATH, 'utf8');
     const { adapters } = JSON.parse(raw);
-
-    // Filter to only requested adapters (renderer passes the confirmed list)
-    const targets = adapterNames
+    const targets = Array.isArray(adapterNames)
       ? Object.entries(adapters).filter(([name]) => adapterNames.includes(name))
       : Object.entries(adapters);
-
     const results = [];
     for (const [name, snap] of targets) {
       const safeAdapter = sanitizeAdapter(name);
       if (!safeAdapter) { results.push({ adapter: name, ok: false, err: 'Invalid adapter name' }); continue; }
-
-      try {
-        let cmdLines;
-        if (snap.isDhcp) {
-          cmdLines = [
-            `netsh interface ip set address "${safeAdapter}" dhcp`,
-            `netsh interface ip set dns "${safeAdapter}" dhcp`,
-          ].join('; ');
-        } else {
-          const addrCmd = snap.gateway && isValidIp(snap.gateway)
-            ? `netsh interface ip set address "${safeAdapter}" static ${snap.ip} ${snap.subnet || '255.255.255.0'} ${snap.gateway}`
-            : `netsh interface ip set address "${safeAdapter}" static ${snap.ip} ${snap.subnet || '255.255.255.0'}`;
-          const dnsCmd = snap.dns && isValidIp(snap.dns)
-            ? `netsh interface ip set dns "${safeAdapter}" static ${snap.dns} validate=no`
-            : `netsh interface ip set dns "${safeAdapter}" dhcp`;
-          cmdLines = `${addrCmd}; ${dnsCmd}`;
-        }
-        const r = await runElevated(cmdLines, { tag: 'restore', timeoutMs: 30000 });
-
-        // Restore MTU if it was captured and differs
-        if (r.ok && snap.mtu && snap.mtu !== 1500) {
-          const mtuCmd = `netsh interface ipv4 set subinterface "${safeAdapter}" mtu=${snap.mtu} store=persistent`;
-          await runElevated(mtuCmd, { tag: 'restore_mtu', timeoutMs: 15000 }).catch(() => {});
-        }
-
-        results.push({ adapter: name, ok: r.ok, err: r.err || null });
-      } catch (err) {
-        results.push({ adapter: name, ok: false, err: err.message });
-      }
+      try { results.push({ adapter: name, ...(await restoreAdapterTo(safeAdapter, snap, 'restore')) }); }
+      catch (err) { results.push({ adapter: name, ok: false, err: err.message }); }
     }
-
-    const allOk = results.every(r => r.ok);
-    diagVerify('restore', allOk, results.map(r => `${r.adapter}: ${r.ok ? 'ok' : (r.err || 'failed')}`).join(' · ') || 'nothing to restore');
-    return { ok: allOk, results };
+    return { ok: results.length > 0 && results.every(r => r.ok), results };
   } catch (err) {
     diagAdd({ kind: 'error', tag: 'restore', ok: false, note: err.message });
     return { ok: false, err: err.message, results: [] };
   }
+});
+
+// v7.3.0: leftovers from last session (see takeLaunchSnapshot)
+ipcMain.handle('leftovers-get', async () => {
+  try { await LAUNCH_SNAPSHOT_READY; } catch {}
+  return readLeftovers();
+});
+ipcMain.handle('leftovers-dismiss', (e, adapter) => {
+  writeLeftovers(readLeftovers().filter(o => o.adapter !== adapter));
+  diagAdd({ kind: 'app', tag: 'leftover', ok: true, note: `${String(adapter).slice(0, 60)}: kept as is (dismissed)` });
+  return { ok: true };
+});
+ipcMain.handle('leftovers-restore', async (e, adapter) => {
+  const o = readLeftovers().find(x => x.adapter === adapter);
+  if (!o) return { ok: false, err: 'Nothing to put back' };
+  const safe = sanitizeAdapter(o.adapter);
+  if (!safe) return { ok: false, err: 'Invalid adapter name' };
+  const r = await restoreAdapterTo(safe, o.was, 'leftover_restore');
+  if (r.ok) writeLeftovers(readLeftovers().filter(x => x.adapter !== adapter));
+  return r;
 });
 
 // ══════════════════════════════════════════════════════════════

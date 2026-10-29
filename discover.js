@@ -531,6 +531,11 @@ module.exports = function initDiscover(deps) {
 
       try { reconProc = execFile(tshark, args, { windowsHide: true, maxBuffer: 256 * 1024 * 1024 }); }
       catch (err) { ev.err = err.message; return resolve(serializeEvidence(ev)); }
+      // v7.3.0: watchdog. -a duration only counts once capture starts; if npcap/dumpcap hangs
+      // before that, the listen never ended — and under SILENT the card stayed unbound.
+      const myProc = reconProc;
+      const watchdog = setTimeout(() => { if (reconProc === myProc) { hung = true; try { myProc.kill(); } catch {} } }, (durationS + 25) * 1000);
+      let hung = false;
       reconProc.stdout.on('data', d => {
         out += d.toString('utf8');
         let i;
@@ -538,11 +543,13 @@ module.exports = function initDiscover(deps) {
       });
       reconProc.stderr.on('data', d => { errTxt += d.toString('utf8'); });
       reconProc.on('close', code => {
-        reconProc = null;
+        clearTimeout(watchdog);
+        if (reconProc === myProc) reconProc = null;
         if (out.trim()) { onLine(out); out = ''; }
         if (cur) finishPacket(cur);
         ev.ms = Date.now() - t0;
-        if (code && !ev.packets) {
+        if (hung && !ev.packets) ev.err = 'TSHARK_HUNG — capture never started (npcap busy?)';
+        else if (code && !ev.packets) {
           const e = errTxt.trim().split('\n').filter(l => l.trim() && !/^Capturing on/i.test(l)).slice(-3).join(' · ');
           ev.err = e || `tshark exited ${code}`;
         }
@@ -750,6 +757,10 @@ module.exports = function initDiscover(deps) {
     }
     return {
       list,
+      // v7.3.0: lets main decide whether this watch can be reused — tshark gone (card unplugged
+      // or disabled) means ARP/LLDP are dead even though the object still exists
+      tsharkAlive: () => !tshark || !!proc,
+      ifaceIps: ifaceIps.slice(),
       stop() {
         stopped = true;
         if (timer) clearInterval(timer);

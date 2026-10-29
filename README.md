@@ -76,6 +76,7 @@ Manage static IP configuration for any wired adapter. (The tab was called ETHER 
 - **REVERT** — snapshots the previous config before applying; one click to restore
 - **Connection History** — last 10 applied configs, click any to reload
 - `169.254.x.x` is allowed (with a mask hint). `0.x.x.x` and an APIPA DNS server are still rejected.
+- **Leftover line** (7.3.0) — quit never asks or undoes anything. If the last session left this card on a static it wasn't on before, or with extra addresses, one amber line under the adapter says so: **↩ PUT BACK** restores what it was (and reads it back), **KEEP** forgets the note.
 - **Wrong-address warning** (7.2.0) — an amber line under the adapter when it holds a self-assigned 169.254 address, a DHCP lease whose gateway doesn't answer (moved the cable from the office jack to a camera switch), or no address. **HEAR THE WIRE** listens 10 s (ARP, mDNS, device LLDP) and offers a free address on each subnet heard; **SET STATIC…** and **RENEW** beside it.
 
 ### DHCP
@@ -83,7 +84,7 @@ A DHCP server for the bench and the dead segment — NET//DHCP v3, absorbed into
 
 - **The wide tab.** The window grows to ~820 px while DHCP is open and returns to your normal width when you leave.
 - **Off at launch.** Nothing binds UDP 67 until the DHCP tab is opened. Opening it starts **LISTENING**: every DHCP request on the wire shows in the table as ASKING, and nothing is answered.
-- **① NETWORK CARD / ② LAPTOP'S ADDRESS ON THAT CABLE.** Pick the cable, then the address the laptop answers from (chips). **SET LAPTOP IP…** gives a card with no address one — 192.168.0.1 by default, duplicate-checked, reverts on quit. **+ ALIAS** adds a temporary second address for another subnet. A strip reads it back: `LAPTOP 192.168.0.1 ── Ethernet 2 ── DEVICES GET 192.168.0.100 – .200`.
+- **① NETWORK CARD / ② LAPTOP'S ADDRESS ON THAT CABLE.** Pick the cable, then the address the laptop answers from (chips). **SET LAPTOP IP…** gives a card with no address one — 192.168.0.1 by default, duplicate-checked. **+ ALIAS** adds a second address for another subnet. Both stay until you change them (7.3.0). A strip reads it back: `LAPTOP 192.168.0.1 ── Ethernet 2 ── DEVICES GET 192.168.0.100 – .200`.
 - **One device is the default.** An ASKING row carries an address box: type the address it should end up on, **▶ SERVE**, **↗ OPEN**. Set it static on the device on that address; when it stops renewing (or releases) but still answers, the row turns **✓ STATIC** and the lease is freed. The next row starts one address higher. **DEVICE** shows what the device says it is — option 60 (`AXIS,Network Door Controller,A1210,12.2.63.19` → AXIS A1210, firmware) — before it has an address.
 - **◇ SITTING** — devices heard on the wire that aren't asking: mDNS (queried from 5353 so answers come back multicast, the way AXIS IP Utility finds things) and announcements, SSDP NOTIFY, and ARP + device LLDP through tshark. **↗ OPEN** on your subnet, **⇢ REACH** (temporary address next to it, any subnet) otherwise.
 - **SERVE EVERYONE…** — small amber button; asks first, then an active scan for other DHCP servers; confirms again if one is live.
@@ -177,14 +178,17 @@ All data is per-user in `%APPDATA%\net-ether\`, pinned explicitly regardless of 
 | `presets.json` | Saved preset slots 1–3 (LIVE is never persisted) |
 | `sites.json` | SCAN tab site library |
 | `intel.json` | SITES knowledge base (format 2: `{ format, creds, sites }` — credential values are DPAPI blobs). The filename is historical. |
-| `backups/intel-*.json` | Automatic pre-import backups, newest 5 |
+| `backups/intel-*.json` | Automatic backups — before import, before delete, first save of the day, before a save that would empty the database, when credentials fail to decrypt. Newest 10 |
 | `vendor-cache.json` | Cached macvendors.com lookups |
-| `last-snapshot.json`, `launch-snapshot.json` | Adapter state for REVERT and restore-on-quit |
+| `last-snapshot.json`, `launch-snapshot.json` | Adapter state for REVERT and RESTORE LAUNCH STATE; the previous launch snapshot is also the baseline for leftovers |
+| `leftovers.json` | Cards the last session left on a static / with extra addresses (the IP tab's leftover line) |
+| `temp-aliases.json`, `recon-silent.json` | Temporary REACH addresses and RECON SILENT bindings to clean up — present only while there's something to undo, keyed by card GUID |
+| `<name>.corrupt-<date>.json` | A data file that existed but couldn't be read, kept as-is (see the notice at launch) |
 | `diag-log.json` | Diagnostics log |
-| `dhcp-config.json` | DHCP tab: last settings, profiles, reservations, idle timer, pending static-assist revert |
+| `dhcp-config.json` | DHCP tab: last settings, profiles, reservations, idle timer |
 | `window-state.json` | Last window position, size and display |
 
-All JSON writes are atomic (temp file + rename).
+All JSON writes are atomic (unique temp file, flushed, then renamed — retried if antivirus holds the file) and serialised. A file that exists but won't parse is copied aside, never overwritten blind.
 
 ---
 
@@ -217,6 +221,53 @@ NET-ETHER/
 ---
 
 ## CHANGELOG
+
+### v7.3.0 (in progress — rc.1, 2026-10-27)
+The stability release: what 7.2 added, plus a full bug hunt, so the fleet gets one update that lasts.
+Started from a day in the field on two addresses where ─ simply refused to hide the window.
+
+**Leaving ETHER**
+- **─ always hides, ✕ always quits — one click.** No alias check, no "press ✕ again", no SESSION CHANGES prompt. Those prompts sat inline in the IP tab, so on a short window ✕ just looked dead.
+- **One rule for what happens on quit.** What you set stays set: APPLY, MULTI-IP, the DHCP tab's + ALIAS and SET LAPTOP IP… (both used to undo themselves on quit). What ETHER did on its own is still cleaned up: REACH temporary addresses, RECON SILENT bindings, the DHCP engine and its firewall rule.
+- **Leftover line.** Next launch, a card that the last session left on a static (or with extra addresses) gets one amber line under the adapter: ↩ PUT BACK / KEEP. It replaces the DHCP tab's "never reverted — put it back?" modal and persists until dealt with or the card changes. DHCP lease changes never count.
+- **↩ RESTORE LAUNCH STATE** confirms in a modal instead of the inline banner, and the result comes from reading the cards back, not from netsh's exit code.
+
+**Your data (from the audit)**
+- **A damaged data file is never overwritten blind.** If `intel.json`, `sites.json`, `presets.json` or `dhcp-config.json` exists but can't be read, it's copied aside as `<name>.corrupt-<date>.json` first, logged, and a notice says where it is. Before, ETHER started empty and the next save destroyed the only copy (sites and credentials included).
+- **Overlapping saves can't mix.** Two quick saves (rename a site, then edit a device) could interleave in one temp file and leave invalid JSON. Writes are now serialised, use a unique temp file, are flushed to disk, and retry the rename when antivirus briefly holds the file.
+- **A failed save says so** (SITES and the scan library) instead of looking saved.
+- **Credentials that won't decrypt are kept.** A credential this Windows account can't decrypt (another user or machine, a reset) used to be replaced by the "unreadable" text on the next save, destroying it. Its original ciphertext now rides along untouched; type a new value and that replaces it.
+- **Backups:** one on the first SITES save of each day, one before any save that would empty a database that has sites, one when credentials fail to decrypt. Ten kept, pruned oldest-first (the old prune went by name and could delete the newest).
+- The DHCP tab no longer re-imports old NET//DHCP settings because its own file failed to parse.
+
+**Network state that outlives a session**
+- **Temporary REACH addresses and RECON SILENT follow the card, not its name.** Both now record the card's GUID: a card renamed since is cleaned up under its new name, and one that's unplugged keeps its record until it's back (it used to be dropped while Windows kept the address). Five failed tries → logged, left for MULTI-IP. A REACH made while cleanup runs is no longer wiped.
+- **SILENT writes its record before unbinding**, so a crash in between can't leave a card with IP unbound and nothing to restore it.
+- The adapter GUID cache is rebuilt on every adapter refresh — a dock that reuses "Ethernet 3" for a different card no longer points tshark at the old one.
+
+**Slow, locked-down laptops (from the process-launch audit)**
+- **A slow config read can no longer cost the DHCP lease.** MULTI-IP / REACH decide "is this card on DHCP?" before adding an alias (on DHCP, a plain add replaces the lease). When that read timed out, they assumed static and replaced the lease. Now: netsh with 12 s, then the registry; if neither answers, the add stops and says why. MULTI-IP and REACH share one add path.
+- **The card's real state decides OK/FAIL** for APPLY, → DHCP, MULTI-IP add/remove, MTU, RENEW and RESTORE — not netsh's exit code. A timeout, an "already gone" alias, or an address that took while the DNS step failed (now shown as ✓ with a DNS warning, and REVERT is armed) no longer read as FAIL.
+- **→ DHCP on a card that's already DHCP** works (netsh's "already enabled" stopped the chain before DNS was reset).
+- **An alias add that half-worked** (card set static, alias not added) hands the card straight back to DHCP. REACH's duplicate-address removal is checked; if it fails, the address is recorded for clean-up and REACH stops instead of stacking a second one.
+- **One write per card at a time.** APPLY, MULTI-IP, REACH, SET LAPTOP IP, restores, RENEW, enable/disable, SILENT and the launch clean-up queue per card instead of interleaving.
+- **Timeouts that counted launch time:** SCAN pings (800 ms total killed every ping when ping.exe takes 2–4 s to start — SCAN showed only ARP-cached hosts), PING liveness, the duplicate-IP check, `whoami` at launch (15 s + retry; a timeout used to send every write through UAC for the session), adapter enable/disable state reads (no more false "ADAPTER NOT FOUND"), RENEW (70 s — ipconfig waits for a lease), SILENT rebinds (45 s), one-shot PowerShell (+10 s start-up).
+- **The DHCP engine never offers on a guess:** a conflict probe that couldn't finish skips that address instead of calling it free.
+- **RECON can't hang:** a watchdog ends a capture that never started (npcap busy), so SILENT always rebinds.
+- **The PowerShell worker survives a slow box:** slow answers restart it but don't count toward switching it off; an empty answer keeps the last good adapter list (the WI-FI chip used to vanish).
+- Errors say "TIMEOUT after N s" when that's what happened. Adapter names with curly apostrophes are quoted safely for PowerShell; RENEW refuses names with `*`/`?` (ipconfig wildcards). TRACERT stops when told to. SCAN's FOUND count includes DISCOVER rows (a duplicate function hid them).
+
+**Fixes**
+- **Wi-Fi ENABLE** gets 60 s (netsh blocks until the radio reconnects — 25–30 s on the work laptop) and the adapter's real state decides OK/FAIL, so a slow reconnect no longer logs FAIL while Wi-Fi comes back anyway.
+- **REVERT keeps your way back.** The snapshot took the new gateway/DNS from the form instead of the card's old ones, so REVERT could put the old IP back with the new gateway — or be refused by the gateway check and lose its button for good. It now records the real old settings, skips the typed-input checks, and keeps the button if the revert doesn't go through.
+- **APPLY stays locked until the apply finishes** (it re-armed after 12 s, so a slow UAC/netsh let a second click start a second apply).
+- **SCAN stop → start** can't mix runs: each scan has a generation; an old run stops itself and its results and "done" are dropped. The site diff after a scan is skipped if a new scan started inside its 2.5 s delay.
+- **DHCP holds its answers when the serving address leaves the card** (cable out, dock off) instead of answering with a server address nobody can reach — out the Wi-Fi. It says so once and resumes when the address is back.
+- **Wire watch restarts** after a link bounce or an address change (it kept listening on the old addresses, and ARP/LLDP stayed dead after a replug).
+- **Nothing fails silently:** an unhandled error in the window or in main lands in DIAGNOSTICS, and the active tab's status bar says so instead of animating "WORKING…" forever. DHCP engine start/stop answer with an error instead of rejecting.
+- **Prompts that opened below the fold** now scroll into view: the DHCP stale-settings guard (fired from rows far below it), the fallback COPY COMMANDS box after a failed apply, the SITES export/import strip. SCAN's "changes since last scan" chip moved above the results.
+- A modal opened over another one no longer leaves the first one waiting forever. The opacity toggle flips only once the window took it. The DHCP lease countdown ticks only while that tab is showing.
+- Removed ten IPC calls nothing used (one could write the DHCP config unchecked).
 
 ### v7.2.2 (2026-10-24)
 Same bench, same night: the A1210 leased, OPEN landed on a page that wouldn't load.

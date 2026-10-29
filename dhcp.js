@@ -49,7 +49,7 @@ module.exports = function initDhcp(deps) {
     app, ipcMain, getWin, diagAdd, runElevated,
     isValidIp, isValidSubnet, sanitizeAdapter, lookupVendor,
     getAdapters, applyStatic, applyDhcp, readAdapterConfig, getPolicy,
-    onStateChange, ipAddressState,
+    onStateChange, ipAddressState, readJsonSafe, writeJsonAtomic,
   } = deps;
 
   // ── Engine state ───────────────────────────────────────────────────────────
@@ -92,8 +92,12 @@ module.exports = function initDhcp(deps) {
 
   function loadStore() {
     let s = null, imported = false;
-    try { if (fs.existsSync(CONFIG_FILE)) s = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch {}
-    if (!s) {
+    // v7.3.0: a damaged file is copied aside (readJsonSafe) — and the legacy NET//DHCP import
+    // runs only on a true first run, never because the current file failed to parse
+    const existed = fs.existsSync(CONFIG_FILE);
+    s = existed ? readJsonSafe(CONFIG_FILE, null) : null;
+    if (s && typeof s !== 'object') s = null;
+    if (!s && !existed) {
       try {
         if (fs.existsSync(LEGACY_FILE)) {
           const old = JSON.parse(fs.readFileSync(LEGACY_FILE, 'utf8'));
@@ -114,11 +118,8 @@ module.exports = function initDhcp(deps) {
     return s;
   }
   function saveStore(s) {
-    try {
-      const tmp = CONFIG_FILE + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify(s || store, null, 2), 'utf8');
-      fs.renameSync(tmp, CONFIG_FILE);
-    } catch {}
+    try { writeJsonAtomic(CONFIG_FILE, s || store); }
+    catch (err) { try { diagAdd({ kind: 'error', tag: 'dhcp', ok: false, note: 'dhcp-config.json not saved: ' + err.message }); } catch {} }
   }
   const store = loadStore();
   function persist() { saveStore(store); }
@@ -234,7 +235,10 @@ module.exports = function initDhcp(deps) {
     for (const name of Object.keys(current)) {
       const was = lastAdapterState[name], is = current[name];
       if (was === false && is === true)      { send('dhcp-adapters', { name, event: 'link-up' });   log(`Link UP: ${name}`, 'warn'); }
-      else if (was === true && is === false) { send('dhcp-adapters', { name, event: 'link-down' }); log(`Link DOWN: ${name}`, 'err'); }
+      else if (was === true && is === false) {
+        send('dhcp-adapters', { name, event: 'link-down' });
+        log(`Link DOWN: ${name}${isServing() && serveCfg && serveCfg.adapterName === name ? ' — that is the card you are serving on; nothing is answered until it is back' : ''}`, 'err');
+      }
     }
     lastAdapterState = current;
     send('dhcp-adapters', { adapters, event: 'poll' });
@@ -316,7 +320,11 @@ module.exports = function initDhcp(deps) {
   function probeIp(ip) {
     return new Promise(resolve => {
       if (!isValidIp(ip)) { resolve(true); return; }     // never offer something we can't even validate
-      execFile('ping', ['-n', '1', '-w', '250', ip], { timeout: 2500, windowsHide: true }, (err, stdout) => {
+      // v7.3.0: 8 s covers launching ping.exe on a slow laptop. A ping that was killed tells us
+      // nothing — resolve null ("unknown"): not cached, and the caller skips that address
+      // rather than offering one that may be in use.
+      execFile('ping', ['-n', '1', '-w', '250', ip], { timeout: 8000, windowsHide: true }, (err, stdout) => {
+        if (err && err.killed) { resolve(null); return; }
         const alive = !err && /ttl=/i.test(stdout || '');
         probeCache[ip] = { free: !alive, ts: Date.now() };
         resolve(alive);
@@ -482,6 +490,7 @@ module.exports = function initDhcp(deps) {
   // from being recreated. So the engine steps aside: SUSPENDED (socket closed, firewall
   // rule left in place), then back to whatever it was doing once the adapter is back.
   let suspendedFrom = null;
+  let pausedNoted = false;   // v7.3.0: serving paused because the server address left the card
   async function suspend(reason) {
     if (mode === 'off' || mode === 'suspended') return false;
     suspendedFrom = mode;
@@ -602,6 +611,16 @@ module.exports = function initDhcp(deps) {
       } else foreignServers[serverIdent] = now;
     }
 
+    // v7.3.0: serving from an address the laptop no longer has (cable out, dock off, address
+    // changed) would answer with a server ID nobody can reach — and with the card gone, Windows
+    // routes the reply out the Wi-Fi. Hold answers until the address is back; say so once.
+    const serverHere = !serveCfg || localAdapterIps().has(serveCfg.adapterIp);
+    if (isServing() && !serverHere && (msgType === 1 || msgType === 3)) {
+      if (!pausedNoted) { pausedNoted = true; log(`NOT ANSWERING — ${serveCfg.adapterIp} is no longer on ${serveCfg.adapterName} (cable out, or the address changed). Answers resume when it's back.`, 'err'); }
+      emitDevices(); return;
+    }
+    if (serverHere && pausedNoted) { pausedNoted = false; log(`${serveCfg.adapterIp} is back on ${serveCfg.adapterName} — answering again`, 'ok'); }
+
     if (msgType === 1) {                                       // DISCOVER
       if (d.state === 'leased') d.state = 'asking';
       if (isServing() && allowedToServe(mac)) await offerWithProbe(mac, requestedIp);
@@ -646,7 +665,9 @@ module.exports = function initDhcp(deps) {
         const cached = probeCache[ip];
         if (cached && (Date.now() - cached.ts) < PROBE_CACHE_MS) { if (cached.free) { chosen = ip; break; } continue; }
         tried++;
-        if (await probeIp(ip)) { quarantinedIps.add(ip); log(`Probe: ${ip} is already in use — quarantined, trying next`, 'warn'); continue; }
+        const used = await probeIp(ip);
+        if (used === null) { log(`Probe: no answer in time for ${ip} (slow laptop?) — skipping it this round`, 'warn'); continue; }
+        if (used) { quarantinedIps.add(ip); log(`Probe: ${ip} is already in use — quarantined, trying next`, 'warn'); continue; }
         chosen = ip; break;
       }
       const d = devices[mac];
@@ -672,8 +693,9 @@ module.exports = function initDhcp(deps) {
       if (requestedIp && candidates[0] === requestedIp) {
         const cached = probeCache[requestedIp];
         const alive = (cached && (Date.now() - cached.ts) < PROBE_CACHE_MS) ? !cached.free : await probeIp(requestedIp);
-        if (!alive) ip = requestedIp;
-        else { quarantinedIps.add(requestedIp); log(`Probe: ${requestedIp} is in use — NAK to ${mac}`, 'warn'); }
+        if (alive === false) ip = requestedIp;
+        else if (alive) { quarantinedIps.add(requestedIp); log(`Probe: ${requestedIp} is in use — NAK to ${mac}`, 'warn'); }
+        // null = the probe couldn't finish (v7.3.0) — don't hand it out on a guess; the device asks again
       }
     }
     if (!ip) {
@@ -988,6 +1010,7 @@ module.exports = function initDhcp(deps) {
   // 192.168.0.1 — the factory subnet most of our gear sits on — and every candidate is
   // checked for a duplicate on the wire after it's applied (Windows' own DAD), moving to
   // the next one if something already answers there.
+  let assistActiveThisRun = false;   // v7.3.0: an assist made this run (vs a record left by a crash)
   async function staticAssistApply(adapterName, wantIp, wantMask) {
     const name = sanitizeAdapter(adapterName);
     if (!name) return { ok: false, msg: 'Invalid adapter name' };
@@ -1022,7 +1045,8 @@ module.exports = function initDhcp(deps) {
         lastErr = `${newIp} is already used by another device`;
         continue;
       }
-      log(`LAPTOP IP — ${name} set to ${newIp} (${mask}), reverts on quit`, 'ok');
+      assistActiveThisRun = true;
+      log(`LAPTOP IP — ${name} set to ${newIp} (${mask})`, 'ok');
       return { ok: true, adapter: name, ip: newIp, subnet: mask };
     }
     // nothing stuck — hand the card back the way it was
@@ -1093,7 +1117,13 @@ module.exports = function initDhcp(deps) {
   }
 
   // Engine start = listen. Called by the renderer when the DHCP tab is opened.
-  ipcMain.handle('dhcp-engine-start', async () => {
+  // v7.3.0: these handlers answer with { ok:false, err } instead of rejecting — a rejection
+  // left the renderer's status on "STARTING ENGINE..." for good
+  const safeHandle = (fn, what) => async (...a) => {
+    try { return await fn(...a); }
+    catch (e) { log(`${what} failed: ${e.message}`, 'err'); return { ok: false, err: e.message, state: (() => { try { return fullState(); } catch { return null; } })() }; }
+  };
+  ipcMain.handle('dhcp-engine-start', safeHandle(async () => {
     if (await policyBlocked()) return { ok: false, err: 'POLICY', msg: 'DHCP server disabled by IT policy (DisableDhcpServer=1)' };
     if (mode !== 'off') return { ok: true, mode, state: fullState() };
     await refreshAdapters();
@@ -1101,11 +1131,11 @@ module.exports = function initDhcp(deps) {
     if (lastSquatter) { log(`WARNING — UDP 67 is held by ${lastSquatter}. DHCP may not hear requests until it's stopped.`, 'warn'); send('dhcp-port67', { squatter: lastSquatter }); }
     try { await setMode('listen'); }
     catch (e) { log('Could not start listening: ' + e.message, 'err'); return { ok: false, err: e.message, state: fullState() }; }
-    if (store.staticAssist) send('dhcp-static-pending', store.staticAssist);
+    // v7.3.0: a record left by a crash is just a leftover now — the IP tab's leftover line covers it
+    if (store.staticAssist && !assistActiveThisRun) { store.staticAssist = null; persist(); }
     return { ok: true, mode, state: fullState() };
-  });
-  ipcMain.handle('dhcp-engine-stop', async () => { targets.clear(); await setMode('off'); await removeFirewallRule(); return { ok: true, mode }; });
-  ipcMain.handle('dhcp-get-state', async () => ({ policyDisabled: await policyBlocked(), ...fullState() }));
+  }, 'Engine start'));
+  ipcMain.handle('dhcp-engine-stop', safeHandle(async () => { targets.clear(); await setMode('off'); await removeFirewallRule(); return { ok: true, mode }; }, 'Engine stop'));
   ipcMain.handle('dhcp-refresh-adapters', async () => refreshAdapters());
 
   ipcMain.handle('dhcp-get-adapter-config', async (_e, adapterName, fromIp) => {
@@ -1126,7 +1156,6 @@ module.exports = function initDhcp(deps) {
     emitDevices();
     return v;
   });
-  ipcMain.handle('dhcp-save-config', async (_e, cfg) => { store.current = storableCfg(cfg || {}); persist(); return { ok: true }; });
 
   ipcMain.handle('dhcp-serve-all', async (_e, opts) => {
     if (await policyBlocked()) return { ok: false, msg: 'DHCP server disabled by IT policy' };
@@ -1187,24 +1216,13 @@ module.exports = function initDhcp(deps) {
     else if (m) { log(`Target removed: ${m}`); announceMode(); }
     return { ok: true, targets: [...targets] };
   });
-  ipcMain.handle('dhcp-stop-serving', async () => { if (isServing()) { targets.clear(); for (const k of Object.keys(chosenIp)) delete chosenIp[k]; await setMode('listen'); } return { ok: true }; });
+  ipcMain.handle('dhcp-stop-serving', safeHandle(async () => { if (isServing()) { targets.clear(); for (const k of Object.keys(chosenIp)) delete chosenIp[k]; await setMode('listen'); } return { ok: true }; }, 'Stop serving'));
 
-  ipcMain.handle('dhcp-quick-start', async () => {
-    const adapters = lightAdapters().filter(a => a.connected);
-    if (!adapters.length) return { ok: false, reason: 'no-link', msg: 'No connected network adapter found. Check the cable.' };
-    const wiredFirst = adapters.slice().sort((a, b) => (/ethernet|local area/i.test(a.name) ? 0 : 1) - (/ethernet|local area/i.test(b.name) ? 0 : 1));
-    const usable = wiredFirst.find(a => a.ip && !a.apipa);
-    if (usable) return { ok: true, cfg: deriveCfgFromAdapter(usable) };
-    return { ok: false, reason: 'needs-static', adapter: wiredFirst[0].name, msg: `${wiredFirst[0].name} is connected but has no usable address.` };
-  });
   ipcMain.handle('dhcp-static-assist-apply',  async (_e, adapter, ip, mask) => staticAssistApply(adapter, ip, mask));
-  ipcMain.handle('dhcp-static-assist-revert', async () => staticAssistRevert(false));
-  ipcMain.handle('dhcp-static-assist-status', async () => store.staticAssist || null);
 
   ipcMain.handle('dhcp-probe',      async () => activeRogueProbeShared());
   ipcMain.handle('dhcp-serve-gate', async () => serveGateProbe());
   ipcMain.handle('dhcp-self-test',  async (_e, adapter) => selfTest(adapter));
-  ipcMain.handle('dhcp-foreign',    async () => Object.keys(foreignServers));
 
   ipcMain.handle('dhcp-profiles-list',   async () => Object.keys(store.profiles).sort());
   ipcMain.handle('dhcp-profiles-save',   async (_e, name, cfg) => {
@@ -1269,7 +1287,9 @@ module.exports = function initDhcp(deps) {
   async function shutdown() {
     if (shuttingDown) return;
     shuttingDown = true;
-    try { await staticAssistRevert(true); } catch {}
+    // v7.3.0: SET LAPTOP IP is the tech's choice — it stays on quit like any APPLY. Forget the
+    // record; if the address is still there next launch, the IP tab shows it as a leftover.
+    if (store.staticAssist) { store.staticAssist = null; try { persist(); } catch {} }
     try { await setMode('off'); } catch {}
     try { await removeFirewallRule(); } catch {}
   }

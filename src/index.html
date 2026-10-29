@@ -553,47 +553,6 @@ html, body {
 .cmd-btn.active { color: var(--green); border-color: var(--green); background: rgba(var(--ar), var(--ag), var(--ab), 0.1); }
 
 /* ── SAFEGUARD WARNING BANNER ── */
-.safeguard-banner {
-  display: none;
-  margin-bottom: 8px;
-  padding: 8px 10px;
-  border-radius: var(--radius);
-  font-size: var(--sz-meta);
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  line-height: 1.5;
-  border: 1px solid;
-}
-.safeguard-banner.warn {
-  background: rgba(255,204,0,0.07);
-  border-color: rgba(255,204,0,0.35);
-  color: var(--amber);
-  display: block;
-}
-.safeguard-banner.err {
-  background: rgba(255,68,85,0.07);
-  border-color: rgba(255,68,85,0.35);
-  color: var(--red);
-  display: block;
-}
-.safeguard-banner-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 3px;
-}
-.safeguard-banner-title { font-size: var(--sz-micro); letter-spacing: 0; opacity: 0.7; }
-.safeguard-dismiss {
-  font-size: 14px;
-  line-height: 1;
-  cursor: pointer;
-  opacity: 0.6;
-  padding: 2px 4px;
-  transition: opacity 0.15s;
-  user-select: none;
-  -webkit-user-select: none;
-}
-.safeguard-dismiss:hover { opacity: 1; }
 
 /* ── DHCP STATUS BADGE ── */
 .dhcp-status-badge {
@@ -3071,6 +3030,8 @@ select.field-input.dhcp-lease { padding: 5px 6px; font-size: 12px; cursor: point
       </div>
       <!-- v7.2.0: wrong-address warning — 169.254, a dead old lease, or nothing at all -->
       <div class="adapter-warn" id="adapter-warn" style="display:none"></div>
+      <!-- v7.3.0: a static / extra addresses left on this card by the last session -->
+      <div class="adapter-warn leftover" id="adapter-leftover" style="display:none"></div>
     </div>
     <div class="field-row">
       <div class="field-label">IP ADDRESS</div>
@@ -3125,15 +3086,6 @@ select.field-input.dhcp-lease { padding: 5px 6px; font-size: 12px; cursor: point
     <div class="field-row">
       <div class="field-label">DNS SERVER</div>
       <input class="field-input" id="dns" type="text" placeholder="e.g. 8.8.8.8 (optional)" oninput="markChanged(this)">
-    </div>
-
-    <!-- Safeguard warning banner -->
-    <div class="safeguard-banner" id="safeguard-banner">
-      <div class="safeguard-banner-header">
-        <span class="safeguard-banner-title" id="safeguard-banner-title">⚠ WARNING</span>
-        <span class="safeguard-dismiss" onclick="dismissSafeguardBanner(); event.stopPropagation();">✕</span>
-      </div>
-      <div id="safeguard-banner-msg"></div>
     </div>
 
     <div class="action-row">
@@ -3391,15 +3343,16 @@ select.field-input.dhcp-lease { padding: 5px 6px; font-size: 12px; cursor: point
       <span class="scan-name-confirm" onclick="scanConfirmSave()">SAVE</span>
       <span class="scan-name-cancel"  onclick="scanCancelNamePrompt()">✕</span>
     </div>
-    <div class="scan-results" id="scan-results">
-      <div class="scan-empty-state" id="scan-empty">// ENTER BASE IP AND START SCAN</div>
-    </div>
-
+    <!-- v7.3.0: above the results — after a 50-host scan it sat far below the fold -->
     <div class="scan-changes-chip" id="scan-changes-chip">
       <span class="chip-text" id="scan-changes-text"></span>
       <span class="chip-view" onclick="scanChangesView()">VIEW →</span>
       <span class="chip-dismiss" onclick="scanChangesDismiss()" title="Dismiss">✕</span>
     </div>
+    <div class="scan-results" id="scan-results">
+      <div class="scan-empty-state" id="scan-empty">// ENTER BASE IP AND START SCAN</div>
+    </div>
+
   </div></div><!-- /panel-content /panel-scroll -->
   <div class="panel-footer"><div class="scan-status-bar" id="scan-status">READY</div></div>
   </div><!-- /panel-scan -->
@@ -3733,7 +3686,8 @@ let isDirty = false;
 let cmdVisible = false;
 let previousConfig = null; // snapshot before last successful apply
 let revertInProgress = false; // bypass no-change check during revert
-let quitAliasAcknowledged = false; // v7.1.0: ✕ warned about an alias once; the next ✕ quits
+let applyInFlight = false;     // v7.3.0: an APPLY is running (lock lasts as long as it does)
+let _applyBackstop = null;
 
 // ── INIT ───────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
@@ -3779,6 +3733,8 @@ window.addEventListener('DOMContentLoaded', async () => {
   // Wait for it to finish then do one final fit so everything is visible
   // on first paint with no scrolling needed.
   loadAdapters().then(() => {
+    loadLeftovers();
+    showStorageProblems();
     // Short settle to let the DOM finish painting async updates, then one fit
     // unless the user has a manual size on record.
     setTimeout(() => { _lastFitH = 0; autoResize(); }, 150);
@@ -4234,6 +4190,22 @@ document.addEventListener('click', e => {
   if (m && m.classList.contains('visible') && !m.contains(e.target) && e.target.id !== 'ver-chip') closeChipMenu();
 });
 
+// v7.3.0: last-resort error handling. A rejection nobody caught used to vanish and leave a
+// status bar animating "WORKING..." forever. Now it's logged to DIAGNOSTICS and the active
+// tab's status bar says something went wrong.
+const PANEL_STATUS = { net: 'setNetStatus', dhcp: 'setDhcpStatus', scan: 'setScanStatus', intel: 'intelSetListStatus', recon: 'setReconStatus', tools: 'monSetStatus' };
+function reportUiError(err, where) {
+  const msg = (err && (err.message || err.reason)) || String(err || 'unknown');
+  try { if (window.hud && hud.reportError) hud.reportError((err && err.stack) || msg, where); } catch {}
+  try {
+    const panel = document.querySelector('.panel.active');
+    const fn = panel && window[PANEL_STATUS[panel.id.replace('panel-', '')]];
+    if (typeof fn === 'function') fn('ERROR: ' + String(msg).toUpperCase().slice(0, 120) + ' — COPY DIAGNOSTICS', 'err', 8000);
+  } catch {}
+}
+window.addEventListener('unhandledrejection', e => reportUiError(e.reason, 'promise'));
+window.addEventListener('error', e => reportUiError(e.error || e.message, (e.filename || '').split('/').pop() + ':' + (e.lineno || '')));
+
 function switchTab(tab) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -4438,7 +4410,8 @@ function renderAdapterTools(a) {
 async function setAdapterEnabled(name, enabled, chip) {
   if (!window.hud || !hud.adapterSetEnabled) return false;
   if (chip) chip.classList.add('busy');
-  setNetStatus(`${enabled ? 'ENABLING' : 'DISABLING'} ${name.toUpperCase()}...`, '');
+  const isWifi = wifiList.some(w => w.name === name);
+  setNetStatus(`${enabled ? 'ENABLING' : 'DISABLING'} ${name.toUpperCase()}...${enabled && isWifi ? ' WI-FI CAN TAKE UP TO A MINUTE TO RECONNECT' : ''}`, '');
   let r;
   try { r = await hud.adapterSetEnabled(name, enabled); } catch (err) { r = { ok: false, err: err.message }; }
   if (chip) chip.classList.remove('busy');
@@ -4529,6 +4502,7 @@ function updateAdapterStatus() {
     if (dhcpBadge) dhcpBadge.style.display = 'none';
     updateAdapterDhcpAction(null);
     updateAdapterWarn(null);
+    updateLeftover(null);
     if (displaySpan) { displaySpan.textContent = 'Select adapter'; displaySpan.classList.add('placeholder'); }
     return;
   }
@@ -4563,6 +4537,7 @@ function updateAdapterStatus() {
   }
   updateAdapterDhcpAction(a);
   updateAdapterWarn(a);
+  updateLeftover(a);
   updateLiveBar();
 }
 
@@ -4611,6 +4586,78 @@ function updateAdapterWarn(a) {
   };
   const rn = el.querySelector('[data-aw="renew"]'); if (rn) rn.onclick = () => adapterRenew();
   el.querySelectorAll('.aw-use').forEach(b => b.onclick = () => reconTake({ ip: b.dataset.ip, subnet: '255.255.255.0', gateway: '' }));
+}
+// v7.3.0: a data file that existed but couldn't be read is copied aside (never overwritten
+// blind) — say so once, so the tech knows where their sites went and how to get them back.
+async function showStorageProblems() {
+  if (!window.hud || !hud.storageProblems) return;
+  let list = [];
+  try { list = (await hud.storageProblems()) || []; } catch {}
+  if (!list.length) return;
+  await hudModal({
+    title: '⚠ A DATA FILE COULD NOT BE READ', tone: 'err',
+    bodyHtml: list.map(p => `<span class="hl">${escHtml(p.file)}</span> (${escHtml(p.why)}) — the original is kept as <span class="hl">${escHtml(p.savedAs)}</span>.`).join('<br>') +
+      '<br><br>ETHER started with that data empty. Nothing is lost: the copy sits in <b>%APPDATA%\\net-ether</b> (sites also have dated backups in <b>backups</b>). To get it back, send COPY DIAGNOSTICS and that file to whoever looks after NET//ETHER.',
+    buttons: [{ label: 'OK', style: 'ok', value: true }],
+  });
+}
+
+// ── v7.3.0: LEFTOVERS FROM LAST SESSION ──────────────────
+// Quit doesn't ask or undo anything any more. If the last session left this card on a static
+// (or with extra addresses) it wasn't on before, one quiet line says so — PUT BACK restores
+// what it was, KEEP forgets the note. It goes away by itself once the card changes.
+let _leftovers = [];
+async function loadLeftovers() {
+  if (!window.hud || !hud.leftoversGet) return;
+  try { _leftovers = (await hud.leftoversGet()) || []; } catch { _leftovers = []; }
+  updateLeftover(currentAdapterEntry());
+}
+function leftoverStillTrue(o, a) {
+  if (!a) return true;
+  const ips = (a.ips || []).map(x => x.ip);
+  if (o.newStatic) {
+    if (a.isDhcp === true) return false;                 // they handed it back already
+    if (a.ip && o.now && a.ip !== o.now.ip && !ips.includes(o.now.ip)) return false;
+    return true;
+  }
+  return !ips.length || (o.extras || []).some(ip => ips.includes(ip));
+}
+function updateLeftover(a) {
+  const el = document.getElementById('adapter-leftover'); if (!el) return;
+  const hide = () => { if (el.style.display !== 'none') { el.style.display = 'none'; el.innerHTML = ''; autoResize(); } };
+  const o = a && _leftovers.find(x => x.adapter === a.name);
+  if (!o) { hide(); return; }
+  if (!leftoverStillTrue(o, a)) {
+    _leftovers = _leftovers.filter(x => x !== o);
+    if (window.hud && hud.leftoversDismiss) hud.leftoversDismiss(o.adapter).catch(() => {});
+    hide(); return;
+  }
+  const was = o.was && o.was.isDhcp ? 'DHCP' : ((o.was && o.was.ip) || 'its old settings');
+  const bits = [];
+  if (o.newStatic && o.now) bits.push(`static <b>${escHtml(o.now.ip || '?')}</b>`);
+  if ((o.extras || []).length) bits.push(o.extras.map(ip => `<b>${escHtml(ip)}</b>`).join(', '));
+  el.innerHTML = `<div class="aw-msg">↺ Last session left ${bits.join(' + ')} on this card (it was ${escHtml(was)}).</div>` +
+    `<div class="aw-btns"><span class="cmd-btn" data-lo="back" title="Put the card back to ${escHtml(was)} — extra addresses go too">↩ PUT BACK (${escHtml(was)})</span>` +
+    `<span class="cmd-btn" data-lo="keep" title="It's meant to be like this — forget the note">KEEP</span></div>`;
+  const wasHidden = el.style.display === 'none';
+  el.style.display = '';
+  if (wasHidden) autoResize();
+  el.querySelector('[data-lo="keep"]').onclick = async () => {
+    _leftovers = _leftovers.filter(x => x !== o);
+    try { await hud.leftoversDismiss(o.adapter); } catch {}
+    hide();
+  };
+  el.querySelector('[data-lo="back"]').onclick = async () => {
+    setNetStatus(`PUTTING ${o.adapter.toUpperCase()} BACK TO ${was.toUpperCase()}...`, '');
+    let r = null;
+    try { r = await hud.leftoversRestore(o.adapter); } catch (err) { r = { ok: false, err: err.message }; }
+    if (r && r.ok) {
+      _leftovers = _leftovers.filter(x => x !== o);
+      hide();
+      setNetStatus(`✓ ${o.adapter.toUpperCase()} IS ${was.toUpperCase()} AGAIN`, 'ok', 5000);
+    } else setNetStatus(`COULD NOT PUT IT BACK — ${String((r && r.err) || 'unknown').toUpperCase()}`, 'err', 7000);
+    loadAdapters(true);
+  };
 }
 async function adapterHearWire(name) {
   if (!window.hud || !hud.wireHint) return;
@@ -4745,10 +4792,12 @@ const HELP_CONTENT = {
       ['COPY COMMANDS', 'Shows the exact netsh lines without running them — copy into an admin prompt if APPLY can\'t.'],
       ['MTU',        'Moved to DIAGNOSTICS (version chip → DIAGNOSTICS → TOOLS). Resets MTU to 1500 — fixes "can ping, can\'t load pages."'],
       ['CIDR',       'The CIDR tab in this guide. Click a row to put that mask in the subnet field.'],
-      ['MULTI-IP',   'Adds a second IP without touching the primary. On a DHCP adapter it converts to static first (you\'ll be asked twice). Remove aliases before you leave — they survive reboots.'],
+      ['MULTI-IP',   'Adds a second IP without touching the primary. On a DHCP adapter it converts to static first (you\'ll be asked twice). Aliases stay on quit and survive reboots — next launch flags them as a leftover.'],
       ['LINK SPEED', 'A connected adapter shows its negotiated speed where CONNECTED used to be. Green 1 Gbps, amber 100 Mbps, red 10. A gigabit port stuck at 100 is a bad crimp, cable or port.'],
       ['DISABLE / ENABLE', 'In the ADAPTER line. Drops the link, keeps the IP config, comes back with ENABLE. Blocked while the DHCP server is serving on that adapter.'],
       ['WI-FI',      'Switches every wireless adapter off so SCAN, DHCP and PING go out the wire. The chip stays amber until you turn it back on — and it stays off through a reboot.'],
+      ['LEFTOVER LINE', 'Quit never asks or undoes anything — what you set stays set. If the last session left this card on a static it wasn\'t on before, or with extra addresses, one amber line under the adapter says so: ↩ PUT BACK or KEEP.'],
+      ['─ / ✕',      '─ hides to the tray, ✕ quits. One click each, always. Temporary addresses ETHER added for REACH go on quit.'],
       ['SITE REPORT', 'Version chip → SITE REPORT. One click copies a markdown summary of this session: adapter, scans and site changes, DHCP leases, ping results, every privileged operation. Paste into the ticket.'],
     ],
     gotcha: 'Modern Axis cameras have no factory IP — they fall back to 169.254.x.x. Use the AXIS tile to join that /16, then find the camera\'s address in its label or the Axis tool.',
@@ -4757,7 +4806,7 @@ const HELP_CONTENT = {
     lead: 'The laptop is the DHCP server. ① pick the card the device is plugged into, ② pick (or set) the laptop\'s address on that cable — devices get addresses next to it. Listening starts when you open this tab; nothing is served until you say so.',
     rows: [
       ['① CARD',      'The network card the cable goes into. The line under it says what it is, the link speed, and whether it has an address.'],
-      ['② LAPTOP IP', 'The address the laptop answers from — and how you reach the device afterwards. No address on the card? SET LAPTOP IP… gives it one (192.168.0.1 by default, duplicate-checked, reverts on quit). + ALIAS adds a second, temporary address for another subnet.'],
+      ['② LAPTOP IP', 'The address the laptop answers from — and how you reach the device afterwards. No address on the card? SET LAPTOP IP… gives it one (192.168.0.1 by default, duplicate-checked). + ALIAS adds a second address for another subnet. Both stay until you change them.'],
       ['SERVE (row)', 'The everyday flow: a device shows up ASKING, type the address it should end up on, press ▶ SERVE, then ↗ OPEN. Only that MAC is answered — safe on a live network. The next row continues from the last address.'],
       ['✓ STATIC',    'Set the device static on the same address and stop: when it stops renewing (or releases) but still answers there, the row turns STATIC and the lease is freed.'],
       ['◇ SITTING',   'Heard on the wire but not asking for DHCP — mDNS / SSDP announcements, ARP and device LLDP, the way AXIS IP Utility finds things. ↗ OPEN if it\'s on your subnet, ⇢ REACH adds a temporary address next to it and opens it.'],
@@ -5224,7 +5273,9 @@ async function applyConfig() {
   }
 
   // ── SAFEGUARD: Gateway outside subnet warning ──────────
-  if (f.gateway && !gatewayInSubnet(f.ip, f.subnet, f.gateway)) {
+  // v7.3.0: a REVERT puts back what the card really had — the heuristics below are for typed
+  // input and used to stop a revert dead (old IP + odd gateway), losing the way back
+  if (f.gateway && !revertInProgress && !gatewayInSubnet(f.ip, f.subnet, f.gateway)) {
     setNetStatus(`WARNING: GATEWAY ${f.gateway} IS OUTSIDE SUBNET — CHECK YOUR CONFIG`, 'warn', 7000);
     document.getElementById('gateway').classList.add('changed');
     return;
@@ -5260,7 +5311,7 @@ async function applyConfig() {
       while (b) { maskBits += b & 1; b >>= 1; }
     }
     // Flag suspiciously wide masks on RFC1918 192.168 space (/8 or /9)
-    if (ipParts[0] === 192 && ipParts[1] === 168 && maskBits <= 9) {
+    if (ipParts[0] === 192 && ipParts[1] === 168 && maskBits <= 9 && !revertInProgress) {
       setNetStatus(`WARNING: ${f.subnet} IS AN UNUSUALLY WIDE MASK FOR A 192.168.x.x ADDRESS`, 'warn', 7000);
       document.getElementById('subnet').classList.add('changed');
       return;
@@ -5298,12 +5349,17 @@ async function applyConfig() {
   // ── SAFEGUARD: Button cooldown — prevent multi-click ──
   // v7.0.0: the button shows a progress sweep while netsh runs instead of
   // going grey, so "did it even start?" has a visible answer.
+  // v7.3.0: the lock now lasts as long as the apply does — the old 12 s timer re-armed APPLY
+  // mid-apply on a slow UAC/netsh, and a second click started a second elevated apply.
+  // 90 s is only a backstop in case the call never answers.
+  if (applyInFlight) { setNetStatus('STILL APPLYING THE LAST CHANGE — WAIT FOR IT', 'warn', 4000); return false; }
   const applyBtn = document.getElementById('apply-btn');
-  function lockApplyBtn()   { if (applyBtn) applyBtn.classList.add('working'); }
-  function unlockApplyBtn() { if (applyBtn) applyBtn.classList.remove('working'); }
+  function lockApplyBtn()   { applyInFlight = true; if (applyBtn) applyBtn.classList.add('working'); }
+  function unlockApplyBtn() { applyInFlight = false; clearTimeout(_applyBackstop); if (applyBtn) applyBtn.classList.remove('working'); }
   lockApplyBtn();
-  setTimeout(unlockApplyBtn, 12000);
+  _applyBackstop = setTimeout(unlockApplyBtn, 90000);
   clearIpApplied();
+  try {
 
   // ── SAFEGUARD: DHCP warning ────────────────────────────
   checkDhcpWarning(f.adapter || '');
@@ -5325,11 +5381,17 @@ async function applyConfig() {
           adapter:  f.adapter || live.name,
           ip:       live.ip,
           subnet:   live.subnet || f.subnet,
-          gateway:  f.gateway,
-          dns:      f.dns,
+          gateway:  '',
+          dns:      '',
           mtu:      null,
           dhcp:     wasOnDhcp,
         };
+        // v7.3.0: the card's OLD gateway and DNS — the snapshot used to take the new ones from
+        // the form, so REVERT put the old IP back with the new gateway
+        try {
+          const prevCfg = await hud.getAdapterConfig(f.adapter || live.name);
+          if (prevCfg && prevCfg.ok) { snapshot.gateway = prevCfg.gateway || ''; snapshot.dns = prevCfg.dns || ''; if (prevCfg.subnet) snapshot.subnet = prevCfg.subnet; }
+        } catch {}
         try {
           const mtuResult = await hud.getAdapterMtu(live.name);
           if (mtuResult.ok) snapshot.mtu = mtuResult.mtu;
@@ -5381,17 +5443,19 @@ async function applyConfig() {
       if (result.ok) {
         unlockApplyBtn();
         // Only capture snapshot on first apply this session — never overwrite it
-        // (cleared only by explicit revert or DHCP switch)
-        if (previousConfig === null) {
+        // (cleared only by explicit revert or DHCP switch). v7.3.0: and only one REVERT can use
+        if (previousConfig === null && snapshot && (snapshot.dhcp || isValidIP(snapshot.ip))) {
           previousConfig = snapshot;
         }
         clearDirtyState();
         if (previousConfig) showRevertBtn(previousConfig);
         else hideRevertBtn();
-        setNetStatus(`✓ APPLIED — ${f.ip} IS ACTIVE ON ${(f.adapter || 'ADAPTER').toUpperCase()}`, 'ok');
+        if (result.partial) setNetStatus(`✓ ${f.ip} IS ON ${(f.adapter || 'ADAPTER').toUpperCase()} — BUT A LATER STEP FAILED (${String(result.partialErr || 'DNS').toUpperCase().slice(0, 60)}) — CHECK DNS`, 'warn', 9000);
+        else setNetStatus(`✓ APPLIED — ${f.ip} IS ACTIVE ON ${(f.adapter || 'ADAPTER').toUpperCase()}`, 'ok');
         markIpApplied(true);
         hud.traySetMode(isHalfOpacity ? 'dim' : 'idle');
         setTimeout(() => loadAdapters(true), 2000);
+        return true;
       } else if (result.err === 'CANCELLED') {
         unlockApplyBtn();
         setNetStatus('CANCELLED — UAC PROMPT DISMISSED', 'warn', 4000);
@@ -5417,6 +5481,8 @@ async function applyConfig() {
     showCmdBox();
     setNetStatus('COMMANDS READY — COPY AND RUN AS ADMIN', 'ok');
   }
+  return false;
+  } finally { unlockApplyBtn(); }
 }
 
 // ── KNOWN DEFAULTS ─────────────────────────────────────────
@@ -5609,8 +5675,11 @@ function hideRevertBtn() {
 
 async function revertConfig() {
   if (!previousConfig) return;
+  if (applyInFlight) { setNetStatus('STILL APPLYING THE LAST CHANGE — WAIT FOR IT', 'warn', 4000); return; }
   const target = previousConfig;
   hideRevertBtn();
+  // v7.3.0: a revert that doesn't go through keeps its button — it used to vanish for good
+  const keepWayBack = () => { previousConfig = target; showRevertBtn(target); };
 
   // If the previous state was DHCP, just switch back to DHCP — don't fill fields and re-apply static
   if (target.dhcp) {
@@ -5619,7 +5688,13 @@ async function revertConfig() {
     previousConfig = null;
     setNetStatus('REVERTING TO DHCP...', 'ok');
     revertInProgress = true;
-    try { await applyDhcp(); } finally { revertInProgress = false; }
+    let ok = false;
+    try { ok = await applyDhcp(); } finally { revertInProgress = false; }
+    if (!ok) keepWayBack();
+    return;
+  }
+  if (!isValidIP(target.ip)) {
+    setNetStatus('THE OLD ADDRESS ISN\'T KNOWN — USE → DHCP OR ↩ RESTORE LAUNCH STATE', 'warn', 7000);
     return;
   }
 
@@ -5635,11 +5710,13 @@ async function revertConfig() {
   hideCmdBox();
   setNetStatus('REVERTING TO ' + target.ip + '...', 'ok');
   revertInProgress = true;
+  let ok = false;
   try {
-    await applyConfig();
+    ok = await applyConfig();
   } finally {
     revertInProgress = false;
   }
+  if (!ok) { keepWayBack(); return; }
   // Restore MTU if we snapshotted it (runs after applyConfig resolves)
   if (target.mtu && window.hud) {
     try {
@@ -5650,10 +5727,13 @@ async function revertConfig() {
 }
 
 function showCmdBox() {
-  document.getElementById('cmd-box').classList.add('visible');
+  const box = document.getElementById('cmd-box');
+  box.classList.add('visible');
   const b = document.getElementById('cmd-toggle-btn'); if (b) { b.classList.add('active'); b.textContent = 'HIDE COMMANDS'; }
   cmdVisible = true;
   autoResize();
+  // v7.3.0: on a short window the fallback commands opened below the fold
+  setTimeout(() => { try { box.scrollIntoView({ block: 'nearest' }); } catch {} }, 60);
 }
 function hideCmdBox() {
   document.getElementById('cmd-box').classList.remove('visible');
@@ -5723,35 +5803,12 @@ function setReconStatus(msg, type, ms) { setStatus('recon-status', 'scan-status-
 // 5. Clean-exit checklist
 // ══════════════════════════════════════════════════════════════
 
-function dismissSafeguardBanner() {
-  const banner = document.getElementById('safeguard-banner');
-  if (!banner) return;
-  // Remove any dynamically injected action buttons (restore flow)
-  const actions = banner.querySelector('.restore-banner-actions');
-  if (actions) actions.remove();
-  banner.className = 'safeguard-banner';
-  banner.style.display = 'none';
-  autoResize();
-}
-
-function showSafeguardBanner(msg, level = 'warn', title = '⚠ WARNING') {
-  const banner = document.getElementById('safeguard-banner');
-  const msgEl  = document.getElementById('safeguard-banner-msg');
-  const titleEl= document.getElementById('safeguard-banner-title');
-  if (!banner) return;
-  titleEl.textContent = title;
-  msgEl.textContent   = msg;
-  banner.className    = 'safeguard-banner ' + level;
-  banner.style.display = ''; // let CSS class control display
-  autoResize();
-}
-
 // ── DHCP WARNING ───────────────────────────────────────────
 // Called before applyConfig fires — warns if adapter is currently on DHCP
 // v7.0.0: the "adapter is currently on DHCP" banner is gone — every apply
 // overrides DHCP by definition, the status bar says what happened, and
 // → DHCP is one click. Kept as a no-op so callers stay untouched.
-function checkDhcpWarning(adapterName) { dismissSafeguardBanner(); return false; }
+function checkDhcpWarning(adapterName) { return false; }
 
 // ── FULL SNAPSHOT ──────────────────────────────────────────
 // Takes a complete before-state snapshot and persists it to disk.
@@ -5766,56 +5823,17 @@ async function takeFullSnapshot(adapterName) {
   } catch {}
 }
 
-async function safeHide() {
-  saveLivePreset();
-  if (window.hud) {
-    try {
-      const r = await hud.checkActiveAliases();
-      if (r.ok && r.warnings.length) {
-        const lines = r.warnings.map(w => `${w.adapter} has ${w.count} active Multi-IPs — remove before leaving this network`).join('\n');
-        showSafeguardBanner(lines, 'err', '⚠ MULTI-IPs STILL ACTIVE');
-        switchTab('net');
-        autoResize();
-        // Don't hide — user needs to see the warning and act on it
-        return;
-      }
-    } catch {}
-    hud.hide();
-  }
+// v7.3.0: ─ always hides and ✕ always quits, in one click. Nothing about the network is
+// checked or undone on the way out: what the tech set stays set (REACH temp aliases, SILENT
+// bindings and the DHCP engine — things ETHER did on its own — are cleaned up in main). If a
+// static or extra addresses are still on a card next launch, the IP tab shows a leftover line.
+function safeHide() {
+  try { saveLivePreset(); } catch {}
+  if (window.hud) hud.hide();
 }
-
-async function safeQuit() {
-  saveLivePreset();
-  if (!window.hud) return;
-
-  // v7.1.0: ✕ runs the same alias check as ─ — a MULTI-IP left on a customer adapter is the
-  // thing most worth stopping a quit for, and it used to be checked only on hide
-  try {
-    const r = await hud.checkActiveAliases();
-    if (r.ok && r.warnings.length && !quitAliasAcknowledged) {
-      const lines = r.warnings.map(w => `${w.adapter} has ${w.count} active Multi-IPs — remove before leaving this network`).join('\n');
-      showSafeguardBanner(lines + '\nPress ✕ again to quit anyway.', 'err', '⚠ MULTI-IPs STILL ACTIVE');
-      switchTab('net');
-      autoResize();
-      quitAliasAcknowledged = true;
-      setTimeout(() => { quitAliasAcknowledged = false; }, 15000);   // a second ✕ within 15 s goes through
-      return;
-    }
-  } catch {}
-
-  // Check for launch-state deltas before quitting
-  try {
-    const r = await hud.getLaunchDeltas();
-    if (r.ok && r.deltas && r.deltas.length > 0) {
-      showRestoreQuitBanner(r.deltas, () => {
-        // QUIT ANYWAY
-        hud.quit();
-      });
-      return;
-    }
-  } catch {}
-
-  hud.quit();
+function safeQuit() {
+  try { saveLivePreset(); } catch {}
+  if (window.hud) hud.quit();
 }
 
 // ── LAUNCH STATE RESTORE ───────────────────────────────────
@@ -5845,66 +5863,27 @@ function formatDelta(d) {
   return line;
 }
 
-// Show the three-option quit banner
-// isMidSession=true: RESTORE stays open after restoring, KEEP just dismisses (no quit)
-function showRestoreQuitBanner(deltas, onQuitAnyway, isMidSession = false) {
-  const lines = deltas.map(formatDelta);
-  const msg = lines.join('\n');
-  showSafeguardBanner(msg, 'err', '⚠ SESSION CHANGES DETECTED');
-
-  const banner = document.getElementById('safeguard-banner');
-  if (!banner) { onQuitAnyway(); return; }
-
-  const existing = banner.querySelector('.restore-banner-actions');
-  if (existing) existing.remove();
-
-  const actions = document.createElement('div');
-  actions.className = 'restore-banner-actions';
-
-  const btnRestore = document.createElement('div');
-  btnRestore.className = 'rbtn rbtn-restore';
-  btnRestore.textContent = '↩ RESTORE';
-  btnRestore.onclick = async () => {
-    dismissSafeguardBanner();
-    await executeRestoreLaunchState(deltas.map(d => d.adapter));
-    if (!isMidSession) hud.quit();
-  };
-
-  const btnKeep = document.createElement('div');
-  btnKeep.className = 'rbtn rbtn-keep';
-  btnKeep.textContent = isMidSession ? '✓ KEEP' : '✓ KEEP & QUIT';
-  btnKeep.onclick = () => { dismissSafeguardBanner(); onQuitAnyway(); autoResize(); };
-
-  const btnCancel = document.createElement('div');
-  btnCancel.className = 'rbtn rbtn-cancel';
-  btnCancel.textContent = '✕ CANCEL';
-  btnCancel.onclick = () => { dismissSafeguardBanner(); autoResize(); };
-
-  actions.appendChild(btnRestore);
-  actions.appendChild(btnKeep);
-  actions.appendChild(btnCancel);
-  banner.appendChild(actions);
-
-  switchTab('net');
-  autoResize();
-}
-
-// Clicked the red button mid-session — fetch fresh deltas and confirm
+// Clicked ↩ RESTORE LAUNCH STATE mid-session — fetch fresh deltas and confirm in a modal
+// (v7.3.0: was an inline banner that could sit below the fold on a short window)
 async function restoreLaunchStateClick() {
   if (!window.hud) return;
-  try {
-    const r = await hud.getLaunchDeltas();
-    if (!r.ok || !r.deltas || r.deltas.length === 0) {
-      setNetStatus('NO CHANGES FROM LAUNCH STATE — NOTHING TO RESTORE', 'ok', 4000);
-      const btn = document.getElementById('restore-launch-btn');
-      if (btn) btn.classList.add('hidden');
-      autoResize();
-      return;
-    }
-    showRestoreQuitBanner(r.deltas, () => { /* keep — just dismiss, handled inside */ }, true);
-  } catch (err) {
-    setNetStatus('ERROR: ' + err.message, 'err');
+  let r;
+  try { r = await hud.getLaunchDeltas(); } catch (err) { setNetStatus('ERROR: ' + err.message, 'err'); return; }
+  if (!r || !r.ok || !r.deltas || r.deltas.length === 0) {
+    setNetStatus('NO CHANGES FROM LAUNCH STATE — NOTHING TO RESTORE', 'ok', 4000);
+    const btn = document.getElementById('restore-launch-btn');
+    if (btn) btn.classList.add('hidden');
+    autoResize();
+    return;
   }
+  const go = await hudModal({
+    title: '↩ RESTORE LAUNCH STATE', tone: 'warn',
+    bodyHtml: 'Put these cards back the way they were when ETHER started:<br><br>' +
+      r.deltas.map(d => `<span class="hl">${escHtml(formatDelta(d))}</span>`).join('<br>') +
+      '<br><br><span style="font-size:11px;color:var(--label-dim)">Extra MULTI-IP addresses on these cards go too.</span>',
+    buttons: [{ label: 'CANCEL', style: 'cancel', value: false }, { label: '↩ RESTORE', style: 'ok', value: true }],
+  });
+  if (go) await executeRestoreLaunchState(r.deltas.map(d => d.adapter));
 }
 
 // Actually fire the restore — elevated, sequential per adapter
@@ -5921,9 +5900,8 @@ async function executeRestoreLaunchState(adapterNames) {
       setTimeout(() => loadAdapters(true), 2000);
     } else {
       const failed = (result.results || []).filter(r => !r.ok).map(r => r.adapter).join(', ');
-      setNetStatus(`RESTORE PARTIAL — FAILED: ${failed || 'unknown'}`, 'err');
-      // Show CMD fallback hint
-      setNetStatus('RESTORE FAILED — CHECK ADAPTER NAMES OR RUN AS ADMIN', 'err');
+      setNetStatus(`RESTORE FAILED ON ${(failed || 'THE CARD').toUpperCase()} — SEE COPY DIAGNOSTICS`, 'err');
+      setTimeout(() => loadAdapters(true), 1500);
     }
   } catch (err) {
     setNetStatus('ERROR: ' + err.message, 'err');
@@ -6567,13 +6545,13 @@ async function adapterRenew() {
 
 async function applyDhcp() {
   const adapter = validateAdapterField('adapter', setNetStatus);
-  if (!adapter) return;
+  if (!adapter) return false;
   if (!window.hud) {
     const cmd = `netsh interface ip set address "${adapter}" dhcp\nnetsh interface ip set dns "${adapter}" dhcp`;
     document.getElementById('cmd-text').textContent = cmd;
     showCmdBox();
     setNetStatus('DHCP COMMANDS READY — RUN AS ADMIN', 'ok');
-    return;
+    return false;
   }
   setNetStatus('SWITCHING TO DHCP...', '');
   try {
@@ -6585,6 +6563,7 @@ async function applyDhcp() {
       hideRevertBtn();
       clearDirtyState();
       setTimeout(() => loadAdapters(true), 2500);
+      return true;
     } else if (result.err === 'CANCELLED') {
       setNetStatus('CANCELLED — UAC PROMPT DISMISSED', 'warn', 4000);
     } else {
@@ -6593,6 +6572,7 @@ async function applyDhcp() {
   } catch (err) {
     setNetStatus('ERROR: ' + err.message, 'err');
   }
+  return false;
 }
 
 // ── MTU FIX ────────────────────────────────────────────────
@@ -6658,8 +6638,9 @@ let isHalfOpacity = false;
 
 async function toggleOpacity() {
   if (!window.hud) return;
-  isHalfOpacity = !isHalfOpacity;
-  await hud.setOpacity(isHalfOpacity ? 0.45 : 1.0);
+  const want = !isHalfOpacity;
+  try { await hud.setOpacity(want ? 0.45 : 1.0); } catch { return; }   // v7.3.0: flip only once it took
+  isHalfOpacity = want;
   const btn = document.getElementById('btn-opacity');
   btn.classList.toggle('active', isHalfOpacity);
   btn.title = isHalfOpacity ? 'Restore full opacity' : 'Toggle 50% transparency';
@@ -7017,9 +6998,12 @@ function onScanDone({ aborted }) {
   if (!aborted) scanResolveHostnames();
   // Feed results to SITES for change detection (after a short delay so port probes can enrich)
   if (!aborted) {
+    const doneBase = document.getElementById('scan-base').value.trim();   // v7.3.0: the base this scan ran on
     setTimeout(() => {
-      const base = document.getElementById('scan-base').value.trim();
-      if (!base) return;
+      // a new scan started inside the delay → these rows aren't this scan's; don't diff them
+      if (typeof scanRunning !== 'undefined' && scanRunning) return;
+      const base = doneBase;
+      if (!base || document.getElementById('scan-base').value.trim() !== base) return;
       // Collect all scan result rows currently in the DOM
       const rows = [...document.querySelectorAll('#scan-results .scan-result-row')];
       const results = rows.map(row => {
@@ -7319,7 +7303,9 @@ async function loadSitesDb() {
 
 async function persistSites() {
   if (!window.hud) return;
-  await hud.sitesSave(allSites);
+  let r = null;
+  try { r = await hud.sitesSave(allSites); } catch (err) { r = { ok: false, err: err.message }; }
+  if (!r || r.ok === false) setScanStatus('⚠ SCAN LIBRARY NOT SAVED — ' + String((r && r.err) || 'unknown error').toUpperCase(), 'err', 8000);
 }
 
 function collectCurrentRows() {
@@ -7617,6 +7603,7 @@ function intelShowActionStrip(msg, actions) {
   });
   strip.style.display = '';
   autoResize();
+  try { strip.scrollIntoView({ block: 'nearest' }); } catch {}   // v7.3.0: never below the fold
 }
 function intelHideActionStrip() {
   const strip = document.getElementById('intel-action-strip');
@@ -8308,10 +8295,8 @@ async function scanExportClick() {
   }).catch(() => setScanStatus('COPY FAILED', 'err', 2000));
 }
 
-function updateScanFoundCount() {
-  document.getElementById('scan-found-count').textContent =
-    scanFound + ' HOST' + (scanFound !== 1 ? 'S' : '') + ' FOUND';
-}
+// (updateScanFoundCount: one definition, above — v7.3.0 removed a duplicate that shadowed it
+//  and counted ping hits only, so DISCOVER rows never reached the FOUND count)
 
 function setScanProgress(done, total) {
   const pct = total > 0 ? (done / total) * 100 : 0;
@@ -8662,7 +8647,11 @@ async function intelLoad() {
 
 async function intelPersist() {
   if (!window.hud) return;
-  try { await hud.intelSave(intelDB); } catch {}
+  let r = null;
+  try { r = await hud.intelSave(intelDB); } catch (err) { r = { ok: false, err: err.message }; }
+  // v7.3.0: a failed save used to be silent — the tech thought the work was kept
+  if (!r || r.ok === false) intelSetListStatus('⚠ SITES NOT SAVED — ' + String((r && r.err) || 'unknown error').toUpperCase() + ' — TRY AGAIN, OR COPY DIAGNOSTICS', 'err', 10000);
+  return !!(r && r.ok !== false);
 }
 
 // ── INIT ───────────────────────────────────────────────────
@@ -9387,6 +9376,8 @@ function intelSetDetailStatus(msg, type, ms) { setStatus('intel-detail-status', 
 let _hudModalResolve = null;
 function hudModal(opts) {
   return new Promise(resolve => {
+    // v7.3.0: a modal opened over another one used to orphan the first caller's await forever
+    if (_hudModalResolve) { const prev = _hudModalResolve; _hudModalResolve = null; try { prev(null); } catch {} }
     _hudModalResolve = resolve;
     const ov = document.getElementById('hud-modal');
     const ttl = document.getElementById('hud-modal-title');
@@ -9435,8 +9426,8 @@ const D = {
   lastServed: null,        // last address served from a row — the next row starts after it
   wire: [],                // passive wire watch: devices heard announcing / ARPing
   wireCard: null,          // card + address set the watch was started for
-  tempIps: [],             // temporary addresses ETHER added (REACH / + ALIAS)
-  assist: null,            // laptop address ETHER set on a card (reverts on quit)
+  tempIps: [],             // temporary addresses ETHER added (REACH only since v7.3.0)
+  assist: null,            // laptop address SET LAPTOP IP… put on a card this session
 };
 // ── multi-select serve ────────────────────────────────────
 function dhcpUpdateSelectedBtn() {
@@ -9551,14 +9542,6 @@ function dhcpInitListeners() {
   hud.dhcp.onAutoStopped(d => setDhcpStatus(`⏻ AUTO-STOPPED AFTER ${d.idleMinutes} MIN IDLE — STILL LISTENING`, 'warn'));
   if (hud.dhcp.onStatic) hud.dhcp.onStatic(d => setDhcpStatus(`✓ ${d.ip} WENT STATIC — ${(d.model || d.hostname || d.vendor || d.mac).toUpperCase()} IS DONE`, 'ok', 8000));
   if (hud.onWireWatch) hud.onWireWatch(d => { if (d && d.adapter === (dEl('dhcp-adapter')?.value || '')) { D.wire = d.list || []; dhcpRenderDevices(); } });
-  hud.dhcp.onStaticPending(async rec => {
-    const revert = await hudModal({
-      title: 'LEFTOVER STATIC IP', tone: 'warn',
-      bodyHtml: `Last session set <span class="hl">${escHtml(rec.adapter)}</span> to <span class="hl">${escHtml(rec.applied)}</span> and never reverted it (crash or force-close).<br><br>Put it back now?`,
-      buttons: [{ label: 'KEEP IT', style: 'cancel', value: false }, { label: 'REVERT ADAPTER', style: 'ok', value: true }],
-    });
-    if (revert) { const r = await hud.dhcp.staticAssistRevert(); setDhcpStatus(r.ok ? 'ADAPTER REVERTED' : 'REVERT FAILED — CHECK ADAPTER SETTINGS', r.ok ? 'ok' : 'err', 5000); loadAdapters(true); }
-  });
   hud.dhcp.onAdapters(data => {
     if (data.event === 'poll' || data.event === 'refresh') {
       // v7.1.0: the selected adapter's address set changed (alias added/removed) → re-run the fill,
@@ -9575,7 +9558,10 @@ function dhcpInitListeners() {
         dhcpWireWatch(true);
       }
     }
-    if (data.event === 'link-up')   setDhcpStatus('⚡ LINK UP — ' + data.name.toUpperCase(), 'ok', 4000);
+    if (data.event === 'link-up') {
+      setDhcpStatus('⚡ LINK UP — ' + data.name.toUpperCase(), 'ok', 4000);
+      if (D.started && data.name === (dEl('dhcp-adapter')?.value || '')) dhcpWireWatch(true);   // v7.3.0: capture died with the link
+    }
     if (data.event === 'link-down') setDhcpStatus('LINK DOWN — ' + data.name.toUpperCase(), 'warn', 4000);
   });
   DCFG_KEYS.forEach(k => dEl('dcfg-' + k)?.addEventListener('input', () => { dhcpClearErrors(); dhcpSchedulePreview(); }));
@@ -9718,17 +9704,17 @@ function dhcpRenderCard() {
   const primary = a.ip && !a.apipa ? a.ip : ips[0];
   let html = '';
   for (const ip of ips) {
-    const temp = D.tempIps.includes(ip) || (D.assist && D.assist.adapter === a.name && D.assist.applied === ip);
+    const temp = D.tempIps.includes(ip);
     html += `<span class="dhcp-chip${ip === cur ? ' on' : ''}" data-ip="${escHtml(ip)}" title="Answer DHCP from ${escHtml(ip)} — devices get addresses next to it">${ip === cur ? '✓ ' : ''}${escHtml(ip)}${ip !== primary ? '<span class="tag">ALIAS</span>' : ''}${temp ? '<span class="tag">TEMP</span>' : ''}</span>`;
   }
-  if (!ips.length && a.connected) html += `<span class="dhcp-chip set" data-act="set" title="Give the laptop an address on this cable — 192.168.0.1 by default. Reverts when you quit.">SET LAPTOP IP…</span>`;
-  if (ips.length) html += `<span class="dhcp-chip add" data-act="alias" title="Add another address on this card (temporary — removed when you quit) to hand out addresses on a different subnet">+ ALIAS</span>`;
+  if (!ips.length && a.connected) html += `<span class="dhcp-chip set" data-act="set" title="Give the laptop an address on this cable — 192.168.0.1 by default. It stays until you change it.">SET LAPTOP IP…</span>`;
+  if (ips.length) html += `<span class="dhcp-chip add" data-act="alias" title="Add another address on this card to hand out addresses on a different subnet. It stays until you remove it (✕ in MULTI-IP).">+ ALIAS</span>`;
   chips.innerHTML = html;
   chips.querySelectorAll('[data-ip]').forEach(el => el.onclick = () => dhcpPickLaptopIp(el.dataset.ip));
   const setBtn = chips.querySelector('[data-act="set"]'); if (setBtn) setBtn.onclick = () => dhcpSetLaptopIp();
   const alBtn = chips.querySelector('[data-act="alias"]'); if (alBtn) alBtn.onclick = () => dhcpAddAlias();
-  const anyTemp = ips.some(ip => D.tempIps.includes(ip)) || (D.assist && D.assist.adapter === a.name);
-  if (note) note.textContent = anyTemp ? 'set by ETHER · reverts on quit' : '';
+  const anyTemp = ips.some(ip => D.tempIps.includes(ip));
+  if (note) note.textContent = anyTemp ? 'TEMP = added by REACH · removed on quit' : '';
   dhcpRenderCable();
 }
 function dhcpRenderCable() {
@@ -9781,12 +9767,12 @@ async function dhcpPickLaptopIp(ip, quiet) {
   else setDhcpStatus('SETTINGS FILLED IN FROM ' + name.toUpperCase() + ' (' + ip + ')', 'ok', 3000);
 }
 // Step ②: the card has no usable address — give the laptop one (default 192.168.0.1,
-// duplicate-checked in main; ETHER reverts it on quit)
+// duplicate-checked in main; v7.3.0: it stays on quit like any APPLY)
 async function dhcpSetLaptopIp() {
   const name = dEl('dhcp-adapter').value; if (!name) return;
   const ip = await hudModal({
     title: 'SET LAPTOP IP',
-    bodyHtml: `Give <span class="hl">${escHtml(name)}</span> an address on this cable. Pick one in the range the device should end up in — the laptop answers DHCP from it, and you reach the device the same way afterwards.<br><br><span style="font-size:11px;color:var(--label-dim)">Mask 255.255.255.0. If something already answers at this address, ETHER moves to the next one. Reverts when you quit.</span>`,
+    bodyHtml: `Give <span class="hl">${escHtml(name)}</span> an address on this cable. Pick one in the range the device should end up in — the laptop answers DHCP from it, and you reach the device the same way afterwards.<br><br><span style="font-size:11px;color:var(--label-dim)">Mask 255.255.255.0. If something already answers at this address, ETHER moves to the next one. It stays until you change it (→ DHCP on the IP tab).</span>`,
     input: '192.168.0.1', placeholder: '192.168.0.1',
     buttons: [{ label: 'CANCEL', style: 'cancel', value: null }, { label: 'SET', style: 'ok', value: '__INPUT__' }],
   });
@@ -9795,7 +9781,7 @@ async function dhcpSetLaptopIp() {
   setDhcpStatus(`SETTING ${name.toUpperCase()} TO ${ip}…`, '');
   const sa = await hud.dhcp.staticAssistApply(name, ip === '192.168.0.1' ? null : ip);
   if (!sa.ok) { setDhcpStatus('COULD NOT SET IT: ' + (sa.msg || '').toUpperCase(), 'err', 6000); return; }
-  dhcpLog(`Laptop set to ${sa.ip} on ${name} — reverts on quit`, 'ok');
+  dhcpLog(`Laptop set to ${sa.ip} on ${name}`, 'ok');
   D.assist = { adapter: name, applied: sa.ip };
   loadAdapters(true);
   await dhcpRefreshAdapters();
@@ -9806,7 +9792,7 @@ async function dhcpAddAlias(prefill) {
   const name = dEl('dhcp-adapter').value; if (!name) return;
   const ip = await hudModal({
     title: '+ ALIAS',
-    bodyHtml: `Add another address to <span class="hl">${escHtml(name)}</span> so the laptop can hand out addresses on a second subnet (pre-staging cameras on their production range) while keeping its own.<br><br><span style="font-size:11px;color:var(--label-dim)">Temporary — removed when you quit, or with REMOVE on the SCAN tab.</span>`,
+    bodyHtml: `Add another address to <span class="hl">${escHtml(name)}</span> so the laptop can hand out addresses on a second subnet (pre-staging cameras on their production range) while keeping its own.<br><br><span style="font-size:11px;color:var(--label-dim)">It stays until you remove it — ✕ next to it in MULTI-IP on the IP tab.</span>`,
     input: prefill || '', placeholder: '10.0.30.250',
     buttons: [{ label: 'CANCEL', style: 'cancel', value: null }, { label: 'ADD', style: 'ok', value: '__INPUT__' }],
   });
@@ -9819,7 +9805,7 @@ async function dhcpAddAlias(prefill) {
   loadAdapters(true);
   await dhcpRefreshAdapters();
   await dhcpPickLaptopIp(r.alias || ip, true);
-  setDhcpStatus(`✓ ${r.alias || ip} ADDED (TEMPORARY) — HANDING OUT FROM IT`, 'ok', 5000);
+  setDhcpStatus(`✓ ${r.alias || ip} ADDED — HANDING OUT FROM IT`, 'ok', 5000);
 }
 async function dhcpRefreshTempIps() {
   try { const l = await hud.reachList(); D.tempIps = (l || []).map(t => t.ip); } catch { D.tempIps = []; }
@@ -9835,6 +9821,7 @@ function dhcpGuardShow(ip, a, why) {
     (ips.length ? `<span class="cmd-btn" data-g="refill">REFILL FROM CARD</span>` : `<span class="cmd-btn" data-g="set">SET LAPTOP IP…</span>`) +
     `<span class="cmd-btn" data-g="alias">+ ADD ${escHtml(ip)} AS ALIAS</span>`;
   g.style.display = '';
+  try { g.scrollIntoView({ block: 'nearest' }); } catch {}   // v7.3.0: it's fired from rows far below it
   const q = sel => g.querySelector(sel);
   if (q('[data-g="refill"]')) q('[data-g="refill"]').onclick = () => dhcpAdapterChanged(false);
   if (q('[data-g="set"]')) q('[data-g="set"]').onclick = () => dhcpSetLaptopIp();
@@ -10293,10 +10280,13 @@ async function dhcpSaveReservation(mac) {
   const ip = (D.resvEdits.get(mac) || '').trim();
   if (!ip) { D.resvEdits.delete(mac); dhcpRenderDevices(); return; }
   const r = await hud.dhcp.setReservation(mac, ip);
+  if (!r) return;
   if (r.ok) { D.resvEdits.delete(mac); setDhcpStatus(`★ RESERVED ${ip} FOR ${mac.toUpperCase()}`, 'ok', 4000); }
-  else setDhcpStatus(r.msg.toUpperCase(), 'err', 4000);
+  else setDhcpStatus(String(r.msg || 'reservation refused').toUpperCase(), 'err', 4000);
 }
 setInterval(() => {
+  // v7.3.0: only while the DHCP tab is showing and the window is visible
+  if (document.hidden || !document.getElementById('panel-dhcp')?.classList.contains('active')) return;
   document.querySelectorAll('#dhcp-dev-list [data-expires]').forEach(el => { el.textContent = dhcpFmtExpiry(parseInt(el.dataset.expires, 10)); });
   document.querySelectorAll('#dhcp-dev-list [data-ago]').forEach(el => { el.textContent = dhcpAgo(parseInt(el.dataset.ago, 10)); });
 }, 1000);
