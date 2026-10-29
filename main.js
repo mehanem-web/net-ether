@@ -4251,7 +4251,16 @@ ipcMain.handle('leftovers-restore', async (e, adapter) => {
   const safe = sanitizeAdapter(o.adapter);
   if (!safe) return { ok: false, err: 'Invalid adapter name' };
   const r = await restoreAdapterTo(safe, o.was, 'leftover_restore');
-  if (r.ok) writeLeftovers(readLeftovers().filter(x => x.adapter !== adapter));
+  if (r.ok) {
+    writeLeftovers(readLeftovers().filter(x => x.adapter !== adapter));
+    // rc.2: the card is back to its clean state — make that this session's baseline too.
+    // This launch's snapshot was taken while the leftover was still on the card, so a static
+    // applied later this session looked like "no change" and was never flagged next launch.
+    try {
+      const snap = readJsonSafe(LAUNCH_SNAPSHOT_PATH, null);
+      if (snap && snap.adapters) { snap.adapters[o.adapter] = { ...o.was }; writeJsonAtomic(LAUNCH_SNAPSHOT_PATH, snap); }
+    } catch {}
+  }
   return r;
 });
 
