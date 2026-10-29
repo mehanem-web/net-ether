@@ -2700,6 +2700,15 @@ html, body {
 .scan-result-row.off-subnet .scan-result-ms { color: var(--amber); }
 @keyframes disc-pulse { 0% { box-shadow: 0 0 0 0 rgba(var(--ar),var(--ag),var(--ab),0.55); } 100% { box-shadow: 0 0 0 10px rgba(var(--ar),var(--ag),var(--ab),0); } }
 .scan-result-row.disc-pulse { animation: disc-pulse 1.4s ease-out 2; }
+/* rc.2: a row that answered DISCOVER keeps a ◎ after its IP (the pulse alone was lost in a long list).
+   A pseudo-element, so the IP's textContent — read all over the place — is unchanged. */
+.scan-result-row.disc-hit .scan-result-ip::after { content: ' ◎'; color: var(--green); font-weight: 900; }
+.scan-result-row.off-subnet { opacity: 0.72; }
+.scan-results.only-disc .scan-result-row:not(.disc-hit) { display: none; }
+.scan-found-count .sfc-disc { margin-left: 8px; padding: 1px 6px; border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.4); border-radius: var(--radius-sm); color: var(--green); cursor: pointer; }
+.scan-found-count .sfc-disc:hover { background: var(--green-ghost); }
+.scan-found-count .sfc-disc.on { background: rgba(var(--ar),var(--ag),var(--ab),0.18); border-color: var(--green); }
+.scan-found-count .sfc-off { margin-left: 8px; color: var(--amber); }
 .scan-opt-row { justify-content: flex-end; }
 .scan-btn-row { display: flex; gap: 6px; }
 .scan-btn-row .scan-start-btn { flex: 2 1 0; min-width: 0; }
@@ -6924,6 +6933,7 @@ function startScan() {
   scanCancelNamePrompt();
 
   document.getElementById('scan-results').querySelectorAll('.scan-result-row').forEach(r => r.remove());
+  document.getElementById('scan-results').classList.remove('only-disc');
   document.getElementById('scan-empty').style.display = 'none';
   document.getElementById('scan-results-header').style.display = 'none';
   document.getElementById('scan-progress-wrap').classList.add('visible');
@@ -7093,9 +7103,18 @@ function markScanRowSelf(ip) {
   if (ipEl) ipEl.insertAdjacentElement('afterend', badge); else row.prepend(badge);
 }
 
+// rc.2: rows on the scanned subnet vs. discovery answers from elsewhere on the wire
+function scanCounts() {
+  const rows = [...document.querySelectorAll('#scan-results .scan-result-row')];
+  const off = rows.filter(r => r.classList.contains('off-subnet')).length;
+  return { on: rows.length - off, off, all: rows.length };
+}
 function finishScan(aborted) {
   scanRunning = false;
-  sessionScans.push({ ts: Date.now(), base: document.getElementById('scan-base').value.trim(), found: scanFound, changes: '' });   // v7.1.0: site report
+  const cnt = scanCounts();
+  const found = cnt.on;
+  sessionScans.push({ ts: Date.now(), base: document.getElementById('scan-base').value.trim(), found, changes: '' });   // v7.1.0: site report
+  const elsewhere = cnt.off ? ` · ${cnt.off} ELSEWHERE ON THE WIRE (DISCOVERY)` : '';
 
   const btn = document.getElementById('scan-start-btn');
   btn.textContent = '▶ SCAN SUBNET';
@@ -7103,7 +7122,7 @@ function finishScan(aborted) {
 
   // v7.2.0: a 169.254 base sweeps one /24 of a /16 — empty there doesn't mean empty
   const llBase = /^169\.254\./.test((document.getElementById('scan-base')?.value || '').trim() + '.');
-  if (scanFound === 0 && !aborted) {
+  if (cnt.all === 0 && !aborted) {
     document.getElementById('scan-empty').textContent = llBase
       ? 'NOTHING IN THIS /24 — 169.254 IS A /16: USE DISCOVER, OR THE DHCP TAB\'S ◇ SITTING LIST'
       : 'NO HOSTS FOUND ON THIS SUBNET';
@@ -7112,13 +7131,13 @@ function finishScan(aborted) {
   }
 
   if (aborted) {
-    setScanStatus('SCAN STOPPED — ' + scanFound + ' HOST' + (scanFound !== 1 ? 'S' : '') + ' FOUND', 'warn');
+    setScanStatus('SCAN STOPPED — ' + found + ' HOST' + (found !== 1 ? 'S' : '') + ' FOUND' + elsewhere, 'warn');
   } else {
     setScanStatus(
-      scanFound > 0
-        ? `SCAN COMPLETE — ${scanFound} HOST${scanFound !== 1 ? 'S' : ''} ALIVE — PROBING PORTS...`
-        : (llBase ? 'SCAN COMPLETE — LINK-LOCAL: ONLY ONE /24 OF 169.254 WAS SWEPT. TRY DISCOVER' : 'SCAN COMPLETE — NO HOSTS FOUND'),
-      scanFound > 0 ? 'ok' : (llBase ? 'warn' : '')
+      found > 0
+        ? `SCAN COMPLETE — ${found} HOST${found !== 1 ? 'S' : ''} ALIVE — PROBING PORTS...`
+        : (llBase ? 'SCAN COMPLETE — LINK-LOCAL: ONLY ONE /24 OF 169.254 WAS SWEPT. TRY DISCOVER' : 'SCAN COMPLETE — NO HOSTS ON THIS SUBNET' + elsewhere),
+      found > 0 ? 'ok' : (llBase || cnt.off ? 'warn' : '')
     );
   }
 
@@ -7876,7 +7895,7 @@ function updateScanRowPorts(host, ports) {
 
   // Update status bar once all probing settles
   if (document.querySelectorAll('.port-badge.probing').length === 0) {
-    setScanStatus(`SCAN COMPLETE — ${scanFound} HOST${scanFound !== 1 ? 'S' : ''} FOUND — PORTS MAPPED`, 'ok');
+    { const f = scanCounts().on; setScanStatus(`SCAN COMPLETE — ${f} HOST${f !== 1 ? 'S' : ''} FOUND — PORTS MAPPED`, 'ok'); }
     // Second ARP pass — TCP connections from port probes warm the cache
     const base = document.getElementById('scan-base').value.trim();
     if (window.hud && base) {
@@ -7917,6 +7936,7 @@ function scanOpenWeb(ip, port) {
 function clearScanResults() {
   if (scanRunning) return;
   document.querySelectorAll('#scan-results .scan-result-row').forEach(r => r.remove());
+  document.getElementById('scan-results').classList.remove('only-disc');
   document.getElementById('scan-results-header').style.display = 'none';
   document.getElementById('scan-progress-wrap').classList.remove('visible');
   document.getElementById('scan-empty').textContent = 'ENTER BASE IP AND START SCAN';
@@ -8011,6 +8031,7 @@ function applyDiscovery(d) {
   } else if (d.mac && !row.querySelector('.scan-result-mac')) {
     enrichScanResult(d.ip, d.mac, d.vendor || '');
   }
+  row.classList.add('disc-hit');   // rc.2: stays for as long as the row does
   const msEl = row.querySelector('.scan-result-ms');
   // the source goes where the ms would be when nothing pinged this row (off-subnet, or DISCOVER alone)
   if (msEl && (d.offSubnet || /^[—-]$/.test(msEl.textContent.trim()))) {
@@ -8073,9 +8094,23 @@ function applyDiscovery(d) {
   scanAddCaptureBtn(row, d.ip);
 }
 function updateScanFoundCount() {
-  const n = document.querySelectorAll('#scan-results .scan-result-row').length;
+  // rc.2: FOUND counts the scanned subnet only; rows that answered DISCOVER get a clickable
+  // ◎ count (shows just those — a long list hid them); off-subnet discovery rows are counted
+  // apart, so a sweep of an empty subnet no longer reads "7 HOSTS FOUND"
   const el = document.getElementById('scan-found-count');
-  if (el) el.textContent = `${n} HOST${n !== 1 ? 'S' : ''} FOUND`;
+  if (!el) return;
+  const rows = [...document.querySelectorAll('#scan-results .scan-result-row')];
+  const off  = rows.filter(r => r.classList.contains('off-subnet')).length;
+  const disc = rows.filter(r => r.classList.contains('disc-hit')).length;
+  const n = rows.length - off;
+  const list = document.getElementById('scan-results');
+  const only = !!(list && list.classList.contains('only-disc'));
+  if (only && !disc && list) list.classList.remove('only-disc');
+  el.innerHTML = `${n} HOST${n !== 1 ? 'S' : ''} FOUND` +
+    (disc ? `<span class="sfc-disc${only ? ' on' : ''}" title="${only ? 'Show every row' : 'Show only devices that answered DISCOVER (mDNS / SSDP / WSD / ONVIF)'}">◎ ${disc} DISCOVERY</span>` : '') +
+    (off ? `<span class="sfc-off" title="Answered DISCOVER but aren't on the subnet you scanned">· ${off} ELSEWHERE</span>` : '');
+  const chip = el.querySelector('.sfc-disc');
+  if (chip) chip.onclick = () => { list.classList.toggle('only-disc'); updateScanFoundCount(); autoResize(); };
 }
 
 // ── v7.1.0: REACH — temporary link-local alias ─────────────
