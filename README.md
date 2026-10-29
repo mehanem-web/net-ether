@@ -222,9 +222,22 @@ NET-ETHER/
 
 ## CHANGELOG
 
-### v7.3.0 (in progress — rc.2, 2026-10-28)
+### v7.3.0 (in progress — rc.3, 2026-10-28)
 The stability release: what 7.2 added, plus a full bug hunt, so the fleet gets one update that lasts.
 Started from a day in the field on two addresses where ─ simply refused to hide the window.
+
+**rc.3 — from the rc.2 check, same night (2026-10-28)**
+- **Discovery rows get a violet frame** (plus a violet ◎ and filter chip) — the ◎ alone was too quiet. Violet because amber/orange already mean camera/NVR; the left edge keeps the device-type colour.
+- **MULTI-IP on a DHCP card no longer says "REQUIRES STATIC IP"** in red. That message predates the automatic conversion, and the 15 s refresh could drop it on top of ADD's "click ADD again", so it looked like a dead end. The panel now just hints "DHCP — ADD SETS IT STATIC".
+- **MULTI-IP on a DHCP card is one click** too — no "click ADD again". It converts the card to static on its own address (gateway and DNS kept) and says so.
+- ADD MULTI-IP ignores clicks while one is running, and an address already on the card is reported as such without running netsh (repeat clicks logged red "object already exists" rows).
+- **No more 15-second pulse with the MULTI-IP panel open.** Its background refresh emptied the list, waited for Windows and refilled it, so the window shrank and grew every 15 s once an alias was listed. It now redraws only when something actually changed.
+- The MULTI-IP count reads `+1 IP` in the normal accent colour (it was a bare amber number that looked like a warning) and hides while the panel is open.
+- **The tray alert is visible again.** The animation frames were 16 px only and the alert ones a dim red ring on dark navy; on a scaled display the alert icon showed as a blank square. All frames are now 16/24/32 px from the main icon's art, and an alert turns the whole tile solid pulsing red. Generator: `assets/make-tray-icons.py`. A frame that fails to load keeps the last good icon.
+- **The taskbar button shows PING alerts too:** a red ! badge while a target is down, and one orange flash when it starts (stops when you click in).
+- "BACK ON DHCP — REFRESHING..." no longer animates forever (rc.2 removed the message that used to replace it).
+- SITES no longer lists this PC as "NOT RESPONDING" after a scan (an entry for the laptop saved by an older version was flagged every time).
+- The log says "cleared — the card was changed since" when a leftover clears itself, instead of "kept as is".
 
 **rc.2 — from the first home pass (2026-10-28)**
 - **→ DHCP is one click** (the click-again arm is gone).

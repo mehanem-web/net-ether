@@ -530,16 +530,30 @@ function startTrayAnimation() {
     trayState.frame = (trayState.frame + 1) % 4;
     try {
       const img = nativeImage.createFromPath(iconPath(trayState.mode, trayState.frame));
-      tray.setImage(img);
+      if (!img.isEmpty()) tray.setImage(img);   // rc.3: a frame that won't load keeps the last good icon, never a blank
     } catch {}
   }, FRAME_MS[trayState.mode]);
 }
 
 function setTrayMode(mode) {
   if (trayState.mode === mode) return;
+  const wasFail = trayState.mode === 'ping_fail';
   trayState.mode = mode;
   startTrayAnimation();
   updateTrayTooltip();
+  // rc.3: ETHER is on the taskbar now — an alert shows on its button too: a red badge for as long
+  // as a target is down, and one orange flash when it starts (stops as soon as the window is used)
+  try {
+    if (!winAlive()) return;
+    if (mode === 'ping_fail' && !wasFail) {
+      const badge = nativeImage.createFromPath(path.join(__dirname, 'assets', 'badge-alert.png'));
+      if (!badge.isEmpty()) win.setOverlayIcon(badge, 'Connectivity alert');
+      if (!win.isFocused()) win.flashFrame(true);
+    } else if (mode !== 'ping_fail' && wasFail) {
+      win.setOverlayIcon(null, '');
+      win.flashFrame(false);
+    }
+  } catch {}
 }
 
 let dhcpTrayNote = '';   // "· DHCP serving 3 leases" — set by the DHCP engine
@@ -779,6 +793,7 @@ function createWindow() {
   win.on('move', scheduleSaveWindowState);
   win.on('show',    assertAlwaysOnTop);
   win.on('focus',   assertAlwaysOnTop);
+  win.on('focus',   () => { try { win.flashFrame(false); } catch {} });   // rc.3: the alert flash stops once seen
   win.on('restore', assertAlwaysOnTop);
 
   if (IS_DEV) {
@@ -1884,6 +1899,9 @@ async function addAliasCore(safeAdapter, ip, subnet, tag = 'alias_add') {
   return withAdapterLock(safeAdapter, () => addAliasCoreUnlocked(safeAdapter, ip, subnet, tag));
 }
 async function addAliasCoreUnlocked(safeAdapter, ip, subnet, tag = 'alias_add') {
+  // rc.3: already on the card (a repeat click, or it was there before) — nothing to do; don't
+  // run netsh just to log a red "object already exists"
+  if (adapterIpv4s(safeAdapter).includes(ip)) return { ok: true, verified: true, converted: false, already: true, mode: 'none', steps: [] };
   // If the adapter is on DHCP, netsh "add address" silently replaces the DHCP lease instead of
   // adding a second IP. So: switch to static first (keeping the current IP/mask/gateway), then
   // add — one chain that stops if the conversion fails. v7.3.0: if we can't tell whether the
@@ -4260,9 +4278,9 @@ ipcMain.handle('leftovers-get', async () => {
   try { await LAUNCH_SNAPSHOT_READY; } catch {}
   return readLeftovers();
 });
-ipcMain.handle('leftovers-dismiss', (e, adapter) => {
+ipcMain.handle('leftovers-dismiss', (e, adapter, why) => {
   writeLeftovers(readLeftovers().filter(o => o.adapter !== adapter));
-  diagAdd({ kind: 'app', tag: 'leftover', ok: true, note: `${String(adapter).slice(0, 60)}: kept as is (dismissed)` });
+  diagAdd({ kind: 'app', tag: 'leftover', ok: true, note: `${String(adapter).slice(0, 60)}: ${why === 'changed' ? 'cleared — the card was changed since' : 'kept as is (KEEP)'}` });
   return { ok: true };
 });
 ipcMain.handle('leftovers-restore', async (e, adapter) => {

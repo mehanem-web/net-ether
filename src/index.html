@@ -2168,10 +2168,13 @@ html, body {
 .multiip-toggle-row:hover .multiip-toggle-label,
 .multiip-toggle-row.open  .multiip-toggle-label { color: var(--green); }
 .multiip-toggle-badge {
-  font-size: 11px; font-weight: 700; color: var(--amber);
-  background: rgba(255,204,0,0.1); border: 1px solid rgba(255,204,0,0.3);
-  border-radius: var(--radius-sm); padding: 0 5px; letter-spacing: 0;
+  /* rc.3: information, not a warning — plain accent colour, and only while the panel is closed
+     (the list says it when open). Amber read as "something's wrong". */
+  font-size: var(--sz-micro); font-weight: 700; letter-spacing: 0.5px; padding: 1px 6px; margin-left: 8px;
+  border-radius: var(--radius-sm); border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.45);
+  color: var(--green); background: var(--green-ghost);
 }
+.multiip-toggle-row.open .multiip-toggle-badge { display: none; }
 .multiip-toggle-badge:empty { display: none; }
 .multiip-toggle-chevron {
   font-size: 16px; color: rgba(var(--ar), var(--ag), var(--ab), 0.60);
@@ -2702,12 +2705,16 @@ html, body {
 .scan-result-row.disc-pulse { animation: disc-pulse 1.4s ease-out 2; }
 /* rc.2: a row that answered DISCOVER keeps a ◎ after its IP (the pulse alone was lost in a long list).
    A pseudo-element, so the IP's textContent — read all over the place — is unchanged. */
-.scan-result-row.disc-hit .scan-result-ip::after { content: ' ◎'; color: var(--green); font-weight: 900; }
+/* rc.3: discovery rows get a violet frame (a colour nothing else in ETHER uses — amber/orange
+   are camera/NVR on the left edge, which stays the device type) and a violet ◎ */
+.scan-result-row.disc-hit { border-top-color: rgba(190,120,255,0.75); border-right-color: rgba(190,120,255,0.75); border-bottom-color: rgba(190,120,255,0.75); background: rgba(190,120,255,0.05); }
+.scan-result-row.disc-hit:not([class*="type-"]) { border-left-color: rgba(190,120,255,0.75); }
+.scan-result-row.disc-hit .scan-result-ip::after { content: ' ◎'; color: rgb(190,120,255); font-weight: 900; }
 .scan-result-row.off-subnet { opacity: 0.72; }
 .scan-results.only-disc .scan-result-row:not(.disc-hit) { display: none; }
-.scan-found-count .sfc-disc { margin-left: 8px; padding: 1px 6px; border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.4); border-radius: var(--radius-sm); color: var(--green); cursor: pointer; }
-.scan-found-count .sfc-disc:hover { background: var(--green-ghost); }
-.scan-found-count .sfc-disc.on { background: rgba(var(--ar),var(--ag),var(--ab),0.18); border-color: var(--green); }
+.scan-found-count .sfc-disc { margin-left: 8px; padding: 1px 6px; border: 1px solid rgba(190,120,255,0.5); border-radius: var(--radius-sm); color: rgb(190,120,255); cursor: pointer; }
+.scan-found-count .sfc-disc:hover { background: rgba(190,120,255,0.10); }
+.scan-found-count .sfc-disc.on { background: rgba(190,120,255,0.20); border-color: rgb(190,120,255); }
 .scan-found-count .sfc-off { margin-left: 8px; color: var(--amber); }
 .scan-opt-row { justify-content: flex-end; }
 .scan-btn-row { display: flex; gap: 6px; }
@@ -4655,7 +4662,7 @@ function updateLeftover(a) {
   if (!o) { hide(); return; }
   if (!leftoverStillTrue(o, a)) {
     _leftovers = _leftovers.filter(x => x !== o);
-    if (window.hud && hud.leftoversDismiss) hud.leftoversDismiss(o.adapter).catch(() => {});
+    if (window.hud && hud.leftoversDismiss) hud.leftoversDismiss(o.adapter, 'changed').catch(() => {});
     hide(); return;
   }
   const was = o.was && o.was.isDhcp ? 'DHCP' : ((o.was && o.was.ip) || 'its old settings');
@@ -4818,7 +4825,7 @@ const HELP_CONTENT = {
       ['COPY COMMANDS', 'Shows the exact netsh lines without running them — copy into an admin prompt if APPLY can\'t.'],
       ['MTU',        'Moved to DIAGNOSTICS (version chip → DIAGNOSTICS → TOOLS). Resets MTU to 1500 — fixes "can ping, can\'t load pages."'],
       ['CIDR',       'The CIDR tab in this guide. Click a row to put that mask in the subnet field.'],
-      ['MULTI-IP',   'Adds a second IP without touching the primary. On a DHCP adapter it converts to static first (you\'ll be asked twice). Aliases stay on quit and survive reboots — next launch flags them as a leftover.'],
+      ['MULTI-IP',   'Adds a second IP without touching the primary. On a DHCP adapter it converts to static first, keeping its address, gateway and DNS. Aliases stay on quit and survive reboots — next launch flags them as a leftover.'],
       ['LINK SPEED', 'A connected adapter shows its negotiated speed where CONNECTED used to be. Green 1 Gbps, amber 100 Mbps, red 10. A gigabit port stuck at 100 is a bad crimp, cable or port.'],
       ['DISABLE / ENABLE', 'In the ADAPTER line. Drops the link, keeps the IP config, comes back with ENABLE. Blocked while the DHCP server is serving on that adapter.'],
       ['WI-FI',      'Switches every wireless adapter off so SCAN, DHCP and PING go out the wire. The chip stays amber until you turn it back on — and it stays off through a reboot.'],
@@ -5923,7 +5930,7 @@ async function executeRestoreLaunchState(adapterNames) {
   try {
     const result = await hud.restoreLaunchState(adapterNames);
     if (result.ok) {
-      setNetStatus('LAUNCH STATE RESTORED — REFRESHING...', 'ok');
+      setNetStatus('✓ LAUNCH STATE RESTORED', 'ok', 6000);   // rc.3: no "..." — nothing overwrites it any more
       _launchDeltaCache = null;
       const btn = document.getElementById('restore-launch-btn');
       if (btn) btn.classList.add('hidden');
@@ -6583,7 +6590,7 @@ async function applyDhcp() {
   try {
     const result = await hud.applyDhcp(adapter, revertInProgress ? 'revert' : undefined);
     if (result.ok) {
-      setNetStatus(`✓ ${adapter.toUpperCase()} IS BACK ON DHCP — REFRESHING...`, 'ok');
+      setNetStatus(`✓ ${adapter.toUpperCase()} IS BACK ON DHCP`, 'ok', 6000);   // rc.3: was "— REFRESHING...", which animated forever
       clearIpApplied();
       previousConfig = null;
       hideRevertBtn();
@@ -8421,7 +8428,7 @@ async function updateMultiIpBadge() {
   try {
     const res = await hud.getAliases(adapter);
     const extraCount = res.ok ? Math.max(0, res.aliases.length - 1) : 0;
-    badge.textContent = extraCount > 0 ? extraCount : '';
+    badge.textContent = extraCount > 0 ? `+${extraCount} IP${extraCount !== 1 ? 'S' : ''}` : '';
   } catch { badge.textContent = ''; }
 }
 
@@ -8475,6 +8482,9 @@ async function aliasRemoveFromTab(ip) {
 
 // ── ALIAS TAB ──────────────────────────────────────────────
 async function loadAliasTab() {
+  // rc.3: build the new list, and only touch the DOM when it differs. It used to empty the list,
+  // show LOADING..., await Windows, then refill — every 15 s while the panel was open — so the
+  // window (fitted to its content) shrank and grew in a pulse once an alias was listed.
   const adapter    = getAliasAdapter();
   const listEl     = document.getElementById('alias-list');
   const refreshBtn = document.getElementById('alias-tab-refresh');
@@ -8485,15 +8495,16 @@ async function loadAliasTab() {
     if (msg) { hint.textContent = msg; hint.classList.add('pulse'); }
     else      { hint.textContent = '';  hint.classList.remove('pulse'); }
   }
-
-  if (!adapter) {
-    listEl.innerHTML = '';
-    setHint('NO ADAPTER');
-    return;
+  function show(html, hintMsg) {
+    setHint(hintMsg);
+    if (listEl.dataset.sig === html) return;   // nothing changed — leave the DOM (and the window) alone
+    listEl.dataset.sig = html;
+    listEl.innerHTML = html;
+    autoResize();
   }
 
-  listEl.innerHTML = '';
-  setHint('LOADING...');
+  if (!adapter) { show('', 'NO ADAPTER'); return; }
+  if (!listEl.dataset.sig) setHint('LOADING...');   // first fill only — never on the background refresh
   if (refreshBtn) refreshBtn.classList.add('spinning');
 
   if (!window.hud) {
@@ -8502,31 +8513,22 @@ async function loadAliasTab() {
     return;
   }
 
-  const res = await hud.getAliases(adapter);
-  if (refreshBtn) refreshBtn.classList.remove('spinning');
+  let res;
+  try { res = await hud.getAliases(adapter); } catch (err) { res = { ok: false, err: err.message, aliases: [] }; }
+  finally { if (refreshBtn) refreshBtn.classList.remove('spinning'); }
 
-  // Warn if adapter is DHCP — multi-IP doesn't work on DHCP adapters
+  // rc.3: a DHCP card can take a MULTI-IP — ADD converts it to static on its own address first
+  // (and keeps its DNS). This used to say "REQUIRES STATIC" in red. Quiet hint only.
   const adapterEntry = adapterList.find(a => a.name === adapter);
-  if (adapterEntry && adapterEntry.isDhcp) {
-    listEl.innerHTML = '';
-    setHint('DHCP — SET STATIC FIRST');
-    setAliasStatus('MULTI-IP REQUIRES STATIC IP — ADAPTER IS DHCP', 'err', 8000);
-    return;
-  }
+  if (adapterEntry && adapterEntry.isDhcp) { show('', 'DHCP — ADD SETS IT STATIC'); return; }
 
   if (!res.ok) {
-    listEl.innerHTML = '';
-    setHint('READ ERROR');
+    show(listEl.dataset.sig || '', 'READ ERROR');   // keep what was listed; a failed read isn't "no aliases"
     setAliasStatus('FAILED TO READ ADAPTER', 'err', 5000);
     return;
   }
-  if (!res.aliases.length) {
-    listEl.innerHTML = '';
-    setHint('NO IPS');
-    return;
-  }
+  if (!res.aliases.length) { show('', 'NO IPS'); return; }
 
-  listEl.innerHTML = '';
   // Identify primary by matching the main #ip field — do NOT rely on array position;
   // netsh output order is not guaranteed to put the primary IP first.
   // v7.1.0: the adapter entry's ip is the gateway-holding address; the #ip field is the fallback
@@ -8535,40 +8537,36 @@ async function loadAliasTab() {
   const primaryEntry = res.aliases.find(a => a.ip === knownPrimary) || res.aliases[0];
   const extras = res.aliases.filter(a => a !== primaryEntry);
 
-  if (!extras.length) {
-    setHint('NO MULTI-IPS');
-  } else {
-    setHint('');
-    // Show primary as a slim read-only header, then all extra IPs with actions
-    const primaryRow = document.createElement('div');
-    primaryRow.className = 'alias-row primary';
-    primaryRow.innerHTML = `
+  if (!extras.length) { show('', 'NO MULTI-IPS'); return; }
+  // Show primary as a slim read-only header, then all extra IPs with actions
+  const html = `
+    <div class="alias-row primary">
       <div class="alias-row-info">
         <div class="alias-row-ip">${escHtml(primaryEntry.ip)}</div>
         <div class="alias-row-mask">${escHtml(primaryEntry.subnet)}</div>
       </div>
-      <div class="alias-row-tag primary-tag">PRIMARY</div>`;
-    listEl.appendChild(primaryRow);
-
-    extras.forEach(a => {
-      const row = document.createElement('div');
-      row.className = 'alias-row';
-      row.innerHTML = `
-        <div class="alias-row-info">
-          <div class="alias-row-ip">${escHtml(a.ip)}</div>
-          <div class="alias-row-mask">${escHtml(a.subnet)}</div>
-        </div>
-        <div class="alias-row-actions">
-          <div class="alias-use-btn" onclick="aliasCopyIp('${escHtml(a.ip)}')" title="Copy IP to clipboard">COPY</div>
-          <div class="alias-del-btn" onclick="aliasRemoveFromTab('${escHtml(a.ip)}')" title="Remove multi-ip">REMOVE</div>
-        </div>`;
-      listEl.appendChild(row);
-    });
-  }
-  autoResize();
+      <div class="alias-row-tag primary-tag">PRIMARY</div>
+    </div>` + extras.map(a => `
+    <div class="alias-row">
+      <div class="alias-row-info">
+        <div class="alias-row-ip">${escHtml(a.ip)}</div>
+        <div class="alias-row-mask">${escHtml(a.subnet)}</div>
+      </div>
+      <div class="alias-row-actions">
+        <div class="alias-use-btn" onclick="aliasCopyIp('${escHtml(a.ip)}')" title="Copy IP to clipboard">COPY</div>
+        <div class="alias-del-btn" onclick="aliasRemoveFromTab('${escHtml(a.ip)}')" title="Remove multi-ip">REMOVE</div>
+      </div>
+    </div>`).join('');
+  show(html, '');
 }
 
+let _aliasAddBusy = false;   // rc.3: fast repeat clicks queued extra adds
 async function aliasAdd() {
+  if (_aliasAddBusy) return;
+  _aliasAddBusy = true;
+  try { await aliasAddRun(); } finally { _aliasAddBusy = false; }
+}
+async function aliasAddRun() {
   const adapter = getAliasAdapter();
   const ip     = document.getElementById('alias-new-ip').value.trim();
   const subnet = document.getElementById('alias-new-subnet').value.trim() || '255.255.255.0';
@@ -8582,21 +8580,10 @@ async function aliasAdd() {
     return;
   }
 
-  // ── PRE-FLIGHT: DHCP adapter ────────────────────────────
-  // Adding a multi-IP to a DHCP adapter converts it to static (keeping its current
-  // lease values) — that's a real config change to the primary, not just an extra
-  // IP. Require a second click to confirm, armed for 12s.
+  // rc.3: no confirm click. Adding to a DHCP card converts it to static on its own address
+  // first (keeping its gateway and DNS) — that's what the tech asked for, and the status says so.
   const adapterEntry = adapterList.find(a => a.name === adapter);
   const isDhcp = adapterEntry?.isDhcp === true;
-  if (isDhcp && _aliasDhcpArmed !== adapter) {
-    _aliasDhcpArmed = adapter;
-    clearTimeout(_aliasDhcpArmTimer);
-    _aliasDhcpArmTimer = setTimeout(() => { _aliasDhcpArmed = null; }, 12000);
-    setAliasStatus(`${adapter.toUpperCase()} IS DHCP — ADDING WILL SET IT STATIC (KEEPS ${adapterEntry.ip || 'CURRENT IP'}). CLICK ADD AGAIN TO CONFIRM`, 'warn', 12000);
-    return;
-  }
-  _aliasDhcpArmed = null;
-  clearTimeout(_aliasDhcpArmTimer);
 
   setAliasStatus(isDhcp ? 'CONVERTING TO STATIC, THEN ADDING...' : 'ADDING MULTI-IP...', '');
   const res = await hud.aliasAdd({ adapter, ip, subnet });
@@ -8612,7 +8599,7 @@ async function aliasAdd() {
     await loadAliasTab();
     updateMultiIpBadge();
     if (confirmed) {
-      setAliasStatus('MULTI-IP ADDED: ' + ip + (res.converted ? ' — ADAPTER NOW STATIC' : ''), 'ok', 5000);
+      setAliasStatus(res.already ? ip + ' IS ALREADY ON THIS CARD' : 'MULTI-IP ADDED: ' + ip + (res.converted ? ' — ADAPTER NOW STATIC (DNS KEPT)' : ''), 'ok', 5000);
     } else {
       // netsh exited 0 but the IP never appeared — output is in DIAGNOSTICS
       setAliasStatus('COMMAND RAN — IP NOT DETECTED. SEE DIAGNOSTICS (VERSION CHIP)', 'warn', 8000);
@@ -8625,8 +8612,6 @@ async function aliasAdd() {
     setAliasStatus('ERROR: ' + (res.err || 'unknown').toUpperCase() + ' — CMD BELOW, DETAILS IN DIAGNOSTICS', 'err');
   }
 }
-let _aliasDhcpArmed = null;
-let _aliasDhcpArmTimer = null;
 
 async function aliasCopyCmd(action) {
   const adapter = getAliasAdapter();
@@ -8958,9 +8943,14 @@ function intelProcessScanResults(baseIp, scanResults) {
   });
 
   // Find MISSING devices (were in stored, not in fresh results)
+  // rc.3: never this laptop — scans skip it, so an entry saved before that (v7.0) came back as
+  // "NOT RESPONDING" on every scan. Matched by any of this PC's MACs or addresses.
+  const selfMacs = new Set((adapterList || []).map(a => String(a.mac || '').toUpperCase().replace(/[:\-]/g, '')).filter(Boolean));
+  const selfIpsNow = new Set((adapterList || []).flatMap(a => (a.ips || []).map(x => x.ip).concat(a.ip ? [a.ip] : [])));
   stored.forEach(d => {
     if (!d.mac) return;
     const key = d.mac.toUpperCase().replace(/[:\-]/g,'');
+    if (selfMacs.has(key) || (d.ip && selfIpsNow.has(d.ip) && !freshByMac[key] && !scanResults.some(r => r.ip === d.ip))) return;
     if (!freshByMac[key]) {
       changes.missing.push(d);
     }

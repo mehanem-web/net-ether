@@ -21,6 +21,14 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 § 7.2.0 (lines marked *(7.3.0)* changed), at home. Then one real site day on the work laptop
 (MANAGED LAPTOP). Anything that breaks → COPY DIAGNOSTICS → next rc. The fleet only sees 7.3.0.
 
+**rc.3 additions**
+- [ ] PING a dead target, minimize ETHER → tray icon turns solid pulsing red (visible on the grey hover too); the taskbar button gets a red ! badge and flashes orange once; click in → flash stops; target back up → badge gone, tray green.
+- [ ] SCAN → discovery rows have a violet frame + violet ◎; the left edge still shows the device type colour.
+- [ ] MULTI-IP on a DHCP card: one click on ADD, card goes static, website still loads. Click ADD 3× fast → one add, no red rows in the LOG.
+- [ ] MULTI-IP panel open with an alias for 60 s → the window doesn't pulse. Collapsed → `+1 IP` in green.
+- [ ] SITES after a scan → this PC is not listed as NOT RESPONDING.
+- [ ] Second monitor (work dock): drag ETHER there, quit, relaunch → opens there.
+
 **rc.2 additions (home pass 2026-10-28 found these)**
 - [ ] ─ minimizes to the taskbar; Alt+Tab and the taskbar button bring it back; tray icon still there and brings it forward. Alt+F4 and taskbar "Close window" quit.
 - [ ] → DHCP: one click.
