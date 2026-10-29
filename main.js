@@ -4260,9 +4260,9 @@ ipcMain.handle('leftovers-get', async () => {
   try { await LAUNCH_SNAPSHOT_READY; } catch {}
   return readLeftovers();
 });
-ipcMain.handle('leftovers-dismiss', (e, adapter) => {
+ipcMain.handle('leftovers-dismiss', (e, adapter, why) => {
   writeLeftovers(readLeftovers().filter(o => o.adapter !== adapter));
-  diagAdd({ kind: 'app', tag: 'leftover', ok: true, note: `${String(adapter).slice(0, 60)}: kept as is (dismissed)` });
+  diagAdd({ kind: 'app', tag: 'leftover', ok: true, note: `${String(adapter).slice(0, 60)}: ${why === 'changed' ? 'cleared — the card was changed since' : 'kept as is (KEEP)'}` });
   return { ok: true };
 });
 ipcMain.handle('leftovers-restore', async (e, adapter) => {

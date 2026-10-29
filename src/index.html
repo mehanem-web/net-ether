@@ -2702,12 +2702,16 @@ html, body {
 .scan-result-row.disc-pulse { animation: disc-pulse 1.4s ease-out 2; }
 /* rc.2: a row that answered DISCOVER keeps a ◎ after its IP (the pulse alone was lost in a long list).
    A pseudo-element, so the IP's textContent — read all over the place — is unchanged. */
-.scan-result-row.disc-hit .scan-result-ip::after { content: ' ◎'; color: var(--green); font-weight: 900; }
+/* rc.3: discovery rows get a violet frame (a colour nothing else in ETHER uses — amber/orange
+   are camera/NVR on the left edge, which stays the device type) and a violet ◎ */
+.scan-result-row.disc-hit { border-top-color: rgba(190,120,255,0.75); border-right-color: rgba(190,120,255,0.75); border-bottom-color: rgba(190,120,255,0.75); background: rgba(190,120,255,0.05); }
+.scan-result-row.disc-hit:not([class*="type-"]) { border-left-color: rgba(190,120,255,0.75); }
+.scan-result-row.disc-hit .scan-result-ip::after { content: ' ◎'; color: rgb(190,120,255); font-weight: 900; }
 .scan-result-row.off-subnet { opacity: 0.72; }
 .scan-results.only-disc .scan-result-row:not(.disc-hit) { display: none; }
-.scan-found-count .sfc-disc { margin-left: 8px; padding: 1px 6px; border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.4); border-radius: var(--radius-sm); color: var(--green); cursor: pointer; }
-.scan-found-count .sfc-disc:hover { background: var(--green-ghost); }
-.scan-found-count .sfc-disc.on { background: rgba(var(--ar),var(--ag),var(--ab),0.18); border-color: var(--green); }
+.scan-found-count .sfc-disc { margin-left: 8px; padding: 1px 6px; border: 1px solid rgba(190,120,255,0.5); border-radius: var(--radius-sm); color: rgb(190,120,255); cursor: pointer; }
+.scan-found-count .sfc-disc:hover { background: rgba(190,120,255,0.10); }
+.scan-found-count .sfc-disc.on { background: rgba(190,120,255,0.20); border-color: rgb(190,120,255); }
 .scan-found-count .sfc-off { margin-left: 8px; color: var(--amber); }
 .scan-opt-row { justify-content: flex-end; }
 .scan-btn-row { display: flex; gap: 6px; }
@@ -4655,7 +4659,7 @@ function updateLeftover(a) {
   if (!o) { hide(); return; }
   if (!leftoverStillTrue(o, a)) {
     _leftovers = _leftovers.filter(x => x !== o);
-    if (window.hud && hud.leftoversDismiss) hud.leftoversDismiss(o.adapter).catch(() => {});
+    if (window.hud && hud.leftoversDismiss) hud.leftoversDismiss(o.adapter, 'changed').catch(() => {});
     hide(); return;
   }
   const was = o.was && o.was.isDhcp ? 'DHCP' : ((o.was && o.was.ip) || 'its old settings');
@@ -8505,12 +8509,13 @@ async function loadAliasTab() {
   const res = await hud.getAliases(adapter);
   if (refreshBtn) refreshBtn.classList.remove('spinning');
 
-  // Warn if adapter is DHCP — multi-IP doesn't work on DHCP adapters
+  // rc.3: a DHCP card can take a MULTI-IP — ADD converts it to static on its own address first
+  // (and keeps its DNS). This used to say "REQUIRES STATIC" in red, and the 15 s refresh could
+  // put that over ADD's "click ADD again", which made it look like a dead end. Quiet hint only.
   const adapterEntry = adapterList.find(a => a.name === adapter);
   if (adapterEntry && adapterEntry.isDhcp) {
     listEl.innerHTML = '';
-    setHint('DHCP — SET STATIC FIRST');
-    setAliasStatus('MULTI-IP REQUIRES STATIC IP — ADAPTER IS DHCP', 'err', 8000);
+    setHint('DHCP — ADD SETS IT STATIC');
     return;
   }
 

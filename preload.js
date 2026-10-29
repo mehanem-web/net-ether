@@ -124,7 +124,7 @@ contextBridge.exposeInMainWorld('hud', {
   getLaunchDeltas:    ()            => ipcRenderer.invoke('get-launch-deltas'),
   restoreLaunchState: (adapters)    => ipcRenderer.invoke('restore-launch-state', adapters),
   leftoversGet:       ()            => ipcRenderer.invoke('leftovers-get'),
-  leftoversDismiss:   (adapter)     => ipcRenderer.invoke('leftovers-dismiss', adapter),
+  leftoversDismiss:   (adapter, why) => ipcRenderer.invoke('leftovers-dismiss', adapter, why),
   leftoversRestore:   (adapter)     => ipcRenderer.invoke('leftovers-restore', adapter),
 
   // ── Diagnostics overlay ───────────────────────────────────

@@ -226,6 +226,11 @@ NET-ETHER/
 The stability release: what 7.2 added, plus a full bug hunt, so the fleet gets one update that lasts.
 Started from a day in the field on two addresses where ─ simply refused to hide the window.
 
+**rc.3 — from the rc.2 check (2026-10-28)**
+- **Discovery rows get a violet frame** (plus a violet ◎ and filter chip) — the ◎ alone was too quiet. Violet because amber/orange already mean camera/NVR; the left edge keeps the device-type colour.
+- **MULTI-IP on a DHCP card no longer says "REQUIRES STATIC IP"** in red. That message predates the automatic conversion, and the 15 s refresh could drop it on top of ADD's "click ADD again", so it looked like a dead end. The panel now just hints "DHCP — ADD SETS IT STATIC".
+- The log says "cleared — the card was changed since" when a leftover clears itself, instead of "kept as is".
+
 **rc.2 — from the first home pass (2026-10-28)**
 - **→ DHCP is one click** (the click-again arm is gone).
 - The refresh after any change no longer replaces the result with a generic "CONFIG APPLIED SUCCESSFULLY" (it also did that after a failed PUT BACK / RESTORE).
