@@ -1862,6 +1862,8 @@ async function readAdapterDhcpState(safeAdapter) {
       ip:   (block.match(/IP Address:\s+([\d.]+)/i) || [])[1] || null,
       mask: (block.match(/Subnet Prefix[^(]+\(mask\s+([\d.]+)\)/i) || [])[1] || null,
       gw:   (block.match(/Default Gateway:\s+([\d.]+)/i) || [])[1] || null,
+      // rc.2: the DNS servers DHCP gave it (first two) — carried over when the card goes static
+      dns:  (() => { const m = block.match(/DNS servers configured through DHCP:\s+([\d.]+)(?:\s*\r?\n\s+([\d.]+))?/i); return m ? [m[1], m[2]].filter(x => x && isValidIp(x)) : []; })(),
     };
   }
   try {
@@ -1897,6 +1899,11 @@ async function addAliasCoreUnlocked(safeAdapter, ip, subnet, tag = 'alias_add') 
       ? `netsh interface ip set address "${safeAdapter}" static ${st.ip} ${sn} ${st.gw}`
       : `netsh interface ip set address "${safeAdapter}" static ${st.ip} ${sn}`;
     cmd = `${setStatic}; ${cmd}`;
+    // rc.2: a card switched to static loses the DNS servers DHCP gave it — names stop resolving
+    // (browsing dies, ping by IP still works). Keep them, as static, after the alias is on.
+    const dns = Array.isArray(st.dns) ? st.dns : [];
+    if (dns[0]) cmd += `; netsh interface ip set dns "${safeAdapter}" static ${dns[0]} validate=no`;
+    if (dns[1]) cmd += `; netsh interface ip add dns "${safeAdapter}" ${dns[1]} index=2 validate=no`;
     converted = true;
   }
   const result = await runElevated(cmd, { tag, timeoutMs: 25000 });
