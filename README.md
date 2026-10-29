@@ -235,6 +235,7 @@ Started from a day in the field on two addresses where ─ simply refused to hid
 - The MULTI-IP count reads `+1 IP` in the normal accent colour (it was a bare amber number that looked like a warning) and hides while the panel is open.
 - **The tray alert is visible again.** The animation frames were 16 px only and the alert ones a dim red ring on dark navy; on a scaled display the alert icon showed as a blank square. All frames are now 16/24/32 px from the main icon's art, and an alert turns the whole tile solid pulsing red. Generator: `assets/make-tray-icons.py`. A frame that fails to load keeps the last good icon.
 - **The taskbar button shows PING alerts too:** a red ! badge while a target is down, and one orange flash when it starts (stops when you click in).
+- SITES no longer lists this PC as "NOT RESPONDING" after a scan (an entry for the laptop saved by an older version was flagged every time).
 - The log says "cleared — the card was changed since" when a leftover clears itself, instead of "kept as is".
 
 **rc.2 — from the first home pass (2026-10-28)**

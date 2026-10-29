@@ -8943,9 +8943,14 @@ function intelProcessScanResults(baseIp, scanResults) {
   });
 
   // Find MISSING devices (were in stored, not in fresh results)
+  // rc.3: never this laptop — scans skip it, so an entry saved before that (v7.0) came back as
+  // "NOT RESPONDING" on every scan. Matched by any of this PC's MACs or addresses.
+  const selfMacs = new Set((adapterList || []).map(a => String(a.mac || '').toUpperCase().replace(/[:\-]/g, '')).filter(Boolean));
+  const selfIpsNow = new Set((adapterList || []).flatMap(a => (a.ips || []).map(x => x.ip).concat(a.ip ? [a.ip] : [])));
   stored.forEach(d => {
     if (!d.mac) return;
     const key = d.mac.toUpperCase().replace(/[:\-]/g,'');
+    if (selfMacs.has(key) || (d.ip && selfIpsNow.has(d.ip) && !freshByMac[key] && !scanResults.some(r => r.ip === d.ip))) return;
     if (!freshByMac[key]) {
       changes.missing.push(d);
     }
