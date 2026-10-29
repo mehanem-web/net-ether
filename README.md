@@ -73,7 +73,7 @@ Manage static IP configuration for any wired adapter. (The tab was called ETHER 
 - **COPY COMMANDS** — shows the exact `netsh` lines without running them
 - **MTU** — in DIAGNOSTICS (version chip) → TOOLS: reads current MTU and resets to 1500 (fixes the classic "can ping but can't browse" symptom)
 - **CIDR** — in the **?** quick guide: prefix ↔ mask ↔ hosts; click a row to fill the subnet field
-- **REVERT** — snapshots the previous config before applying; one click to restore
+- **REVERT** — undoes the last APPLY (rc.2: it used to go back to before the session's first APPLY). Back to how the card was at launch: ↩ RESTORE LAUNCH STATE.
 - **Connection History** — last 10 applied configs, click any to reload
 - `169.254.x.x` is allowed (with a mask hint). `0.x.x.x` and an APIPA DNS server are still rejected.
 - **Leftover line** (7.3.0) — quit never asks or undoes anything. If the last session left this card on a static it wasn't on before, or with extra addresses, one amber line under the adapter says so: **↩ PUT BACK** restores what it was (and reads it back), **KEEP** forgets the note.
@@ -232,6 +232,7 @@ Started from a day in the field on two addresses where ─ simply refused to hid
 - **Leftover line.** Next launch, a card that the last session left on a static (or with extra addresses) gets one amber line under the adapter: ↩ PUT BACK / KEEP. It replaces the DHCP tab's "never reverted — put it back?" modal and persists until dealt with or the card changes. DHCP lease changes never count.
 - **→ DHCP is one click** (the click-again arm is gone).
 - The refresh after any change no longer replaces the result with a generic "CONFIG APPLIED SUCCESSFULLY" (it also did that after a failed PUT BACK / RESTORE).
+- **REVERT undoes the last APPLY**, not everything since the first one (DHCP → 10.0.0.5 → 192.168.0.50 → REVERT now lands on 10.0.0.5). RESTORE LAUNCH STATE is the full way back.
 - PUT BACK also resets that card's baseline for the session, so a static applied later in the same session is still flagged on the next launch (found in the rc.1 home pass).
 - **↩ RESTORE LAUNCH STATE** confirms in a modal instead of the inline banner, and the result comes from reading the cards back, not from netsh's exit code.
 

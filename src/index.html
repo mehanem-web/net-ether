@@ -3683,7 +3683,7 @@ let presets = JSON.parse(JSON.stringify(DEFAULT_PRESETS));
 let activePreset = 0;
 let isDirty = false;
 let cmdVisible = false;
-let previousConfig = null; // snapshot before last successful apply
+let previousConfig = null; // snapshot before the last successful APPLY (rc.2: REVERT steps back one APPLY)
 let revertInProgress = false; // bypass no-change check during revert
 let applyInFlight = false;     // v7.3.0: an APPLY is running (lock lasts as long as it does)
 let _applyBackstop = null;
@@ -4787,7 +4787,7 @@ const HELP_CONTENT = {
     rows: [
       ['PRESETS',    'LIVE always mirrors the adapter right now. Slots 2–4 are yours — fill the fields, SAVE TO PRESET.'],
       ['FACTORY DEFAULTS', 'Manufacturer out-of-box addresses. A tile fills in that device\'s subnet and puts YOU one address above it.'],
-      ['APPLY',      'Writes IP / mask / gateway / DNS, then verifies. Green stripe, ✓ ACTIVE on the IP field and a flash in the top bar mean it really took. REVERT undoes it.'],
+      ['APPLY',      'Writes IP / mask / gateway / DNS, then verifies. Green stripe, ✓ ACTIVE on the IP field and a flash in the top bar mean it really took. REVERT undoes the last APPLY.'],
       ['→ DHCP',     'Beside the STATIC badge in the adapter row. One click hands the adapter back to DHCP.'],
       ['COPY COMMANDS', 'Shows the exact netsh lines without running them — copy into an admin prompt if APPLY can\'t.'],
       ['MTU',        'Moved to DIAGNOSTICS (version chip → DIAGNOSTICS → TOOLS). Resets MTU to 1500 — fixes "can ping, can\'t load pages."'],
@@ -5370,7 +5370,7 @@ async function applyConfig() {
   // Grab the ACTUAL live IP + MTU right now via IPC before anything changes
   // Skip snapshot during a revert — we don't want to re-arm the revert button after reverting
   let snapshot = null;
-  if (window.hud && previousConfig === null && !revertInProgress) {
+  if (window.hud && !revertInProgress) {   // rc.2: every APPLY records what it replaced
     try {
       const live = await hud.getCurrentIp(f.adapter || '');
       if (live && live.ip) {
@@ -5417,7 +5417,7 @@ async function applyConfig() {
       } catch {}
     }
   }
-  if (!snapshot && previousConfig === null && !revertInProgress) {
+  if (!snapshot && !revertInProgress) {
     snapshot = { adapter: f.adapter, ip: '—', subnet: f.subnet, gateway: f.gateway, dns: f.dns, dhcp: false };
   }
 
@@ -5442,11 +5442,10 @@ async function applyConfig() {
       });
       if (result.ok) {
         unlockApplyBtn();
-        // Only capture snapshot on first apply this session — never overwrite it
-        // (cleared only by explicit revert or DHCP switch). v7.3.0: and only one REVERT can use
-        if (previousConfig === null && snapshot && (snapshot.dhcp || isValidIP(snapshot.ip))) {
-          previousConfig = snapshot;
-        }
+        // rc.2: REVERT = undo the last APPLY. It used to hold the state from before the
+        // session's FIRST apply, so DHCP → 10.x → 192.x → REVERT jumped back to DHCP, not 10.x.
+        // "Back to how it was at launch" is ↩ RESTORE LAUNCH STATE.
+        if (snapshot && (snapshot.dhcp || isValidIP(snapshot.ip))) previousConfig = snapshot;
         clearDirtyState();
         if (previousConfig) showRevertBtn(previousConfig);
         else hideRevertBtn();

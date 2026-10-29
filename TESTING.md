@@ -35,7 +35,7 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 
 **APPLY / REVERT**
 - [ ] DHCP card with a gateway → APPLY static 192.168.0.50, gateway 192.168.0.1 → REVERT → back on DHCP (gateway from DHCP).
-- [ ] Static 10.0.0.5 gw 10.0.0.1 → APPLY 192.168.0.50 gw 192.168.0.1 → REVERT → 10.0.0.5 **with gw 10.0.0.1** (7.2 put the new gateway back, or refused and lost the button).
+- [ ] APPLY 10.0.0.5 gw 10.0.0.1 → APPLY 192.168.0.50 gw 192.168.0.1 → REVERT → 10.0.0.5 **with gw 10.0.0.1** (rc.2: REVERT is one step; 7.2 put the new gateway back, or refused and lost the button).
 - [ ] Dismiss the UAC prompt during a REVERT (dev build) → REVERT button is still there.
 - [ ] Dev build: APPLY, leave the UAC prompt up 20 s, click APPLY again → "STILL APPLYING THE LAST CHANGE". Accept → one apply in the LOG, not two.
 
@@ -58,7 +58,6 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 **Slow laptop (run these under `dev-slow.bat` — +2 s per launch — then again on the work laptop)**
 - [ ] SCAN a /24 with known live devices → they're all found (7.2 at +2 s: only ARP-cached hosts).
 - [ ] MULTI-IP add on a **DHCP** card → converts to static on the lease address, then adds; the lease address is never lost. LOG has no `alias_add` with a missing conversion.
-- [ ] → DHCP on a card that's already DHCP → ✓ (no error), DNS reset to DHCP.
 - [ ] Wi-Fi OFF/ON, DISABLE/ENABLE, RENEW → no false FAIL, no "ADAPTER NOT FOUND".
 - [ ] DIAGNOSTICS → STATE: PS WORKER still `ready` after an hour of use (not `disabled`).
 - [ ] RECON SILENT 65 s → card rebinds and gets its address back.
