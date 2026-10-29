@@ -231,6 +231,7 @@ Started from a day in the field on two addresses where ─ simply refused to hid
 - **MULTI-IP on a DHCP card no longer says "REQUIRES STATIC IP"** in red. That message predates the automatic conversion, and the 15 s refresh could drop it on top of ADD's "click ADD again", so it looked like a dead end. The panel now just hints "DHCP — ADD SETS IT STATIC".
 - **MULTI-IP on a DHCP card is one click** too — no "click ADD again". It converts the card to static on its own address (gateway and DNS kept) and says so.
 - ADD MULTI-IP ignores clicks while one is running, and an address already on the card is reported as such without running netsh (repeat clicks logged red "object already exists" rows).
+- **No more 15-second pulse with the MULTI-IP panel open.** Its background refresh emptied the list, waited for Windows and refilled it, so the window shrank and grew every 15 s once an alias was listed. It now redraws only when something actually changed.
 - The log says "cleared — the card was changed since" when a leftover clears itself, instead of "kept as is".
 
 **rc.2 — from the first home pass (2026-10-28)**

@@ -8479,6 +8479,9 @@ async function aliasRemoveFromTab(ip) {
 
 // ── ALIAS TAB ──────────────────────────────────────────────
 async function loadAliasTab() {
+  // rc.3: build the new list, and only touch the DOM when it differs. It used to empty the list,
+  // show LOADING..., await Windows, then refill — every 15 s while the panel was open — so the
+  // window (fitted to its content) shrank and grew in a pulse once an alias was listed.
   const adapter    = getAliasAdapter();
   const listEl     = document.getElementById('alias-list');
   const refreshBtn = document.getElementById('alias-tab-refresh');
@@ -8489,15 +8492,16 @@ async function loadAliasTab() {
     if (msg) { hint.textContent = msg; hint.classList.add('pulse'); }
     else      { hint.textContent = '';  hint.classList.remove('pulse'); }
   }
-
-  if (!adapter) {
-    listEl.innerHTML = '';
-    setHint('NO ADAPTER');
-    return;
+  function show(html, hintMsg) {
+    setHint(hintMsg);
+    if (listEl.dataset.sig === html) return;   // nothing changed — leave the DOM (and the window) alone
+    listEl.dataset.sig = html;
+    listEl.innerHTML = html;
+    autoResize();
   }
 
-  listEl.innerHTML = '';
-  setHint('LOADING...');
+  if (!adapter) { show('', 'NO ADAPTER'); return; }
+  if (!listEl.dataset.sig) setHint('LOADING...');   // first fill only — never on the background refresh
   if (refreshBtn) refreshBtn.classList.add('spinning');
 
   if (!window.hud) {
@@ -8506,32 +8510,22 @@ async function loadAliasTab() {
     return;
   }
 
-  const res = await hud.getAliases(adapter);
-  if (refreshBtn) refreshBtn.classList.remove('spinning');
+  let res;
+  try { res = await hud.getAliases(adapter); } catch (err) { res = { ok: false, err: err.message, aliases: [] }; }
+  finally { if (refreshBtn) refreshBtn.classList.remove('spinning'); }
 
   // rc.3: a DHCP card can take a MULTI-IP — ADD converts it to static on its own address first
-  // (and keeps its DNS). This used to say "REQUIRES STATIC" in red, and the 15 s refresh could
-  // put that over ADD's "click ADD again", which made it look like a dead end. Quiet hint only.
+  // (and keeps its DNS). This used to say "REQUIRES STATIC" in red. Quiet hint only.
   const adapterEntry = adapterList.find(a => a.name === adapter);
-  if (adapterEntry && adapterEntry.isDhcp) {
-    listEl.innerHTML = '';
-    setHint('DHCP — ADD SETS IT STATIC');
-    return;
-  }
+  if (adapterEntry && adapterEntry.isDhcp) { show('', 'DHCP — ADD SETS IT STATIC'); return; }
 
   if (!res.ok) {
-    listEl.innerHTML = '';
-    setHint('READ ERROR');
+    show(listEl.dataset.sig || '', 'READ ERROR');   // keep what was listed; a failed read isn't "no aliases"
     setAliasStatus('FAILED TO READ ADAPTER', 'err', 5000);
     return;
   }
-  if (!res.aliases.length) {
-    listEl.innerHTML = '';
-    setHint('NO IPS');
-    return;
-  }
+  if (!res.aliases.length) { show('', 'NO IPS'); return; }
 
-  listEl.innerHTML = '';
   // Identify primary by matching the main #ip field — do NOT rely on array position;
   // netsh output order is not guaranteed to put the primary IP first.
   // v7.1.0: the adapter entry's ip is the gateway-holding address; the #ip field is the fallback
@@ -8540,37 +8534,27 @@ async function loadAliasTab() {
   const primaryEntry = res.aliases.find(a => a.ip === knownPrimary) || res.aliases[0];
   const extras = res.aliases.filter(a => a !== primaryEntry);
 
-  if (!extras.length) {
-    setHint('NO MULTI-IPS');
-  } else {
-    setHint('');
-    // Show primary as a slim read-only header, then all extra IPs with actions
-    const primaryRow = document.createElement('div');
-    primaryRow.className = 'alias-row primary';
-    primaryRow.innerHTML = `
+  if (!extras.length) { show('', 'NO MULTI-IPS'); return; }
+  // Show primary as a slim read-only header, then all extra IPs with actions
+  const html = `
+    <div class="alias-row primary">
       <div class="alias-row-info">
         <div class="alias-row-ip">${escHtml(primaryEntry.ip)}</div>
         <div class="alias-row-mask">${escHtml(primaryEntry.subnet)}</div>
       </div>
-      <div class="alias-row-tag primary-tag">PRIMARY</div>`;
-    listEl.appendChild(primaryRow);
-
-    extras.forEach(a => {
-      const row = document.createElement('div');
-      row.className = 'alias-row';
-      row.innerHTML = `
-        <div class="alias-row-info">
-          <div class="alias-row-ip">${escHtml(a.ip)}</div>
-          <div class="alias-row-mask">${escHtml(a.subnet)}</div>
-        </div>
-        <div class="alias-row-actions">
-          <div class="alias-use-btn" onclick="aliasCopyIp('${escHtml(a.ip)}')" title="Copy IP to clipboard">COPY</div>
-          <div class="alias-del-btn" onclick="aliasRemoveFromTab('${escHtml(a.ip)}')" title="Remove multi-ip">REMOVE</div>
-        </div>`;
-      listEl.appendChild(row);
-    });
-  }
-  autoResize();
+      <div class="alias-row-tag primary-tag">PRIMARY</div>
+    </div>` + extras.map(a => `
+    <div class="alias-row">
+      <div class="alias-row-info">
+        <div class="alias-row-ip">${escHtml(a.ip)}</div>
+        <div class="alias-row-mask">${escHtml(a.subnet)}</div>
+      </div>
+      <div class="alias-row-actions">
+        <div class="alias-use-btn" onclick="aliasCopyIp('${escHtml(a.ip)}')" title="Copy IP to clipboard">COPY</div>
+        <div class="alias-del-btn" onclick="aliasRemoveFromTab('${escHtml(a.ip)}')" title="Remove multi-ip">REMOVE</div>
+      </div>
+    </div>`).join('');
+  show(html, '');
 }
 
 let _aliasAddBusy = false;   // rc.3: fast repeat clicks queued extra adds
