@@ -21,8 +21,19 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 § 7.2.0 (lines marked *(7.3.0)* changed), at home. Then one real site day on the work laptop
 (MANAGED LAPTOP). Anything that breaks → COPY DIAGNOSTICS → next rc. The fleet only sees 7.3.0.
 
+**rc.2 additions (home pass 2026-10-28 found these)**
+- [ ] ─ minimizes to the taskbar; Alt+Tab and the taskbar button bring it back; tray icon still there and brings it forward. Alt+F4 and taskbar "Close window" quit.
+- [ ] → DHCP: one click.
+- [ ] After → DHCP the status says "… IS BACK ON DHCP", not "CONFIG APPLIED SUCCESSFULLY".
+- [ ] APPLY with gateway = the IP itself → stopped with "GATEWAY IS THIS LAPTOP'S OWN ADDRESS".
+- [ ] MULTI-IP add on a DHCP card → a website still loads afterwards (DNS kept). DNS field shows the router's DNS.
+- [ ] Card with an alias, quit, relaunch → leftover reads "left <alias> on this card (it was <your IP>)", not "static <alias>".
+- [ ] Apply static, quit, relaunch → PUT BACK → apply a static again, quit, relaunch → the line shows again.
+- [ ] WI-FI chip off/on → one green line each way, no red "ADAPTER NOT FOUND".
+- [ ] SCAN your subnet → devices that answered DISCOVER have a ◎ after the IP; header `◎ N DISCOVERY` click → only those; click again → all. Scan an empty base (10.0.0) → "NO HOSTS ON THIS SUBNET · N ELSEWHERE".
+
 **Leaving ETHER**
-- [ ] MULTI-IP alias on a card → ─ hides straight away (no banner). Tray click brings it back.
+- [ ] MULTI-IP alias on a card → ─ minimizes straight away (no banner).
 - [ ] Same, ✕ → quits in one click. Relaunch: the alias is still on the card; amber line under the adapter: `↺ Last session left … 10.0.30.250 … (it was …)`.
 - [ ] APPLY a static on a DHCP card, ✕ → no prompt, app gone. Relaunch → leftover line "static X (it was DHCP)". **↩ PUT BACK (DHCP)** → card back on DHCP, line gone, LOG `leftover_restore` VERIFY OK.
 - [ ] Leave one there, **KEEP** → line gone. Relaunch → doesn't come back.

@@ -222,14 +222,11 @@ NET-ETHER/
 
 ## CHANGELOG
 
-### v7.3.0 (in progress — rc.1, 2026-10-27)
+### v7.3.0 (in progress — rc.2, 2026-10-28)
 The stability release: what 7.2 added, plus a full bug hunt, so the fleet gets one update that lasts.
 Started from a day in the field on two addresses where ─ simply refused to hide the window.
 
-**Leaving ETHER**
-- **─ always hides, ✕ always quits — one click.** No alias check, no "press ✕ again", no SESSION CHANGES prompt. Those prompts sat inline in the IP tab, so on a short window ✕ just looked dead.
-- **One rule for what happens on quit.** What you set stays set: APPLY, MULTI-IP, the DHCP tab's + ALIAS and SET LAPTOP IP… (both used to undo themselves on quit). What ETHER did on its own is still cleaned up: REACH temporary addresses, RECON SILENT bindings, the DHCP engine and its firewall rule.
-- **Leftover line.** Next launch, a card that the last session left on a static (or with extra addresses) gets one amber line under the adapter: ↩ PUT BACK / KEEP. It replaces the DHCP tab's "never reverted — put it back?" modal and persists until dealt with or the card changes. DHCP lease changes never count.
+**rc.2 — from the first home pass (2026-10-28)**
 - **→ DHCP is one click** (the click-again arm is gone).
 - The refresh after any change no longer replaces the result with a generic "CONFIG APPLIED SUCCESSFULLY" (it also did that after a failed PUT BACK / RESTORE).
 - **REVERT undoes the last APPLY**, not everything since the first one (DHCP → 10.0.0.5 → 192.168.0.50 → REVERT now lands on 10.0.0.5). RESTORE LAUNCH STATE is the full way back.
@@ -240,6 +237,13 @@ Started from a day in the field on two addresses where ─ simply refused to hid
 - **A card with aliases is recorded by its real address** (the one on the gateway's subnet), not whichever line Windows lists first. The leftover line said "static <alias>", and RESTORE LAUNCH STATE could have set the card to the alias's address.
 - **WI-FI chip reports once for the whole click.** With several Wi-Fi entries in Windows it showed the last one's result, so a ghost entry's "ADAPTER NOT FOUND" sat over a successful switch.
 - PUT BACK also resets that card's baseline for the session, so a static applied later in the same session is still flagged on the next launch (found in the rc.1 home pass).
+
+**rc.1**
+
+**Leaving ETHER**
+- **─ always hides, ✕ always quits — one click.** No alias check, no "press ✕ again", no SESSION CHANGES prompt. Those prompts sat inline in the IP tab, so on a short window ✕ just looked dead.
+- **One rule for what happens on quit.** What you set stays set: APPLY, MULTI-IP, the DHCP tab's + ALIAS and SET LAPTOP IP… (both used to undo themselves on quit). What ETHER did on its own is still cleaned up: REACH temporary addresses, RECON SILENT bindings, the DHCP engine and its firewall rule.
+- **Leftover line.** Next launch, a card that the last session left on a static (or with extra addresses) gets one amber line under the adapter: ↩ PUT BACK / KEEP. It replaces the DHCP tab's "never reverted — put it back?" modal and persists until dealt with or the card changes. DHCP lease changes never count.
 - **↩ RESTORE LAUNCH STATE** confirms in a modal instead of the inline banner, and the result comes from reading the cards back, not from netsh's exit code.
 
 **Your data (from the audit)**
