@@ -68,7 +68,7 @@ Manage static IP configuration for any wired adapter. (The tab was called ETHER 
 
 - **Presets** — 4 slots (LIVE, +3 saved). LIVE auto-populates from the active adapter and never persists to disk.
 - **Factory defaults** — manufacturer out-of-box addresses, beside SAVE TO PRESET. A tile fills the device's subnet and puts you one address above it. The **AXIS** tile is link-local (`169.254.1.1 / 255.255.0.0`): current Axis cameras ship DHCP-only and fall back to a random `169.254` address, so joining that /16 is how you reach one without a DHCP server or the Axis tool.
-- **Adapter dropdown** — every wired adapter with live status, IP, DHCP/STATIC badge, and connection state. On a static adapter a **→ DHCP** action sits beside the badge: click twice to hand the adapter back to DHCP.
+- **Adapter dropdown** — every wired adapter with live status, IP, DHCP/STATIC badge, and connection state. On a static adapter a **→ DHCP** action sits beside the badge: one click hands the adapter back to DHCP.
 - **APPLY CONFIG** — writes IP / subnet / gateway / DNS via `netsh`, then re-reads the adapter to confirm it took. A verified change shows three ways: green stripe on the status bar, **✓ ACTIVE** on the IP field, and a flash of the new address in the top bar. A failed one turns the field red.
 - **COPY COMMANDS** — shows the exact `netsh` lines without running them
 - **MTU** — in DIAGNOSTICS (version chip) → TOOLS: reads current MTU and resets to 1500 (fixes the classic "can ping but can't browse" symptom)
@@ -230,6 +230,7 @@ Started from a day in the field on two addresses where ─ simply refused to hid
 - **─ always hides, ✕ always quits — one click.** No alias check, no "press ✕ again", no SESSION CHANGES prompt. Those prompts sat inline in the IP tab, so on a short window ✕ just looked dead.
 - **One rule for what happens on quit.** What you set stays set: APPLY, MULTI-IP, the DHCP tab's + ALIAS and SET LAPTOP IP… (both used to undo themselves on quit). What ETHER did on its own is still cleaned up: REACH temporary addresses, RECON SILENT bindings, the DHCP engine and its firewall rule.
 - **Leftover line.** Next launch, a card that the last session left on a static (or with extra addresses) gets one amber line under the adapter: ↩ PUT BACK / KEEP. It replaces the DHCP tab's "never reverted — put it back?" modal and persists until dealt with or the card changes. DHCP lease changes never count.
+- **→ DHCP is one click** (the click-again arm is gone).
 - PUT BACK also resets that card's baseline for the session, so a static applied later in the same session is still flagged on the next launch (found in the rc.1 home pass).
 - **↩ RESTORE LAUNCH STATE** confirms in a modal instead of the inline banner, and the result comes from reading the cards back, not from netsh's exit code.
 
