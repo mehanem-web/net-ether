@@ -5275,6 +5275,12 @@ async function applyConfig() {
   // ── SAFEGUARD: Gateway outside subnet warning ──────────
   // v7.3.0: a REVERT puts back what the card really had — the heuristics below are for typed
   // input and used to stop a revert dead (old IP + odd gateway), losing the way back
+  // rc.2: the laptop is never its own gateway — that's always a typo
+  if (f.gateway && !revertInProgress && f.gateway === f.ip) {
+    setNetStatus('GATEWAY IS THIS LAPTOP\'S OWN ADDRESS — LEAVE IT BLANK, OR USE THE ROUTER\'S', 'warn', 7000);
+    document.getElementById('gateway').classList.add('changed');
+    return;
+  }
   if (f.gateway && !revertInProgress && !gatewayInSubnet(f.ip, f.subnet, f.gateway)) {
     setNetStatus(`WARNING: GATEWAY ${f.gateway} IS OUTSIDE SUBNET — CHECK YOUR CONFIG`, 'warn', 7000);
     document.getElementById('gateway').classList.add('changed');

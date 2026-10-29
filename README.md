@@ -233,6 +233,7 @@ Started from a day in the field on two addresses where ─ simply refused to hid
 - **→ DHCP is one click** (the click-again arm is gone).
 - The refresh after any change no longer replaces the result with a generic "CONFIG APPLIED SUCCESSFULLY" (it also did that after a failed PUT BACK / RESTORE).
 - **REVERT undoes the last APPLY**, not everything since the first one (DHCP → 10.0.0.5 → 192.168.0.50 → REVERT now lands on 10.0.0.5). RESTORE LAUNCH STATE is the full way back.
+- APPLY stops if the gateway is the laptop's own address (always a typo).
 - PUT BACK also resets that card's baseline for the session, so a static applied later in the same session is still flagged on the next launch (found in the rc.1 home pass).
 - **↩ RESTORE LAUNCH STATE** confirms in a modal instead of the inline banner, and the result comes from reading the cards back, not from netsh's exit code.
 
