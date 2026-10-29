@@ -94,7 +94,16 @@ def main():
     for mode, fn in (('idle', idle), ('fail', fail), ('dim', dim)):
         for i, k in enumerate(pulse):
             write_ico(os.path.join(HERE, f'tray-{mode}-{i}.ico'), [fn(base[s], k) for s in SIZES])
-    print('wrote 12 frames ×', len(SIZES), 'sizes')
+    # rc.3: taskbar-button overlay for an alert — a red disc with a white "!" (16 px + @1.5x/@2x
+    # variants; Electron's nativeImage picks the one for the display's scale)
+    from PIL import ImageDraw
+    for scale, suffix in ((1, ''), (1.5, '@1.5x'), (2, '@2x')):
+        n = int(16 * scale); im = Image.new('RGBA', (n * 4, n * 4), (0, 0, 0, 0)); d = ImageDraw.Draw(im)
+        d.ellipse((2, 2, n * 4 - 3, n * 4 - 3), fill=(232, 32, 32, 255), outline=(255, 255, 255, 255), width=max(3, n // 3))
+        cx = n * 2; d.rounded_rectangle((cx - n * 0.28, n * 0.8, cx + n * 0.28, n * 2.45), radius=n * 0.2, fill=(255, 255, 255, 255))
+        d.ellipse((cx - n * 0.3, n * 2.75, cx + n * 0.3, n * 3.35), fill=(255, 255, 255, 255))
+        im.resize((n, n), Image.LANCZOS).save(os.path.join(HERE, f'badge-alert{suffix}.png'))
+    print('wrote 12 frames ×', len(SIZES), 'sizes + taskbar alert badge')
 
 
 if __name__ == '__main__':

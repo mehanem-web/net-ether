@@ -537,9 +537,23 @@ function startTrayAnimation() {
 
 function setTrayMode(mode) {
   if (trayState.mode === mode) return;
+  const wasFail = trayState.mode === 'ping_fail';
   trayState.mode = mode;
   startTrayAnimation();
   updateTrayTooltip();
+  // rc.3: ETHER is on the taskbar now — an alert shows on its button too: a red badge for as long
+  // as a target is down, and one orange flash when it starts (stops as soon as the window is used)
+  try {
+    if (!winAlive()) return;
+    if (mode === 'ping_fail' && !wasFail) {
+      const badge = nativeImage.createFromPath(path.join(__dirname, 'assets', 'badge-alert.png'));
+      if (!badge.isEmpty()) win.setOverlayIcon(badge, 'Connectivity alert');
+      if (!win.isFocused()) win.flashFrame(true);
+    } else if (mode !== 'ping_fail' && wasFail) {
+      win.setOverlayIcon(null, '');
+      win.flashFrame(false);
+    }
+  } catch {}
 }
 
 let dhcpTrayNote = '';   // "· DHCP serving 3 leases" — set by the DHCP engine
@@ -779,6 +793,7 @@ function createWindow() {
   win.on('move', scheduleSaveWindowState);
   win.on('show',    assertAlwaysOnTop);
   win.on('focus',   assertAlwaysOnTop);
+  win.on('focus',   () => { try { win.flashFrame(false); } catch {} });   // rc.3: the alert flash stops once seen
   win.on('restore', assertAlwaysOnTop);
 
   if (IS_DEV) {
