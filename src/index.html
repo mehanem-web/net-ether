@@ -2168,10 +2168,13 @@ html, body {
 .multiip-toggle-row:hover .multiip-toggle-label,
 .multiip-toggle-row.open  .multiip-toggle-label { color: var(--green); }
 .multiip-toggle-badge {
-  font-size: 11px; font-weight: 700; color: var(--amber);
-  background: rgba(255,204,0,0.1); border: 1px solid rgba(255,204,0,0.3);
-  border-radius: var(--radius-sm); padding: 0 5px; letter-spacing: 0;
+  /* rc.3: information, not a warning — plain accent colour, and only while the panel is closed
+     (the list says it when open). Amber read as "something's wrong". */
+  font-size: var(--sz-micro); font-weight: 700; letter-spacing: 0.5px; padding: 1px 6px; margin-left: 8px;
+  border-radius: var(--radius-sm); border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.45);
+  color: var(--green); background: var(--green-ghost);
 }
+.multiip-toggle-row.open .multiip-toggle-badge { display: none; }
 .multiip-toggle-badge:empty { display: none; }
 .multiip-toggle-chevron {
   font-size: 16px; color: rgba(var(--ar), var(--ag), var(--ab), 0.60);
@@ -8425,7 +8428,7 @@ async function updateMultiIpBadge() {
   try {
     const res = await hud.getAliases(adapter);
     const extraCount = res.ok ? Math.max(0, res.aliases.length - 1) : 0;
-    badge.textContent = extraCount > 0 ? extraCount : '';
+    badge.textContent = extraCount > 0 ? `+${extraCount} IP${extraCount !== 1 ? 'S' : ''}` : '';
   } catch { badge.textContent = ''; }
 }
 
