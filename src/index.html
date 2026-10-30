@@ -4333,7 +4333,7 @@ function updateLiveBar() {
   const selectedName = document.getElementById('adapter')?.value.trim().toLowerCase();
   const a = (selectedName && adapterList.find(x => x.name.toLowerCase() === selectedName))
           || adapterList.find(x => x.connected && x.ip)
-          || null;
+          || null;   // rc.8: a remembered card that is gone (USB pulled) matches nothing → NO ADAPTER
 
   if (a && !a.ip && a.savedIp) {   // rc.5: unplugged card with a saved static
     dot.className       = 'live-bar-dot disconnected';
@@ -4575,6 +4575,7 @@ function updateAdapterStatus() {
     updateAdapterWarn(null);
     updateLeftover(null);
     if (displaySpan) { displaySpan.textContent = 'Select adapter'; displaySpan.classList.add('placeholder'); }
+    updateLiveBar();   // rc.8: the card vanished (USB adapter pulled) — the top bar mustn't keep its line
     return;
   }
   if (displaySpan) displaySpan.classList.remove('placeholder');
@@ -5316,7 +5317,9 @@ function clearDirtyState() {
 async function applyConfig() {
   const f = getFields();
   // rc.7: no card picked (e.g. the USB adapter was pulled) — say so instead of netsh's "Invalid adapter name"
-  if (!f.adapter) {
+  // rc.8: …or a card the field still remembers that Windows no longer has ("Element not found")
+  const known = f.adapter && adapterList.some(x => x.name.toLowerCase() === f.adapter.toLowerCase());
+  if (!f.adapter || (adapterList.length && !known)) {
     setNetStatus('PICK A NETWORK CARD FIRST — ADAPTER LIST ABOVE (USB ADAPTER UNPLUGGED?)', 'err', 6000);
     return;
   }
