@@ -3826,10 +3826,15 @@ async function loadAdapters(fromApply) {
 function populateLivePreset(fromApply) {
   const live = presets[0];
   if (!live || live.name !== 'LIVE') return;
-  const connected = adapterList.find(a => a.connected && a.ip);
-  if (!connected || !connected.ip) return;
-  live.ip      = connected.ip;
-  live.subnet  = connected.subnet  || live.subnet;
+  // rc.5: no wired card with a live address → the selected card's saved settings (an unplugged
+  // card that was set static). Without this the form kept old values and read as UNSAVED CHANGES.
+  const selName = (document.getElementById('adapter')?.value || '').trim().toLowerCase();
+  const connected = adapterList.find(a => a.connected && a.ip)
+                 || adapterList.find(a => a.name.toLowerCase() === selName && a.savedIp)
+                 || adapterList.find(a => a.savedIp);
+  if (!connected || !(connected.ip || connected.savedIp)) return;
+  live.ip      = connected.ip || connected.savedIp;
+  live.subnet  = connected.subnet  || connected.savedSubnet || live.subnet;
   live.adapter = connected.name    || live.adapter;
   // v7.0.0: LIVE mirrors the whole config — a DHCP-served gateway/DNS is still what the adapter has
   live.gateway = connected.gateway || '';
@@ -4321,6 +4326,19 @@ function updateLiveBar() {
           || adapterList.find(x => x.connected && x.ip)
           || null;
 
+  if (a && !a.ip && a.savedIp) {   // rc.5: unplugged card with a saved static
+    dot.className       = 'live-bar-dot disconnected';
+    ipEl.textContent    = a.savedIp + ' · NO CABLE';
+    ipEl.className      = 'live-bar-ip none';
+    gwEl.style.display  = 'none';
+    gwSep.style.display = 'none';
+    pill.textContent    = 'STATIC';
+    pill.className      = 'live-bar-pill static';
+    pill.style.display  = '';
+    pillSep.style.display = '';
+    adapterEl.textContent = a.name;
+    return;
+  }
   if (!a || !a.ip) {
     dot.className       = 'live-bar-dot disconnected';
     ipEl.textContent    = 'NO ADAPTER';
@@ -4548,7 +4566,7 @@ function updateAdapterStatus() {
   // A gigabit port talking at 100 is the first thing an experienced tech checks.
   const spd = connected ? linkSpeedChip(a) : null;
   // v7.1.0: DISCONNECTED means no link. Link with nothing bound reads NO ADDRESS — a different problem.
-  state.textContent = spd ? spd.text : a.noAddress ? 'NO ADDRESS' : (a.admin === 'Disabled' ? 'DISABLED' : a.state || '').toUpperCase();
+  state.textContent = spd ? spd.text : a.noAddress ? 'NO ADDRESS' : (a.admin === 'Disabled' ? 'DISABLED' : (!a.connected && a.savedIp) ? 'NO CABLE · ' + a.savedIp + ' SAVED' : a.state || '').toUpperCase();
   state.className   = 'adapter-status-state' + (connected ? ' connected' : '') + (spd ? ' ' + spd.cls : '') + (a.noAddress ? ' speed-warn' : '');
   state.title       = spd ? spd.title : a.noAddress ? 'Link is up but Windows has no IPv4 address on it — RENEW asks DHCP again, or APPLY a static' : '';
   renderAdapterTools(a);
@@ -5489,8 +5507,9 @@ async function applyConfig() {
         if (previousConfig) showRevertBtn(previousConfig);
         else hideRevertBtn();
         if (result.partial) setNetStatus(`✓ ${f.ip} IS ON ${(f.adapter || 'ADAPTER').toUpperCase()} — BUT A LATER STEP FAILED (${String(result.partialErr || 'DNS').toUpperCase().slice(0, 60)}) — CHECK DNS`, 'warn', 9000);
+        else if (result.saved) setNetStatus(`✓ SET — ${f.ip} IS SAVED ON ${(f.adapter || 'ADAPTER').toUpperCase()} · NO CABLE YET; IT'S USED AS SOON AS THERE'S LINK`, 'ok', 9000);
         else setNetStatus(`✓ APPLIED — ${f.ip} IS ACTIVE ON ${(f.adapter || 'ADAPTER').toUpperCase()}`, 'ok');
-        markIpApplied(true);
+        markIpApplied(true, result.saved);
         hud.traySetMode(isHalfOpacity ? 'dim' : 'idle');
         setTimeout(() => loadAdapters(true), 2000);
         return true;
@@ -5813,13 +5832,13 @@ function setDhcpStatus(msg, type, ms) { setStatus('dhcp-status', 'status-bar', m
 
 // v7.0.0 — the three-signal confirmation that an IP change really took:
 // status bar (green stripe), IP field (✓ ACTIVE tag + border pulse), live bar flash.
-function markIpApplied(ok) {
+function markIpApplied(ok, saved) {
   const wrap = document.querySelector('.ip-field-wrap');
   const tag  = document.getElementById('ip-applied-tag');
   if (!wrap) return;
   wrap.classList.remove('applied', 'failed');
   void wrap.offsetWidth;
-  if (ok === true)  { if (tag) tag.textContent = '✓ ACTIVE'; wrap.classList.add('applied'); }
+  if (ok === true)  { if (tag) tag.textContent = saved ? '✓ SAVED · NO CABLE' : '✓ ACTIVE'; wrap.classList.add('applied'); }
   if (ok === false) { if (tag) tag.textContent = '✕ FAILED'; wrap.classList.add('failed'); }
   const live = document.getElementById('live-bar-ip');
   if (live && ok === true) { live.classList.remove('flash'); void live.offsetWidth; live.classList.add('flash'); }
@@ -9713,7 +9732,11 @@ function updateLiveBarDhcp() {
 
 // ── adapters ──────────────────────────────────────────────
 function dhcpCurCard() { return D.adapters.find(x => x.name === dEl('dhcp-adapter')?.value) || null; }
-function dhcpCardIps(a) { return a && a.ips ? a.ips.filter(x => !x.apipa).map(x => x.ip) : []; }
+function dhcpCardIps(a) {
+  const live = a && a.ips ? a.ips.filter(x => !x.apipa).map(x => x.ip) : [];
+  // rc.5: no cable → the addresses Windows has saved for it (it comes up on them with link)
+  return live.length || !a || a.connected ? live : (a.saved || []).map(x => x.ip);
+}
 function dhcpUpdateLink() {
   const el = dEl('dhcp-link'), txt = dEl('dhcp-link-txt'); if (!el) return;
   const a = dhcpCurCard();
@@ -9754,7 +9777,7 @@ function dhcpRenderCard() {
   const ips = dhcpCardIps(a);
   if (a.connected && !ips.length) bits.push(`<span class="warn">${a.isDhcp ? 'was DHCP, nothing answered' : 'no address'} — set one in step 2</span>`);
   else if (a.isDhcp === true) bits.push('DHCP');
-  else if (a.isDhcp === false) bits.push('static');
+  else if (a.isDhcp === false) bits.push(!a.connected && a.saved && a.saved.length ? `static ${escHtml(a.saved[0].ip)} — saved, used when the cable is in` : 'static');
   sub.innerHTML = bits.join(' · ');
   const cur = dEl('dcfg-adapterIp')?.value || '';
   const primary = a.ip && !a.apipa ? a.ip : ips[0];
@@ -9764,7 +9787,7 @@ function dhcpRenderCard() {
     html += `<span class="dhcp-chip${ip === cur ? ' on' : ''}" data-ip="${escHtml(ip)}" title="Answer DHCP from ${escHtml(ip)} — devices get addresses next to it">${ip === cur ? '✓ ' : ''}${escHtml(ip)}${ip !== primary ? '<span class="tag">ALIAS</span>' : ''}${temp ? '<span class="tag">TEMP</span>' : ''}</span>`;
   }
   if (!ips.length && a.connected) html += `<span class="dhcp-chip set" data-act="set" title="Give the laptop an address on this cable — 192.168.0.1 by default. It stays until you change it.">SET LAPTOP IP…</span>`;
-  if (ips.length) html += `<span class="dhcp-chip add" data-act="alias" title="Add another address on this card to hand out addresses on a different subnet. It stays until you remove it (✕ in MULTI-IP).">+ ALIAS</span>`;
+  if (ips.length && a.connected) html += `<span class="dhcp-chip add" data-act="alias" title="Add another address on this card to hand out addresses on a different subnet. It stays until you remove it (✕ in MULTI-IP).">+ ALIAS</span>`;
   chips.innerHTML = html;
   chips.querySelectorAll('[data-ip]').forEach(el => el.onclick = () => dhcpPickLaptopIp(el.dataset.ip));
   const setBtn = chips.querySelector('[data-act="set"]'); if (setBtn) setBtn.onclick = () => dhcpSetLaptopIp();

@@ -1137,6 +1137,23 @@ async function readEnableDhcpAll() {
   return map;
 }
 
+// rc.5: the addresses Windows has SAVED for each card (the persistent store) — what a card
+// with no cable will come up on once there's link. On an unplugged card netsh's "DHCP
+// enabled" and the registry's EnableDHCP can both still say DHCP after a static was set
+// (seen on a Realtek USB 2.5GbE: both read DHCP, the card came up static 192.168.0.1 on
+// link). A saved manual address is the truth for those cards. alias(lower) → [{ip, subnet}]
+function prefixToMask(n) { n = Math.max(0, Math.min(32, parseInt(n, 10) || 0)); const m = n ? (0xffffffff << (32 - n)) >>> 0 : 0; return [24, 16, 8, 0].map(s => (m >>> s) & 255).join('.'); }
+async function readSavedIpv4All() {
+  const out = String((await SPAWN.psRun("Get-NetIPAddress -AddressFamily IPv4 -PolicyStore PersistentStore -ErrorAction SilentlyContinue | ForEach-Object { 'SAVED|' + $_.InterfaceAlias + '|' + $_.IPAddress + '|' + $_.PrefixLength }", { timeoutMs: 8000 }).catch(() => ({ stdout: '' }))).stdout || '');
+  const map = {};
+  for (const line of out.split(/\r?\n/)) {
+    const m = line.match(/^SAVED\|(.+)\|(\d{1,3}(?:\.\d{1,3}){3})\|(\d{1,2})\s*$/);
+    if (!m || /^169\.254\./.test(m[2])) continue;
+    (map[m[1].trim().toLowerCase()] ||= []).push({ ip: m[2], subnet: prefixToMask(m[3]) });
+  }
+  return map;
+}
+
 // ── IPC: get-adapters (full, with netsh status) ────────────
 // v7.2.0: one refresh at a time — the IP tab, the DHCP tab and the LIVE poll often ask
 // within the same second; they now share one set of launches instead of three.
@@ -1316,6 +1333,18 @@ async function getAdaptersFullOnce() {
         if (!guid) continue;
         const v = regAllLate[guid.toLowerCase()];
         if (v !== undefined) a.isDhcp = v;
+      } catch {}
+    }
+
+    // rc.5: a card with no live address shows what Windows has saved for it (applies on link)
+    if (adapters.some(a => !a.ip && a.admin !== 'Disabled')) {
+      try {
+        const saved = await readSavedIpv4All();
+        for (const a of adapters) {
+          if (a.ip || a.admin === 'Disabled') continue;
+          const list = saved[a.name.toLowerCase()];
+          if (list && list.length) { a.savedIps = list; a.savedIp = list[0].ip; a.savedSubnet = list[0].subnet; a.isDhcp = false; }
+        }
       } catch {}
     }
 
@@ -1919,6 +1948,14 @@ async function readAdapterDhcpState(safeAdapter) {
   const cfg = await execAsync('netsh interface ip show config', { timeout: 12000 }).catch(() => '');
   const blocks = cfg.split(/\r?\n(?=Configuration for interface)/i);
   const block  = findAdapterBlock(blocks, safeAdapter);
+  // rc.5: with no cable, netsh says "DHCP enabled: Yes" even for a card set static — a saved
+  // address is the truth then (see readSavedIpv4All)
+  if (block && /DHCP enabled:\s+Yes/i.test(block) && !/IP Address:\s+[\d.]+/i.test(block)) {
+    try {
+      const saved = (await readSavedIpv4All())[String(safeAdapter).toLowerCase()] || [];
+      if (saved.length) return { dhcp: false, ip: saved[0].ip, mask: saved[0].subnet, gw: null, dns: [], savedOnly: true };
+    } catch {}
+  }
   if (block) {
     return {
       dhcp: /DHCP enabled:\s+Yes/i.test(block),
@@ -1956,6 +1993,8 @@ async function addAliasCoreUnlocked(safeAdapter, ip, subnet, tag = 'alias_add') 
   // card is on DHCP (the config read timed out), stop rather than risk the lease.
   const st = await readAdapterDhcpState(safeAdapter);
   if (!st) return { ok: false, err: 'Could not read the card\'s settings (Windows was slow to answer) — try again in a moment', converted: false };
+  // rc.5: no cable — the card's static is only saved; an extra address can't be confirmed on it
+  if (st.savedOnly) return { ok: false, err: `No cable on ${safeAdapter} — plug it in first (its ${st.ip} is saved and comes up with link; extra addresses go on after that)`, converted: false };
   let cmd = `netsh interface ip add address "${safeAdapter}" ${ip} ${subnet}`;
   let converted = false;
   if (st.dhcp) {
@@ -3771,16 +3810,16 @@ async function applyNetworkConfig({ adapter, ip, subnet, gateway, dns, tag }) {
   // the renderer then never armed REVERT for it.
   const seen = await verifyStaticIp(safeAdapter, ip);
   if (seen) {
-    diagVerify(opTag, true, `${safeAdapter} now ${ip}/${subnet}${gateway && gateway.trim() ? ' gw ' + gateway.trim() : ''} (${seen})${result.ok ? '' : ' — netsh reported: ' + (result.err || 'an error')}`);
-    return { ...result, ok: true, verified: true, partial: !result.ok, partialErr: result.ok ? null : result.err };
+    diagVerify(opTag, true, `${safeAdapter} ${seen === 'saved' ? 'set to' : 'now'} ${ip}/${subnet}${gateway && gateway.trim() ? ' gw ' + gateway.trim() : ''} (${seen === 'saved' ? 'saved — no cable; used when there is link' : seen})${result.ok ? '' : ' — netsh reported: ' + (result.err || 'an error')}`);
+    return { ...result, ok: true, verified: true, saved: seen === 'saved', partial: !result.ok, partialErr: result.ok ? null : result.err };
   }
   if (!result.ok) { diagVerify(opTag, false, `${safeAdapter} expected ${ip} — ${result.err || 'netsh failed'}`); return { ...result, err: explainNetshError(result.err, ip) }; }
-  diagVerify(opTag, false, `${safeAdapter} expected ${ip} — not seen in netsh or registry after 4.5s`);
+  diagVerify(opTag, false, `${safeAdapter} expected ${ip} — not on the card or in its saved settings after 4.5s`);
   return { ...result, ok: false, verified: false, err: 'Command ran but IP did not change — check adapter name or admin rights' };
   });
 }
-// Is `ip` configured on the card? os.networkInterfaces (free) → netsh → registry (disconnected
-// static cards), polled 3× 1.5 s. Every read survives its own timeout. Returns where it was
+// Is `ip` configured on the card? os.networkInterfaces (free) → netsh → saved settings (cards
+// with no cable), polled 3× 1.5 s. Every read survives its own timeout. Returns where it was
 // seen, or null.
 async function verifyStaticIp(safeAdapter, ip) {
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -3789,15 +3828,12 @@ async function verifyStaticIp(safeAdapter, ip) {
     const cfg = await execAsync('netsh interface ip show config', { timeout: 12000 }).catch(() => '');
     const block = findAdapterBlock(cfg.split(/\r?\n(?=Configuration for interface)/i), safeAdapter);
     if (block && block.includes(ip)) return 'netsh';
+    // rc.5: no link → the address isn't live; Windows' saved settings say whether it'll come up
+    // on it. (The registry's IPAddress value used here before can be a leftover from an older
+    // static, so it could pass a change that didn't happen.)
     try {
-      const guid = await getAdapterGuid(safeAdapter);
-      if (guid) {
-        const regOut = (await execAsync(
-          `reg query "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\${guid}" /v IPAddress`,
-          { timeout: 8000 }
-        ).catch(() => '')).replace(/\r/g, '');
-        if (regOut.includes(ip)) return 'registry';
-      }
+      const saved = (await readSavedIpv4All())[String(safeAdapter).toLowerCase()] || [];
+      if (saved.some(x => x.ip === ip)) return 'saved';
     } catch {}
   }
   return null;
@@ -4085,21 +4121,21 @@ async function snapshotAdapterConfig(name) {
   let subnet = snMatch ? snMatch[1] : null;
   let gateway= gwMatch ? gwMatch[1] : null;
 
-  // Registry fallback for disconnected static adapters
+  // rc.5: no address in netsh (no cable) → what Windows has saved for the card. Its "DHCP
+  // enabled: Yes" is not to be believed then; a saved address means it's static. The gateway
+  // still comes from the registry (the saved-address read doesn't carry it).
+  let savedStatic = false;
   if (!ip) {
     try {
-      const guid = await getAdapterGuid(name);
-      if (guid) {
-        const base = `HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\${guid}`;
-        const ipReg = (await execAsync(`reg query "${base}" /v IPAddress`, { timeout: 2000 }).catch(() => '')).replace(/\r/g, '');
-        const snReg = (await execAsync(`reg query "${base}" /v SubnetMask`, { timeout: 2000 }).catch(() => '')).replace(/\r/g, '');
-        const gwReg = (await execAsync(`reg query "${base}" /v DefaultGateway`, { timeout: 2000 }).catch(() => '')).replace(/\r/g, '');
-        const ipR = ipReg.match(/IPAddress\s+REG_MULTI_SZ\s+([\d.]+)/i);
-        const snR = snReg.match(/SubnetMask\s+REG_MULTI_SZ\s+([\d.]+)/i);
-        const gwR = gwReg.match(/DefaultGateway\s+REG_MULTI_SZ\s+([\d.]+)/i);
-        if (ipR) ip     = ipR[1];
-        if (snR) subnet = snR[1];
-        if (gwR) gateway= gwR[1];
+      const saved = (await readSavedIpv4All())[String(name).toLowerCase()] || [];
+      if (saved.length) { ip = saved[0].ip; subnet = saved[0].subnet; savedStatic = true; }
+      if (savedStatic && !gateway) {
+        const guid = await getAdapterGuid(name);
+        if (guid) {
+          const gwReg = (await execAsync(`reg query "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\${guid}" /v DefaultGateway`, { timeout: 2000 }).catch(() => '')).replace(/\r/g, '');
+          const gwR = gwReg.match(/DefaultGateway\s+REG_MULTI_SZ\s+([\d.]+)/i);
+          if (gwR) gateway = gwR[1];
+        }
       }
     } catch {}
   }
@@ -4119,7 +4155,7 @@ async function snapshotAdapterConfig(name) {
 
   return {
     adapter: name,
-    isDhcp,
+    isDhcp:  savedStatic ? false : isDhcp,
     ip:      ip      || null,
     subnet:  subnet  || null,
     gateway: gateway || null,
