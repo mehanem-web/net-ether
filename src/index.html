@@ -5295,6 +5295,11 @@ function clearDirtyState() {
 
 async function applyConfig() {
   const f = getFields();
+  // rc.7: no card picked (e.g. the USB adapter was pulled) — say so instead of netsh's "Invalid adapter name"
+  if (!f.adapter) {
+    setNetStatus('PICK A NETWORK CARD FIRST — ADAPTER LIST ABOVE (USB ADAPTER UNPLUGGED?)', 'err', 6000);
+    return;
+  }
   if (!f.ip || !f.subnet) {
     setNetStatus('ERROR: IP AND SUBNET ARE REQUIRED', 'err', 5000);
     return;

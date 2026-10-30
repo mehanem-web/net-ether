@@ -246,6 +246,9 @@ NET-ETHER/
 The stability release: what 7.2 added, plus a full bug hunt, so the fleet gets one update that lasts.
 Started from a day in the field on two addresses where ─ simply refused to hide the window.
 
+**Since rc.6**
+- APPLY with no network card picked (the USB adapter was pulled) says "PICK A NETWORK CARD FIRST" instead of netsh's "Invalid adapter name".
+
 **rc.6 — back to DHCP on a card with no cable (2026-10-29, work laptop)**
 - **→ DHCP, REVERT and PUT BACK now work on an unplugged card that's set static.** Windows answers netsh's "set to DHCP" with "DHCP is already enabled" (the same wrong reading rc.5 works around), so the static stayed saved and came back with the cable — while ETHER logged "DHCP enabled — was already". ETHER now clears the saved static directly (PowerShell: saved address, saved gateway route, DHCP on in the saved settings) and only calls it done once nothing is saved for the card. Log: `dhcp_saved` / `revert_saved` with what was cleared.
 - The README now records why 7.2+ gets a UAC prompt on fleet laptops (the EPM rule is pinned to one rotating Microsoft intermediate CA) and the fix options for IT.
