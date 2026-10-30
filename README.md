@@ -242,9 +242,13 @@ NET-ETHER/
 
 ## CHANGELOG
 
-### v7.3.0 (in progress — rc.5, 2026-10-29)
+### v7.3.0 (in progress — rc.6, 2026-10-29)
 The stability release: what 7.2 added, plus a full bug hunt, so the fleet gets one update that lasts.
 Started from a day in the field on two addresses where ─ simply refused to hide the window.
+
+**rc.6 — back to DHCP on a card with no cable (2026-10-29, work laptop)**
+- **→ DHCP, REVERT and PUT BACK now work on an unplugged card that's set static.** Windows answers netsh's "set to DHCP" with "DHCP is already enabled" (the same wrong reading rc.5 works around), so the static stayed saved and came back with the cable — while ETHER logged "DHCP enabled — was already". ETHER now clears the saved static directly (PowerShell: saved address, saved gateway route, DHCP on in the saved settings) and only calls it done once nothing is saved for the card. Log: `dhcp_saved` / `revert_saved` with what was cleared.
+- The README now records why 7.2+ gets a UAC prompt on fleet laptops (the EPM rule is pinned to one rotating Microsoft intermediate CA) and the fix options for IT.
 
 **rc.5 — a card with no cable (2026-10-29, work laptop)**
 - **A card with no cable shows the static it's set to.** Windows saves the address and uses it the moment there's link, but until then nothing is live — and its quick answers ("DHCP enabled: Yes", the registry's EnableDHCP) still say DHCP. ETHER believed them: after SET LAPTOP IP or APPLY on an unplugged USB card, both tabs labelled it DHCP, the top bar said NO ADAPTER, the DHCP tab showed the laptop as "—", and the IP tab's form looked like unsaved changes. ETHER now reads Windows' saved settings for a card without an address: top bar `192.168.0.1 · NO CABLE` + STATIC, the card line `NO CABLE · 192.168.0.1 SAVED`, the DHCP tab `static 192.168.0.1 — saved, used when the cable is in`.
