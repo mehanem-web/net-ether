@@ -21,7 +21,7 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 § 7.2.0 (lines marked *(7.3.0)* changed), at home. Then one real site day on the work laptop
 (MANAGED LAPTOP). Anything that breaks → COPY DIAGNOSTICS → next rc. The fleet only sees 7.3.0.
 
-**Release 7.3.0 (2026-10-30).** rc.4–rc.8 checks below are ticked as seen. The rc.1–rc.3 "one pass" lists further down were run by hand on 10-28 (home pass steps A–H; the DHCP device bench was skipped — no free port) and not ticked line by line. MULTI-IP with the USB adapter pulled: greyed out, can't add (work laptop 10-30). Still open: MULTI-IP with the adapter in and the cable out → "No cable on … plug it in first" (rc.5).
+**Release 7.3.0 (2026-10-30).** rc.4–rc.8 checks below are ticked as seen. The rc.1–rc.3 "one pass" lists further down were run by hand on 10-28 (home pass steps A–H; the DHCP device bench was skipped — no free port) and not ticked line by line. MULTI-IP with the USB adapter pulled: greyed out, can't add (work laptop 10-30). MULTI-IP with the adapter in and the cable out, card on DHCP: rc.8 said "DHCP ADAPTER HAS NO CURRENT IP — APPLY A STATIC IP FIRST" (wrong advice) → 7.3.0 says "… has no address yet — plug the cable in …". Check once on 7.3.0. Card set static with the cable out → "No cable on … plug it in first" (rc.5), not run.
 
 **rc.8 additions**
 - [x] *(work laptop 10-30, rc.8)* Card selected, pull the USB network adapter → top bar NO ADAPTER (not the card's old line); APPLY → "PICK A NETWORK CARD FIRST"; REVERT or → DHCP → "<CARD> ISN'T THERE — PLUG THE USB ADAPTER BACK IN", REVERT still offered. Plug it back → the card comes back in the list.

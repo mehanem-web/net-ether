@@ -1998,7 +1998,8 @@ async function addAliasCoreUnlocked(safeAdapter, ip, subnet, tag = 'alias_add') 
   let cmd = `netsh interface ip add address "${safeAdapter}" ${ip} ${subnet}`;
   let converted = false;
   if (st.dhcp) {
-    if (!st.ip) return { ok: false, err: 'DHCP adapter has no current IP — apply a static IP first', converted };
+    // 7.3.0: on DHCP with no address is almost always no cable (or no DHCP server yet) — say that
+    if (!st.ip) return { ok: false, err: `${safeAdapter} has no address yet — plug the cable in (or wait for DHCP), then add. Or APPLY a static first`, converted };
     const sn = isValidSubnet(st.mask) ? st.mask : '255.255.255.0';
     const setStatic = st.gw && isValidIp(st.gw)
       ? `netsh interface ip set address "${safeAdapter}" static ${st.ip} ${sn} ${st.gw}`
