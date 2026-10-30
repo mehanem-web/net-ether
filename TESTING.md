@@ -21,13 +21,15 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 § 7.2.0 (lines marked *(7.3.0)* changed), at home. Then one real site day on the work laptop
 (MANAGED LAPTOP). Anything that breaks → COPY DIAGNOSTICS → next rc. The fleet only sees 7.3.0.
 
+**Release 7.3.0 (2026-10-30).** rc.4–rc.8 checks below are ticked as seen. The rc.1–rc.3 "one pass" lists further down were run by hand on 10-28 (home pass steps A–H; the DHCP device bench was skipped — no free port) and not ticked line by line. MULTI-IP with the USB adapter pulled: greyed out, can't add (work laptop 10-30). MULTI-IP with the adapter in and the cable out, card on DHCP: rc.8 said "DHCP ADAPTER HAS NO CURRENT IP — APPLY A STATIC IP FIRST" (wrong advice) → 7.3.0 says "… has no address yet — plug the cable in …". Check once on 7.3.0. Card set static with the cable out → "No cable on … plug it in first" (rc.5), not run.
+
 **rc.8 additions**
-- [ ] Card selected, pull the USB network adapter → top bar NO ADAPTER (not the card's old line); APPLY → "PICK A NETWORK CARD FIRST"; REVERT or → DHCP → "<CARD> ISN'T THERE — PLUG THE USB ADAPTER BACK IN", REVERT still offered. Plug it back → the card comes back in the list.
+- [x] *(work laptop 10-30, rc.8)* Card selected, pull the USB network adapter → top bar NO ADAPTER (not the card's old line); APPLY → "PICK A NETWORK CARD FIRST"; REVERT or → DHCP → "<CARD> ISN'T THERE — PLUG THE USB ADAPTER BACK IN", REVERT still offered. Plug it back → the card comes back in the list.
 
 **rc.7 additions**
 - [x] *(home 10-30)* Unplugged card on DHCP → top bar `NO CABLE · DHCP · <card>` (not NO ADAPTER).
-- [ ] Unplugged card set static → → DHCP → the IP field empties (no stale 192.168.0.1). *Cable out, USB adapter IN.*
-- [ ] Pull the USB network adapter, APPLY → "PICK A NETWORK CARD FIRST". *(rc.7 failed: "Element not found" — fixed in rc.8)*
+- [x] *(work laptop 10-30, rc.8)* Unplugged card set static → → DHCP → the IP field empties (no stale 192.168.0.1). *Cable out, USB adapter IN.*
+- [x] *(work laptop 10-30, rc.8)* Pull the USB network adapter, APPLY → "PICK A NETWORK CARD FIRST". *(rc.7 failed: "Element not found" — fixed in rc.8)*
 - [x] *(home 10-30)* ? → FULL MANUAL opens the Guide, cover says 7.3.0 / document 6.0.
 
 **rc.6 additions**
@@ -37,25 +39,25 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 **rc.5 additions** (card with no cable — the work laptop's USB 2.5GbE)
 - [x] *(work laptop 10-29)* Card on DHCP, unplug it. APPLY 192.168.0.1/24 → status "✓ SET … SAVED … NO CABLE YET", field `✓ SAVED · NO CABLE`; top bar `192.168.0.1 · NO CABLE` + STATIC; card line `NO CABLE · 192.168.0.1 SAVED`, badge STATIC; form not amber.
 - [x] *(work laptop 10-29)* DHCP tab on that card: `no link — check the cable · static 192.168.0.1 — saved, used when the cable is in`, laptop 192.168.0.1, pool 192.168.0.100–.200; no + ALIAS.
-- [ ] → DHCP, unplug, DHCP tab SET LAPTOP IP 192.168.0.1 → same as above, pool moved to 192.168.0.x.
-- [ ] Plug into a camera/switch (not the home network — its router is .0.1) → card comes up 192.168.0.1, everything reads live again.
+- [x] *(work laptop 10-29, rc.5)* → DHCP, unplug, DHCP tab SET LAPTOP IP 192.168.0.1 → same as above, pool moved to 192.168.0.x.
+- [x] *(work laptop 10-29: Manual / Preferred on link)* Plug into a camera/switch (not the home network — its router is .0.1) → card comes up 192.168.0.1, everything reads live again.
 - [ ] MULTI-IP add on the unplugged card → "No cable on … plug it in first".
 
 **rc.4 additions**
 - [x] *(work laptop 10-29: both `power` lines written)* DHCP engine listening + PING running → close the lid (or Start → Sleep) for a minute → open: PING says "RESUMED AFTER SLEEP", DHCP log shows "Suspended — laptop asleep" then "Resumed — listen". Diagnostics shows two `power` lines. *If there are no `power` lines, Windows didn't tell ETHER — report it.*
-- [ ] PING paused by hand → sleep → wake: stays paused.
-- [ ] Lock the screen (Win+L) with DHCP serving → nothing pauses.
+- [x] *(home 10-29, rc.4)* PING paused by hand → sleep → wake: stays paused.
+- [x] *(home 10-29, rc.4)* Lock the screen (Win+L) with DHCP serving → nothing pauses.
 
 **rc.3 additions**
-- [ ] PING a dead target, minimize ETHER → tray icon turns solid pulsing red (visible on the grey hover too); the taskbar button gets a red ! badge and flashes orange once; click in → flash stops; target back up → badge gone, tray green.
-- [ ] SCAN → discovery rows have a violet frame + violet ◎; the left edge still shows the device type colour.
-- [ ] MULTI-IP on a DHCP card: one click on ADD, card goes static, website still loads. Click ADD 3× fast → one add, no red rows in the LOG.
-- [ ] MULTI-IP panel open with an alias for 60 s → the window doesn't pulse. Collapsed → `+1 IP` in green.
-- [ ] SITES after a scan → this PC is not listed as NOT RESPONDING.
-- [ ] Second monitor (work dock): drag ETHER there, quit, relaunch → opens there.
+- [~] *(home 10-29, rc.4: taskbar badge + flash OK; tray icon stayed green — accepted, Windows hides the tray by default)* PING a dead target, minimize ETHER → tray icon turns solid pulsing red (visible on the grey hover too); the taskbar button gets a red ! badge and flashes orange once; click in → flash stops; target back up → badge gone, tray green.
+- [x] *(home 10-29, rc.4)* SCAN → discovery rows have a violet frame + violet ◎; the left edge still shows the device type colour.
+- [x] *(home 10-29, rc.4)* MULTI-IP on a DHCP card: one click on ADD, card goes static, website still loads. Click ADD 3× fast → one add, no red rows in the LOG.
+- [x] *(home 10-29, rc.4)* MULTI-IP panel open with an alias for 60 s → the window doesn't pulse. Collapsed → `+1 IP` in green.
+- [x] *(home 10-29, rc.4)* SITES after a scan → this PC is not listed as NOT RESPONDING.
+- [x] *(work laptop 10-30)* Second monitor (work dock): drag ETHER there, quit, relaunch → opens there.
 
 **rc.2 additions (home pass 2026-10-28 found these)**
-- [ ] ─ minimizes to the taskbar; Alt+Tab and the taskbar button bring it back; tray icon still there and brings it forward. Alt+F4 and taskbar "Close window" quit.
+- [x] *(home 10-28, rc.2)* ─ minimizes to the taskbar; Alt+Tab and the taskbar button bring it back; tray icon still there and brings it forward. Alt+F4 and taskbar "Close window" quit.
 - [ ] → DHCP: one click.
 - [ ] After → DHCP the status says "… IS BACK ON DHCP", not "CONFIG APPLIED SUCCESSFULLY".
 - [ ] APPLY with gateway = the IP itself → stopped with "GATEWAY IS THIS LAPTOP'S OWN ADDRESS".

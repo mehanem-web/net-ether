@@ -242,9 +242,12 @@ NET-ETHER/
 
 ## CHANGELOG
 
-### v7.3.0 (in progress — rc.8, 2026-10-30)
+### v7.3.0 (2026-10-30)
 The stability release: what 7.2 added, plus a full bug hunt, so the fleet gets one update that lasts.
 Started from a day in the field on two addresses where ─ simply refused to hide the window.
+
+**Final, from rc.8**
+- MULTI-IP on a DHCP card with no address (cable out, or no DHCP server yet) says "<card> has no address yet — plug the cable in (or wait for DHCP), then add. Or APPLY a static first" instead of "DHCP adapter has no current IP — apply a static IP first".
 
 **rc.8 — a USB network adapter pulled out (2026-10-30)**
 - The adapter field kept the card's name after Windows dropped it, so APPLY ran netsh against it ("Element not found") and the top bar kept the card's last line. APPLY now checks the card still exists ("PICK A NETWORK CARD FIRST"), → DHCP and REVERT say "<CARD> ISN'T THERE — PLUG THE USB ADAPTER BACK IN" (REVERT keeps its button; it used to report "still static"), the top bar reads NO ADAPTER, and netsh's "Element not found" is explained in plain words.
