@@ -6640,6 +6640,11 @@ async function adapterRenew() {
 async function applyDhcp() {
   const adapter = validateAdapterField('adapter', setNetStatus);
   if (!adapter) return false;
+  // rc.8: the card is gone (USB adapter pulled) — Windows has nothing to change; REVERT keeps its button
+  if (adapterList.length && !adapterList.some(x => x.name.toLowerCase() === adapter.toLowerCase())) {
+    setNetStatus(`${adapter.toUpperCase()} ISN'T THERE — PLUG THE USB ADAPTER BACK IN, THEN TRY AGAIN`, 'err', 7000);
+    return false;
+  }
   if (!window.hud) {
     const cmd = `netsh interface ip set address "${adapter}" dhcp\nnetsh interface ip set dns "${adapter}" dhcp`;
     document.getElementById('cmd-text').textContent = cmd;
