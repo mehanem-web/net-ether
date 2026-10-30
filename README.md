@@ -242,9 +242,12 @@ NET-ETHER/
 
 ## CHANGELOG
 
-### v7.3.0 (in progress — rc.7, 2026-10-30)
+### v7.3.0 (in progress — rc.8, 2026-10-30)
 The stability release: what 7.2 added, plus a full bug hunt, so the fleet gets one update that lasts.
 Started from a day in the field on two addresses where ─ simply refused to hide the window.
+
+**rc.8 — a USB network adapter pulled out (2026-10-30)**
+- The adapter field kept the card's name after Windows dropped it, so APPLY ran netsh against it ("Element not found") and the top bar kept the card's last line. APPLY now checks the card still exists ("PICK A NETWORK CARD FIRST"), → DHCP and REVERT say "<CARD> ISN'T THERE — PLUG THE USB ADAPTER BACK IN" (REVERT keeps its button; it used to report "still static"), the top bar reads NO ADAPTER, and netsh's "Element not found" is explained in plain words.
 
 **rc.7 — polish from the rc.6 check, and the Guide (2026-10-30)**
 - APPLY with no network card picked (the USB adapter was pulled) says "PICK A NETWORK CARD FIRST" instead of netsh's "Invalid adapter name".

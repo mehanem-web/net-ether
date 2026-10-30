@@ -21,11 +21,14 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 § 7.2.0 (lines marked *(7.3.0)* changed), at home. Then one real site day on the work laptop
 (MANAGED LAPTOP). Anything that breaks → COPY DIAGNOSTICS → next rc. The fleet only sees 7.3.0.
 
+**rc.8 additions**
+- [ ] Card selected, pull the USB network adapter → top bar NO ADAPTER (not the card's old line); APPLY → "PICK A NETWORK CARD FIRST"; REVERT or → DHCP → "<CARD> ISN'T THERE — PLUG THE USB ADAPTER BACK IN", REVERT still offered. Plug it back → the card comes back in the list.
+
 **rc.7 additions**
-- [ ] Unplugged card on DHCP → top bar `NO CABLE · DHCP · <card>` (not NO ADAPTER).
-- [ ] Unplugged card set static → → DHCP → the IP field empties (no stale 192.168.0.1).
-- [ ] Pull the USB network adapter, APPLY → "PICK A NETWORK CARD FIRST".
-- [ ] ? → FULL MANUAL opens the Guide, cover says 7.3.0 / document 6.0.
+- [x] *(home 10-30)* Unplugged card on DHCP → top bar `NO CABLE · DHCP · <card>` (not NO ADAPTER).
+- [ ] Unplugged card set static → → DHCP → the IP field empties (no stale 192.168.0.1). *Cable out, USB adapter IN.*
+- [ ] Pull the USB network adapter, APPLY → "PICK A NETWORK CARD FIRST". *(rc.7 failed: "Element not found" — fixed in rc.8)*
+- [x] *(home 10-30)* ? → FULL MANUAL opens the Guide, cover says 7.3.0 / document 6.0.
 
 **rc.6 additions**
 - [x] *(work laptop 10-29: dhcp_saved OK, lease .141)* Unplugged card set static 192.168.0.1 → → DHCP (IP tab) → "BACK ON DHCP"; log shows `dhcp_saved` OK and VERIFY "saved static cleared (no cable)"; top bar no longer shows `192.168.0.1 · NO CABLE`. Plug into a DHCP network → gets a lease (not 192.168.0.1).

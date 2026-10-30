@@ -3842,6 +3842,7 @@ async function verifyStaticIp(safeAdapter, ip) {
 // lease or an alias) — say that instead of parroting netsh.
 function explainNetshError(err, ip) {
   if (err && /object already exists/i.test(err)) return `${ip} is already on this adapter (DHCP lease or alias) — switch to DHCP first, or use a different address`;
+  if (err && /element not found/i.test(err)) return 'Windows doesn\'t have that network card right now — USB adapter unplugged? Plug it in or pick another card';
   return err;
 }
 ipcMain.handle('apply-network-config', async (e, args) => applyNetworkConfig(args || {}));
