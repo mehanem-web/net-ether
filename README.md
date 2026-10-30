@@ -242,11 +242,11 @@ NET-ETHER/
 
 ## CHANGELOG
 
-### v7.3.0 (in progress — rc.6, 2026-10-29)
+### v7.3.0 (in progress — rc.7, 2026-10-30)
 The stability release: what 7.2 added, plus a full bug hunt, so the fleet gets one update that lasts.
 Started from a day in the field on two addresses where ─ simply refused to hide the window.
 
-**Since rc.6**
+**rc.7 — polish from the rc.6 check, and the Guide (2026-10-30)**
 - APPLY with no network card picked (the USB adapter was pulled) says "PICK A NETWORK CARD FIRST" instead of netsh's "Invalid adapter name".
 - An unplugged card on DHCP reads `NO CABLE · DHCP · <card>` in the top bar (was NO ADAPTER), and → DHCP on an unplugged card empties the address field instead of leaving the static that was just removed.
 - The log's saved-settings clear line shows `[powershell <n>ms]` instead of `[? ]`.
