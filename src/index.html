@@ -3832,7 +3832,16 @@ function populateLivePreset(fromApply) {
   const connected = adapterList.find(a => a.connected && a.ip)
                  || adapterList.find(a => a.name.toLowerCase() === selName && a.savedIp)
                  || adapterList.find(a => a.savedIp);
-  if (!connected || !(connected.ip || connected.savedIp)) return;
+  if (!connected || !(connected.ip || connected.savedIp)) {
+    // rc.7: the selected card is unplugged and on DHCP (e.g. right after → DHCP with no cable) —
+    // nothing to show, so empty the address instead of keeping the static that was just removed
+    const sel = adapterList.find(a => a.name.toLowerCase() === selName);
+    if (sel && !sel.ip && !sel.savedIp && sel.isDhcp === true && activePreset === 0 && !isDirty) {
+      live.ip = ''; live.gateway = ''; live.dns = ''; live.adapter = sel.name;
+      for (const id of ['ip', 'gateway', 'dns']) { const el = document.getElementById(id); if (el) el.value = ''; }
+    }
+    return;
+  }
   live.ip      = connected.ip || connected.savedIp;
   live.subnet  = connected.subnet  || connected.savedSubnet || live.subnet;
   live.adapter = connected.name    || live.adapter;
@@ -4336,6 +4345,17 @@ function updateLiveBar() {
     pill.className      = 'live-bar-pill static';
     pill.style.display  = '';
     pillSep.style.display = '';
+    adapterEl.textContent = a.name;
+    return;
+  }
+  if (a && !a.ip && !a.connected && a.admin !== 'Disabled') {   // rc.7: unplugged card on DHCP — say that, not NO ADAPTER
+    dot.className       = 'live-bar-dot disconnected';
+    ipEl.textContent    = 'NO CABLE';
+    ipEl.className      = 'live-bar-ip none';
+    gwEl.style.display  = 'none';
+    gwSep.style.display = 'none';
+    if (a.isDhcp === true) { pill.textContent = 'DHCP'; pill.className = 'live-bar-pill dhcp'; pill.style.display = ''; pillSep.style.display = ''; }
+    else { pill.style.display = 'none'; pillSep.style.display = 'none'; }
     adapterEl.textContent = a.name;
     return;
   }

@@ -22,8 +22,8 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 (MANAGED LAPTOP). Anything that breaks → COPY DIAGNOSTICS → next rc. The fleet only sees 7.3.0.
 
 **rc.6 additions**
-- [ ] Unplugged card set static 192.168.0.1 → → DHCP (IP tab) → "BACK ON DHCP"; log shows `dhcp_saved` OK and VERIFY "saved static cleared (no cable)"; top bar no longer shows `192.168.0.1 · NO CABLE`. Plug into a DHCP network → gets a lease (not 192.168.0.1).
-- [ ] Same with REVERT right after an APPLY on the unplugged card.
+- [x] *(work laptop 10-29: dhcp_saved OK, lease .141)* Unplugged card set static 192.168.0.1 → → DHCP (IP tab) → "BACK ON DHCP"; log shows `dhcp_saved` OK and VERIFY "saved static cleared (no cable)"; top bar no longer shows `192.168.0.1 · NO CABLE`. Plug into a DHCP network → gets a lease (not 192.168.0.1).
+- [x] *(work laptop 10-29: revert_saved OK)* Same with REVERT right after an APPLY on the unplugged card.
 
 **rc.5 additions** (card with no cable — the work laptop's USB 2.5GbE)
 - [x] *(work laptop 10-29)* Card on DHCP, unplug it. APPLY 192.168.0.1/24 → status "✓ SET … SAVED … NO CABLE YET", field `✓ SAVED · NO CABLE`; top bar `192.168.0.1 · NO CABLE` + STATIC; card line `NO CABLE · 192.168.0.1 SAVED`, badge STATIC; form not amber.

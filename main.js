@@ -3873,9 +3873,10 @@ async function applyDhcpConfig({ adapter, tag }) {
                `Get-NetRoute -InterfaceAlias ${q} -AddressFamily IPv4 -PolicyStore PersistentStore -ErrorAction SilentlyContinue | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue; ` +
                `Set-NetIPInterface -InterfaceAlias ${q} -AddressFamily IPv4 -Dhcp Enabled -PolicyStore PersistentStore -ErrorAction Stop; 'CLEARED'`;
     let r = null;
+    const t0 = Date.now();
     try { r = await SPAWN.psRun(ps, { timeoutMs: 20000 }); } catch (e) { r = { stdout: '', stderr: e.message }; }
     const okClr = /CLEARED/.test((r && r.stdout) || '');
-    diagAdd({ kind: 'op', tag: opTag + '_saved', ok: okClr,
+    diagAdd({ kind: 'op', tag: opTag + '_saved', ok: okClr, mode: 'powershell', ms: Date.now() - t0,
       note: `${safeAdapter}: no cable — cleared the saved static ${savedLeft.map(x => x.ip).join(', ')} (PowerShell, saved settings)${okClr ? '' : ' — ' + String((r && r.stderr) || 'not confirmed').trim().slice(0, 160)}` });
   }
 
