@@ -169,6 +169,20 @@ Optional HKLM values for managed fleets (Intune / GPO). Read once at launch.
 
 ---
 
+## EPM RULE — WHY 7.2+ GETS A UAC PROMPT (managed laptops)
+
+Found 2026-10-29 from the EPM agent log (`tools/NET-ETHER-timeline.ps1`). The fleet's EPM elevation rule for `NET-ETHER.exe` (RuleId 94f93419…) is a certificate rule of type **IssuerCertificateAuthority** pinned to **Microsoft ID Verified CS EOC CA 03** (SHA-256 `BFF5C1A54B421E0C…`). Microsoft's Artifact Signing picks among several intermediates per signing, so a rule pinned to one of them matches only some builds:
+
+| Build | Intermediate CA | Rule |
+|---|---|---|
+| 7.1.0 | EOC CA 03 (`BFF5C1A5…`) | match — elevates silently |
+| 7.2.2, 7.3.0-rc.5 | AOC CA 03 (`ACAA07D5…`) | no match |
+| 7.3.0-rc.1 | EOC CA 04 (`BC309555…`) | no match |
+
+No match = a UAC prompt for an admin, **no elevation at all for a standard user**. Every build chains to **Microsoft ID Verified Code Signing PCA 2021** — SHA-256 `3D29798CC5D3F0644A7E0DC9CB1CADE523EA5EC83B335109B605BFEAA7D5F5C1`, SHA-1 `8E750F459DAF9A79D6370DB747AD2226866AD818`. Fix options for IT: a file-hash rule per release (tightest; one ticket per release), or anchor the CA rule to PCA 2021 with the file-name condition kept (never breaks on rotation; PCA 2021 is shared by every Artifact Signing customer — the same exposure the current intermediate-pinned rule already has).
+
+---
+
 ## FIRST LAUNCH WITHOUT INTERNET (managed laptops)
 
 Seen on two fleet laptops (2026-10-28/29), proven with `tools/NET-ETHER-timeline.ps1`: the first launch of the day, with no internet, EPM read the signature and then waited about **four minutes** before approving the elevation. Nothing shows meanwhile, so it looks dead; clicking again or rebooting only starts the wait over. It came up offline on its own — going online was a coincidence. Once it has launched, later launches are seconds, online or not. Likely EPM checking the certificate online and waiting out the timeouts; the fix is on the EPM side. Until then: wait, or launch once on a connected network before going on site.
