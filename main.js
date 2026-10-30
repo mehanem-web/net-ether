@@ -3861,6 +3861,24 @@ async function applyDhcpConfig({ adapter, tag }) {
   const dnsR = await runElevated(`netsh interface ip set dns "${safeAdapter}" dhcp`, { tag: opTag + '_dns', timeoutMs: 30000 });
   const result = { ...addr, ok: (addr.ok || already) && dnsR.ok, err: (addr.ok || already) ? (dnsR.ok ? null : 'DNS: ' + dnsR.err) : addr.err };
 
+  // rc.6: a card with no cable that's set static answers "DHCP is already enabled" — netsh
+  // won't touch it and the static stays saved (→ DHCP / REVERT on the work laptop's unplugged
+  // USB card did nothing and logged OK). Clear Windows' saved settings directly; PowerShell
+  // runs elevated here because ETHER is.
+  let savedLeft = [];
+  try { savedLeft = (await readSavedIpv4All())[safeAdapter.toLowerCase()] || []; } catch {}
+  if (savedLeft.length) {
+    const q = psQuote(safeAdapter);
+    const ps = `Remove-NetIPAddress -InterfaceAlias ${q} -AddressFamily IPv4 -PolicyStore PersistentStore -Confirm:$false -ErrorAction SilentlyContinue; ` +
+               `Get-NetRoute -InterfaceAlias ${q} -AddressFamily IPv4 -PolicyStore PersistentStore -ErrorAction SilentlyContinue | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue; ` +
+               `Set-NetIPInterface -InterfaceAlias ${q} -AddressFamily IPv4 -Dhcp Enabled -PolicyStore PersistentStore -ErrorAction Stop; 'CLEARED'`;
+    let r = null;
+    try { r = await SPAWN.psRun(ps, { timeoutMs: 20000 }); } catch (e) { r = { stdout: '', stderr: e.message }; }
+    const okClr = /CLEARED/.test((r && r.stdout) || '');
+    diagAdd({ kind: 'op', tag: opTag + '_saved', ok: okClr,
+      note: `${safeAdapter}: no cable — cleared the saved static ${savedLeft.map(x => x.ip).join(', ')} (PowerShell, saved settings)${okClr ? '' : ' — ' + String((r && r.stderr) || 'not confirmed').trim().slice(0, 160)}` });
+  }
+
   // Verify — netsh, then the registry (a disconnected card never shows DHCP in netsh until it
   // has a lease). Whatever netsh said, this decides.
   let on = false, where = '';
@@ -3874,8 +3892,14 @@ async function applyDhcpConfig({ adapter, tag }) {
     const st = await readAdapterDhcpState(safeAdapter).catch(() => null);
     if (st && st.dhcp) { on = true; where = 'registry'; }
   }
+  // rc.6: with no cable "DHCP enabled: Yes" proves nothing — a saved static still wins on link
   if (on) {
-    diagVerify(opTag, true, `${safeAdapter} DHCP enabled (${where})${already ? ' — was already' : ''}${dnsR.ok ? '' : ' · DNS step: ' + (dnsR.err || 'failed')}`);
+    let still = [];
+    try { still = (await readSavedIpv4All())[safeAdapter.toLowerCase()] || []; } catch {}
+    if (still.length) { on = false; result.err = result.err || `${still.map(x => x.ip).join(', ')} is still saved for when the cable is in`; }
+  }
+  if (on) {
+    diagVerify(opTag, true, `${safeAdapter} DHCP enabled (${where})${savedLeft.length ? ' — saved static cleared (no cable)' : already ? ' — was already' : ''}${dnsR.ok ? '' : ' · DNS step: ' + (dnsR.err || 'failed')}`);
     return { ...result, ok: true, verified: true, partial: !dnsR.ok };
   }
   diagVerify(opTag, false, `${safeAdapter} still static after 4.5s${result.err ? ' — ' + result.err : ''}`);
