@@ -1,10 +1,21 @@
-# NET-ETHER triage — READ ONLY. Changes nothing on this machine.
-# Collects why NET-ETHER won't start / won't elevate, into one text file on the Desktop.
+# NET-ETHER triage - READ ONLY. Changes nothing on this machine.
+# Collects why NET-ETHER won't start / won't elevate, into one text file next to the script (or Public Documents).
 # Run in a normal (non-admin) PowerShell window:
 #   powershell -NoProfile -ExecutionPolicy Bypass -File .\NET-ETHER-triage.ps1
 # If running scripts is blocked, open the file, copy everything, paste it into PowerShell.
 
-$out = Join-Path ([Environment]::GetFolderPath('Desktop')) ("NET-ETHER-triage-{0}-{1:yyyyMMdd-HHmm}.txt" -f $env:COMPUTERNAME, (Get-Date))
+# Where the report goes: next to this script (the USB stick in the field) if that folder is
+# writable, else Public Documents. Never the runner's Desktop: when the script is run with a
+# separate admin account, that Desktop belongs to the admin account and the logged-in user
+# can't open it ("Location is not available ... Access is denied").
+function Pick-OutDir {
+  foreach ($d in @($PSScriptRoot, (Join-Path $env:PUBLIC 'Documents'), $env:TEMP)) {
+    if (-not $d -or -not (Test-Path $d)) { continue }
+    try { $t = Join-Path $d ('.w' + [guid]::NewGuid().ToString('N')); [IO.File]::WriteAllText($t, 'x'); Remove-Item $t -Force; return $d } catch {}
+  }
+  return $env:TEMP
+}
+$out = Join-Path (Pick-OutDir) ("NET-ETHER-triage-{0}-{1:yyyyMMdd-HHmm}.txt" -f $env:COMPUTERNAME, (Get-Date))
 $lines = New-Object System.Collections.Generic.List[string]
 function Say($t) { $lines.Add([string]$t) }
 function Section($t) { Say ''; Say ('=' * 70); Say $t; Say ('=' * 70) }
@@ -62,7 +73,7 @@ Try-Block 'procs' {
 Section 'APP DATA FOLDERS (names and sizes only - no contents)'
 Try-Block 'appdata' {
   $dirs = @("$env:APPDATA\net-ether") + (Get-ChildItem 'C:\Users' -Directory -ErrorAction SilentlyContinue |
-           Where-Object { $_.Name -like 'OSS_*' } | ForEach-Object { Join-Path $_.FullName 'AppData\Roaming\net-ether' })
+           Where-Object { $_.Name -notin 'Public','Default','Default User','All Users' } | ForEach-Object { Join-Path $_.FullName 'AppData\Roaming\net-ether' })
   foreach ($d in $dirs | Select-Object -Unique) {
     if (Test-Path $d) {
       Say "  $d"
@@ -73,7 +84,7 @@ Try-Block 'appdata' {
 
 Section 'NET-ETHER DIAGNOSTICS LOG - last 40 entries (if the app ever ran)'
 Try-Block 'diag' {
-  $dl = Get-ChildItem "$env:APPDATA\net-ether\diag-log.json", 'C:\Users\OSS_*\AppData\Roaming\net-ether\diag-log.json' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+  $dl = Get-ChildItem 'C:\Users\*\AppData\Roaming\net-ether\diag-log.json' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
   if (-not $dl) { Say '  No diag-log.json found.' }
   else {
     Say "  from $($dl.FullName)"
@@ -137,12 +148,12 @@ Try-Block 'epm' {
   foreach ($d in 'C:\Program Files\Microsoft EPM Agent', 'C:\Program Files\Avecto', 'C:\Program Files\BeyondTrust', 'C:\Program Files\CyberArk') {
     if (Test-Path $d) { Say "  Installed: $d" }
   }
-  # Microsoft EPM (Intune) writes text logs, not event-log entries — newest lines naming NET-ETHER
+  # Microsoft EPM (Intune) writes text logs, not event-log entries - newest lines naming NET-ETHER
   $epmLogDirs = 'C:\Program Files\Microsoft EPM Agent\Logs', 'C:\ProgramData\Microsoft\IntuneManagementExtension\Logs'
   foreach ($ld in $epmLogDirs) {
     if (-not (Test-Path $ld)) { continue }
     $files = Get-ChildItem $ld -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'EPM|Epm|epm|Elevation' -or $ld -like '*EPM Agent*' } | Sort-Object LastWriteTime -Descending | Select-Object -First 6
-    # NET-ETHER lines plus anything that refused, failed or was unmanaged — newest 60, full width
+    # NET-ETHER lines plus anything that refused, failed or was unmanaged - newest 60, full width
     $hits = $files | Select-String -Pattern 'NET-ETHER|net-ether|Broman|Denied|Deny|Block|Fail|Error|Unmanaged|Revoc|Certificate' -ErrorAction SilentlyContinue |
             Sort-Object { $_.Line } -Unique | Sort-Object Filename, LineNumber | Select-Object -Last 60
     Say "  [$ld] $(@($files).Count) log file(s), $(@($hits).Count) line(s) (NET-ETHER / denied / failed / unmanaged / certificate)"
@@ -165,5 +176,5 @@ Write-Host ''
 Write-Host "  REPORT SAVED TO:" -ForegroundColor Green
 Write-Host "  $out" -ForegroundColor Green
 Write-Host ''
-# open Explorer with the file selected, so it can't hide in a OneDrive Desktop
+# open Explorer with the file selected
 try { Start-Process explorer.exe "/select,`"$out`"" } catch {}

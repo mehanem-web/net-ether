@@ -1,6 +1,6 @@
-# NET-ETHER timeline — READ ONLY. Changes nothing on this machine.
+# NET-ETHER timeline - READ ONLY. Changes nothing on this machine.
 # One time-sorted list of everything Windows, EPM, Intune and NET-ETHER logged about launching
-# NET-ETHER, plus when the PC woke up and went online / offline. Saved to the Desktop.
+# NET-ETHER, plus when the PC woke up and went online / offline. Saved next to the script (or Public Documents).
 #
 # Run in an ADMIN PowerShell window (Prefetch, Intune and Security logs need it):
 #   powershell -NoProfile -ExecutionPolicy Bypass -File .\NET-ETHER-timeline.ps1            # today
@@ -9,7 +9,18 @@ param([int]$Days = 1)
 
 $From = (Get-Date).Date.AddDays(-([Math]::Max(1, $Days) - 1))
 $To   = Get-Date
-$out  = Join-Path ([Environment]::GetFolderPath('Desktop')) ("NET-ETHER-timeline-{0}-{1:yyyyMMdd-HHmm}.txt" -f $env:COMPUTERNAME, $To)
+# Where the report goes: next to this script (the USB stick in the field) if that folder is
+# writable, else Public Documents. Never the runner's Desktop: when the script is run with a
+# separate admin account, that Desktop belongs to the admin account and the logged-in user
+# can't open it ("Location is not available ... Access is denied").
+function Pick-OutDir {
+  foreach ($d in @($PSScriptRoot, (Join-Path $env:PUBLIC 'Documents'), $env:TEMP)) {
+    if (-not $d -or -not (Test-Path $d)) { continue }
+    try { $t = Join-Path $d ('.w' + [guid]::NewGuid().ToString('N')); [IO.File]::WriteAllText($t, 'x'); Remove-Item $t -Force; return $d } catch {}
+  }
+  return $env:TEMP
+}
+$out  = Join-Path (Pick-OutDir) ("NET-ETHER-timeline-{0}-{1:yyyyMMdd-HHmm}.txt" -f $env:COMPUTERNAME, $To)
 $inv  = [Globalization.CultureInfo]::InvariantCulture
 $rows = New-Object System.Collections.Generic.List[object]
 $notes = New-Object System.Collections.Generic.List[string]
@@ -26,20 +37,25 @@ function Try-Block($name, [scriptblock]$b) { try { & $b } catch { Note "[$name] 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) { Note 'NOT running as admin - Prefetch, Intune and Security sections may be empty.' }
 
-# 1. NET-ETHER's own log - every entry in the window (only exists once the app actually started)
+# 1. NET-ETHER's own log - every entry in the window (only exists once the app actually started).
+#    Every profile on the machine: run with a separate admin account, $env:APPDATA is that
+#    account's, not the tech's who actually used ETHER.
 Try-Block 'ether' {
-  $dl = "$env:APPDATA\net-ether\diag-log.json"
-  if (-not (Test-Path $dl)) { Note 'ETHER: no diag-log.json'; return }
+  $logs = @(Get-ChildItem 'C:\Users\*\AppData\Roaming\net-ether\diag-log.json' -ErrorAction SilentlyContinue)
+  if (-not $logs.Count) { Note 'ETHER: no diag-log.json in any profile'; return }
   Add-Type -AssemblyName System.Web.Extensions
   $ser = New-Object System.Web.Script.Serialization.JavaScriptSerializer
   $ser.MaxJsonLength = 67108864
-  $n = 0
-  foreach ($e in @($ser.DeserializeObject((Get-Content $dl -Raw -Encoding UTF8)))) {
-    try { $w = [DateTimeOffset]::FromUnixTimeMilliseconds([int64]$e['ts']).LocalDateTime } catch { continue }
-    if ($w -lt $From) { continue }
-    Add-Row $w 'ETHER' ("{0} {1} ok={2} {3}" -f $e['kind'], $e['tag'], $e['ok'], $e['note']); $n++
+  foreach ($dl in $logs) {
+    $who = $dl.FullName.Split('\')[2]
+    $n = 0
+    foreach ($e in @($ser.DeserializeObject((Get-Content $dl.FullName -Raw -Encoding UTF8)))) {
+      try { $w = [DateTimeOffset]::FromUnixTimeMilliseconds([int64]$e['ts']).LocalDateTime } catch { continue }
+      if ($w -lt $From) { continue }
+      Add-Row $w ('ETHER ' + $who) ("{0} {1} ok={2} {3}" -f $e['kind'], $e['tag'], $e['ok'], $e['note']); $n++
+    }
+    Note "ETHER ($who): $n entries in window"
   }
-  Note "ETHER: $n entries in window"
 }
 
 # 2. Microsoft EPM agent text logs - every file touched in the window, NET-ETHER and refusal lines
@@ -148,7 +164,7 @@ $L.Add('SOURCES')
 foreach ($n in $notes) { $L.Add("  $n") }
 $L.Add('')
 $L.Add('TIMELINE')
-foreach ($r in ($rows | Sort-Object When)) { $L.Add(("  {0:MM-dd HH:mm:ss}  {1,-14} {2}" -f $r.When, $r.Src, $r.Text)) }
+foreach ($r in ($rows | Sort-Object When)) { $L.Add(("  {0:MM-dd HH:mm:ss}  {1,-22} {2}" -f $r.When, $r.Src, $r.Text)) }
 if (-not $rows.Count) { $L.Add('  (nothing in this window)') }
 $L | Out-File -FilePath $out -Encoding utf8
 Write-Host ''
