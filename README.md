@@ -228,9 +228,17 @@ NET-ETHER/
 
 ## CHANGELOG
 
-### v7.3.0 (in progress — rc.4, 2026-10-29)
+### v7.3.0 (in progress — rc.5, 2026-10-29)
 The stability release: what 7.2 added, plus a full bug hunt, so the fleet gets one update that lasts.
 Started from a day in the field on two addresses where ─ simply refused to hide the window.
+
+**rc.5 — a card with no cable (2026-10-29, work laptop)**
+- **A card with no cable shows the static it's set to.** Windows saves the address and uses it the moment there's link, but until then nothing is live — and its quick answers ("DHCP enabled: Yes", the registry's EnableDHCP) still say DHCP. ETHER believed them: after SET LAPTOP IP or APPLY on an unplugged USB card, both tabs labelled it DHCP, the top bar said NO ADAPTER, the DHCP tab showed the laptop as "—", and the IP tab's form looked like unsaved changes. ETHER now reads Windows' saved settings for a card without an address: top bar `192.168.0.1 · NO CABLE` + STATIC, the card line `NO CABLE · 192.168.0.1 SAVED`, the DHCP tab `static 192.168.0.1 — saved, used when the cable is in`.
+- APPLY on an unplugged card says "✓ SET — … IS SAVED … NO CABLE YET; IT'S USED AS SOON AS THERE'S LINK" and tags the field `✓ SAVED · NO CABLE` — not "ACTIVE".
+- SET LAPTOP IP on an unplugged card moves the pool next to the new address (it kept the last job's 192.168.1.100–.200 and gateway .101).
+- The no-link check behind APPLY reads the saved settings instead of the registry's address list, which can hold a leftover from an older static.
+- MULTI-IP / + ALIAS on an unplugged card: a plain "plug it in first" instead of "DHCP adapter has no current IP". The DHCP tab hides + ALIAS until there's link.
+- Confirmed on the work laptop with rc.4: closing the lid writes both `power` lines.
 
 **rc.4 — sleep (2026-10-29)**
 - **Closing the lid pauses ETHER's background work.** A laptop with its lid closed is only half asleep on Modern Standby machines (the Framework 16 is one): with the DHCP engine listening, a wire capture and a PING loop still running, one went into a backpack and came out hot with a flat battery. Now, when Windows says the laptop is going to sleep, the DHCP engine, the wire watch and a running PING pause; on wake (after a few seconds for the network cards) exactly those start again. The PING tab says "PAUSED — LAPTOP ASLEEP" / "RESUMED AFTER SLEEP"; the DHCP log says "Suspended — laptop asleep"; both moves land in the diagnostics log (`power`). Locking the screen changes nothing.

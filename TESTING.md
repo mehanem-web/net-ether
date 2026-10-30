@@ -21,8 +21,15 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 § 7.2.0 (lines marked *(7.3.0)* changed), at home. Then one real site day on the work laptop
 (MANAGED LAPTOP). Anything that breaks → COPY DIAGNOSTICS → next rc. The fleet only sees 7.3.0.
 
+**rc.5 additions** (card with no cable — the work laptop's USB 2.5GbE)
+- [ ] Card on DHCP, unplug it. APPLY 192.168.0.1/24 → status "✓ SET … SAVED … NO CABLE YET", field `✓ SAVED · NO CABLE`; top bar `192.168.0.1 · NO CABLE` + STATIC; card line `NO CABLE · 192.168.0.1 SAVED`, badge STATIC; form not amber.
+- [ ] DHCP tab on that card: `no link — check the cable · static 192.168.0.1 — saved, used when the cable is in`, laptop 192.168.0.1, pool 192.168.0.100–.200; no + ALIAS.
+- [ ] → DHCP, unplug, DHCP tab SET LAPTOP IP 192.168.0.1 → same as above, pool moved to 192.168.0.x.
+- [ ] Plug into a camera/switch (not the home network — its router is .0.1) → card comes up 192.168.0.1, everything reads live again.
+- [ ] MULTI-IP add on the unplugged card → "No cable on … plug it in first".
+
 **rc.4 additions**
-- [ ] DHCP engine listening + PING running → close the lid (or Start → Sleep) for a minute → open: PING says "RESUMED AFTER SLEEP", DHCP log shows "Suspended — laptop asleep" then "Resumed — listen". Diagnostics shows two `power` lines. *If there are no `power` lines, Windows didn't tell ETHER — report it.*
+- [x] *(work laptop 10-29: both `power` lines written)* DHCP engine listening + PING running → close the lid (or Start → Sleep) for a minute → open: PING says "RESUMED AFTER SLEEP", DHCP log shows "Suspended — laptop asleep" then "Resumed — listen". Diagnostics shows two `power` lines. *If there are no `power` lines, Windows didn't tell ETHER — report it.*
 - [ ] PING paused by hand → sleep → wake: stays paused.
 - [ ] Lock the screen (Win+L) with DHCP serving → nothing pauses.
 

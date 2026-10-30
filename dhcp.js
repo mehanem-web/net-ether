@@ -216,6 +216,8 @@ module.exports = function initDhcp(deps) {
         connected: !!v4,
         apipa:     v4 ? isApipa(v4.address) : false,
         isDhcp:    known ? known.isDhcp : null,
+        // rc.5: no cable → the addresses Windows has saved for the card (it comes up on them with link)
+        saved:     !v4 && known && Array.isArray(known.savedIps) ? known.savedIps.map(x => ({ ip: x.ip, netmask: x.subnet })) : [],
       };
     });
   }
@@ -1140,7 +1142,13 @@ module.exports = function initDhcp(deps) {
 
   ipcMain.handle('dhcp-get-adapter-config', async (_e, adapterName, fromIp) => {
     const safe = sanitizeAdapter(adapterName);
-    const a = safe && lightAdapters().find(x => x.name === safe);
+    let a = safe && lightAdapters().find(x => x.name === safe);
+    // rc.5: a card with no cable has no live address — plan from its saved one (SET LAPTOP IP
+    // on an unplugged card used to leave the old job's pool in place)
+    if (a && !a.ip && a.saved && a.saved.length) {
+      const sv = (fromIp && a.saved.find(x => x.ip === fromIp)) || a.saved[0];
+      a = { ...a, ip: sv.ip, netmask: sv.netmask, apipa: false, ips: a.saved.map(x => ({ ip: x.ip, netmask: x.netmask, apipa: false })) };
+    }
     if (!a || !a.ip || !a.netmask || a.apipa) return null;
     // v7.1.0: serve from a specific address on the adapter (a MULTI-IP alias) when asked
     if (fromIp && isValidIp(fromIp)) {
