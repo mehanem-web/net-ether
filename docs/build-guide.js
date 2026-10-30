@@ -1,4 +1,4 @@
-// NET//ETHER User Guide — v7.2.2 (document version 5.3)
+// NET//ETHER User Guide — v7.3.0 (document version 6.0)
 // node build-guide.js → NET-ETHER-Guide.docx ; then soffice → PDF
 const fs = require('fs');
 const {
@@ -52,7 +52,7 @@ const doc = new Document({
       new Paragraph({ spacing: { before: 2400, after: 200 }, children: [new TextRun({ text: 'NET//ETHER', font: FONT, size: 72, bold: true, color: ACCENT })] }),
       new Paragraph({ spacing: { after: 100 }, children: [new TextRun({ text: 'Field Network Management Tool', font: FONT, size: 32, color: GREY })] }),
       new Paragraph({ spacing: { after: 600 }, children: [new TextRun({ text: 'User Guide', font: FONT, size: 28, color: GREY })] }),
-      P('Application version 7.2.2 · Document version 5.3', { run: { color: GREY } }),
+      P('Application version 7.3.0 · Document version 6.0', { run: { color: GREY } }),
       P('Broman Enterprises, SSP Division', { run: { color: GREY } }),
       P('© 2026 Broman Enterprises. All rights reserved.', { run: { color: GREY, size: 18 } }),
       new Paragraph({ children: [new PageBreak()] }),
@@ -60,7 +60,7 @@ const doc = new Document({
       // ── 1 ──
       H1('1. What it is'),
       P('NET//ETHER is a compact, always-on-top Windows tool for low-voltage field technicians. It does six things fast: switches the laptop\'s wired adapter between IP configurations, serves DHCP to devices that need an address, monitors connectivity, scans a subnet to see what\'s there, listens to a port to learn what it is before you say anything, and remembers what was found at each site so the next visit starts with knowledge instead of guesswork.'),
-      P('Version 7 absorbed NET//DHCP; 7.1 adds RECON, multicast discovery, link speed, a Wi-Fi switch, port blinking, Wake-on-LAN and a site report. One application, one installer, signed.'),
+      P('Version 7 absorbed NET//DHCP; 7.1 adds RECON, multicast discovery, link speed, a Wi-Fi switch, port blinking, Wake-on-LAN and a site report. 7.2 rebuilt the DHCP tab around one device at a time and listens for devices the way AXIS IP Utility does. 7.3 is the stability release: no prompts on hide or quit, a one-line note for anything left on a card, sleep-aware, and honest about cards with no cable. One application, one installer, signed.'),
       P('It runs elevated because adapter changes go through Windows\' own netsh. On a company-managed laptop that elevation is granted silently by policy; on an unmanaged PC Windows asks once at launch. There are no prompts per operation.'),
       note([T('Everything the app knows lives on your laptop under '), C('%APPDATA%\\net-ether'), T('. Nothing is sent anywhere, except an optional vendor lookup for unknown MAC addresses that you can turn off.')]),
 
@@ -69,12 +69,12 @@ const doc = new Document({
       table([
         ['Control', 'What it does'],
         ['NET//ETHER logo', 'Drag the window from anywhere on the title bar.'],
-        ['Version chip (e.g. v7.1.0)', 'Opens a small menu: DIAGNOSTICS, FIT WINDOW to snap the HUD to its content, and SITE REPORT, which copies a markdown summary of everything this session did (adapter, scans, RECON, DHCP, ping, every privileged command) for the ticket. Turns amber if the app is not running elevated.'],
+        ['Version chip (e.g. v7.3.0)', 'Opens a small menu: DIAGNOSTICS, FIT WINDOW to snap the HUD to its content, and SITE REPORT, which copies a markdown summary of everything this session did (adapter, scans, RECON, DHCP, ping, every privileged command) for the ticket. Turns amber if the app is not running elevated.'],
         ['◑', 'Toggle 50% transparency so you can read what\'s behind the HUD.'],
         ['▣', 'Colour theme. Tab icons and accents follow it.'],
         ['?', 'Quick guide for the tab you\'re on, plus a CIDR reference. FULL MANUAL → opens this document.'],
-        ['─', 'Hide to the system tray. Click the tray icon to bring it back; double-click always shows it.'],
-        ['✕', 'Quit. If a Multi-IP is still on an adapter you\'re warned first (press ✕ again to quit anyway); if you changed any adapter this session you\'re offered a one-click restore. DHCP serving, temporary link-local aliases and RECON\'s adapter bindings are all put back before the app exits.'],
+        ['─', 'Minimize to the taskbar, like any app. Alt+Tab, the taskbar button or the tray icon bring it back.'],
+        ['✕', 'Quit, one click, no questions. What you set stays set (APPLY, MULTI-IP, + ALIAS, SET LAPTOP IP…). What the app did on its own is cleaned up before it exits: DHCP serving stops, temporary REACH addresses go, RECON\'s adapter bindings come back. Anything you left on a card is mentioned once on the next launch (see Leftovers in section 3).'],
       ], [2600, TEXT_W - 2600]),
       gap(),
       H2('Size and position'),
@@ -83,16 +83,18 @@ const doc = new Document({
       bullet('Position, size and which display you left it on are remembered. If that display is gone next time, it comes back top-centre of the primary.'),
       bullet('Only one copy runs. Launching it again just brings the running window to the front — useful when a managed laptop takes a few seconds to elevate.'),
       bullet('Windows occasionally strips "always on top" from a window (the Win+Shift+S capture overlay does). The app re-asserts it the moment you click it or recall it from the tray.'),
-      P('The tray icon pulses green normally, amber when the HUD is dimmed, and flashes red while any PING host is failing — even with the HUD hidden. The tooltip shows the DHCP serving state.'),
+      P('The tray icon pulses green normally, dims with the HUD, and turns solid pulsing red while any PING host is failing. The taskbar button shows the same alert as a red ! badge and flashes once when it starts. The tray tooltip shows the DHCP serving state.'),
+      P('Closing the lid pauses the DHCP server, the wire listener and any running PING, and starts exactly those again a few seconds after the laptop wakes. A laptop in a closed lid is only half asleep, and with those running in a bag it gets hot and runs flat. Locking the screen pauses nothing.'),
 
       // ── 3 ──
       H1('3. IP — adapter configuration'),
-      P('Everything on this tab acts on the adapter chosen in the ADAPTER dropdown. Wireless, VPN and virtual adapters are filtered out; only wired Ethernet is listed. A connected adapter shows its negotiated link speed where it used to say CONNECTED — green for gigabit, amber for 100 Mb, red for 10 — because a gigabit port talking at 100 is a bad crimp, cable or switch port, and that is the first thing to know. Beside it, a DHCP or STATIC badge from the registry, shown whether or not the cable is in.'),
+      P('Everything on this tab acts on the adapter chosen in the ADAPTER dropdown. Wireless, VPN and virtual adapters are filtered out; only wired Ethernet is listed. A connected adapter shows its negotiated link speed where it used to say CONNECTED — green for gigabit, amber for 100 Mb, red for 10 — because a gigabit port talking at 100 is a bad crimp, cable or switch port, and that is the first thing to know. Beside it, a DHCP or STATIC badge, shown whether or not the cable is in.'),
       table([
         ['State', 'Meaning'],
         ['1 GBPS / 100 MBPS / 10 MBPS', 'Link up with an address. The speed is what the switch and the NIC agreed on.'],
         ['NO ADDRESS', 'Link up, but Windows has no IPv4 address on it. On a DHCP adapter a RENEW button appears beside the badge; on a static one, APPLY.'],
         ['DISCONNECTED', 'No link. Cable, port or far end.'],
+        ['NO CABLE · 192.168.0.1 SAVED', 'No link, and the card is set to a static address. Windows keeps the address and uses it the moment there is link. The top bar reads 192.168.0.1 · NO CABLE. An unplugged card on DHCP reads NO CABLE · DHCP.'],
         ['DISABLED', 'Switched off in Windows. ENABLE in the ADAPTER line brings it back.'],
       ], [3000, TEXT_W - 3000]),
       gap(),
@@ -112,10 +114,11 @@ const doc = new Document({
       H2('Applying'),
       table([
         ['Control', 'Action'],
-        ['APPLY CONFIG', 'Writes IP, mask, gateway and DNS to the adapter, then re-reads it to confirm the change took. The button shows a moving sweep while netsh runs. A verified change lights the status bar green, tags the IP field ✓ ACTIVE and flashes the new address in the top bar. A failure turns the field red and shows netsh\'s own message.'],
-        ['→ DHCP', 'Beside the STATIC badge in the adapter row. Click twice to hand the adapter back to DHCP. Switching to DHCP drops every Multi-IP on that adapter.'],
+        ['APPLY CONFIG', 'Writes IP, mask, gateway and DNS to the adapter, then re-reads it to confirm the change took. The button shows a moving sweep while netsh runs. A verified change lights the status bar green, tags the IP field ✓ ACTIVE and flashes the new address in the top bar. On a card with no cable the field reads ✓ SAVED · NO CABLE: the address is set and comes up with the link. A failure turns the field red and shows netsh\'s own message.'],
+        ['→ DHCP', 'Beside the STATIC badge in the adapter row. One click hands the adapter back to DHCP, cable or no cable. Switching to DHCP drops every Multi-IP on that adapter.'],
         ['RENEW', 'Beside the DHCP badge when the adapter has link but no address. Asks the DHCP server again.'],
-        ['REVERT', 'Restores the configuration from before your last APPLY — straight back to DHCP if that is where you came from.'],
+        ['REVERT', 'Undoes your last APPLY: back to exactly what the card had before it, DHCP included. Press it again after a second APPLY and you step back one more.'],
+        ['↩ RESTORE LAUNCH STATE', 'Puts every adapter back to how it was when the app started.'],
         ['COPY COMMANDS', 'Shows the exact netsh commands without running them, with a COPY button for an admin prompt.'],
         ['MTU → 1500', 'In DIAGNOSTICS → TOOLS. Resets MTU if it isn\'t 1500. Fixes "can ping, can\'t load web pages".'],
       ], [2600, TEXT_W - 2600]),
@@ -124,15 +127,17 @@ const doc = new Document({
       H2('Multi-IP'),
       P('Adds a second IP to the adapter so you can reach a device on another subnet without losing your primary address.'),
       bullet('Enter the IP and mask, press ADD MULTI-IP. The mask defaults to 255.255.255.0 (255.255.0.0 for 169.254 addresses). The app confirms the address is really present before reporting success. The list marks your real address PRIMARY and only offers REMOVE on the others; it re-reads itself after every change, so what it shows is what Windows has.'),
-      bullet('If the adapter is on DHCP, adding a multi-IP converts it to static (keeping its current lease values). The button asks for a second click before doing that.'),
-      bullet([B('Remove multi-IPs before you leave.'), T(' Windows keeps them across reboots, and the app warns you if any are still active when you hide or quit.')]),
+      bullet('If the adapter is on DHCP, adding a multi-IP converts it to static on its current address, keeping the gateway and DNS, and says so. One click.'),
+      bullet('Collapsed, the MULTI-IP bar shows how many extra addresses the card has (+1 IP). Windows keeps them across reboots until you remove them.'),
+      H2('Leftovers'),
+      P('If the last session left a card static, or with extra addresses it didn\'t have before, one amber line under the ADAPTER says so on the next launch, for example "Last session left static 192.168.0.1 on this card (it was DHCP)". ↩ PUT BACK returns the card to how it was; KEEP leaves it and the line goes away. Change the card yourself and the line clears on its own.'),
 
       // ── 4 ──
       H1('4. DHCP — serve addresses'),
       P('A DHCP server for the bench and the dead segment: a box of new cameras on a switch with no router, a site whose DHCP has died, a device that will not take a static address until it has had a lease. The laptop is the server. It hears everything and answers nothing until you say so.'),
       H2('Two steps at the top'),
       bullet([B('① NETWORK CARD'), T(' — the cable you\'re plugged into. The line under it says what the card is, its link speed, and whether it has an address. It follows the IP tab\'s adapter unless you pick another.')]),
-      bullet([B('② LAPTOP\'S ADDRESS ON THAT CABLE'), T(' — the address the laptop answers DHCP from. Devices get addresses next to it, and it is how you reach them afterwards. Each address on the card is a chip; the selected one is filled in. No address? SET LAPTOP IP… gives the card one (192.168.0.1 by default — the factory subnet most of our gear expects — duplicate-checked on the wire, moved to the next if taken, reverted when you quit). + ALIAS adds a second, temporary address to hand out on another subnet while the laptop keeps its own.')]),
+      bullet([B('② LAPTOP\'S ADDRESS ON THAT CABLE'), T(' — the address the laptop answers DHCP from. Devices get addresses next to it, and it is how you reach them afterwards. Each address on the card is a chip; the selected one is filled in. No address? SET LAPTOP IP… gives the card one (192.168.0.1 by default — the factory subnet most of our gear expects — duplicate-checked on the wire, moved to the next if taken). + ALIAS adds a second address to hand out on another subnet while the laptop keeps its own. Both stay until you change them, like an APPLY. With no cable in, the card line says the address is saved and used when the cable is in, and the pool is planned from it.')]),
       bullet('A strip under the chips reads it back: LAPTOP 192.168.0.1 ── Ethernet 2 ── DEVICES GET 192.168.0.100 – .200.'),
       bullet([B('Settings from another job.'), T(' The tab remembers its last settings. If the saved laptop IP is not an address on the card any more (yesterday\'s site), it refills from the card when you open it and says so. A loaded profile that doesn\'t match gets REFILL FROM CARD / + ADD AS ALIAS, and nothing is ever served from an address the card doesn\'t have.')]),
       H2('The everyday flow — one device'),
@@ -146,11 +151,12 @@ const doc = new Document({
       bullet('Before offering an address the server pings it; anything that answers is skipped. A device reporting a conflict has that address quarantined.'),
       bullet('The server never interferes with another server\'s clients. A device reconfirming a lease it got from the site\'s router gets silence, not a refusal.'),
       bullet('A device that comes back gets the address it had before, for up to an hour. ★ on a row pins a device to a fixed address permanently.'),
+      bullet('Closing the lid pauses the engine; it picks up where it was a few seconds after wake.'),
       bullet('Serving stops on its own after 30 minutes with nothing to do (ADVANCED OPTIONS changes or disables this). The status chip — OFF / LISTENING / SERVING N / SERVING EVERYONE — is also the on-off switch; OFF releases the port and removes the firewall rule. The same red / green / amber dot sits on the DHCP tab itself, so the engine\'s state is visible from every tab. While RECON\'s SILENT listen has the adapter the engine shows SUSPENDED and resumes by itself.'),
       H2('Controls'),
       table([
         ['Control', 'What it does'],
-        ['① CARD · ② LAPTOP IP', 'Which cable, and the laptop\'s address on it (chips). SET LAPTOP IP… and + ALIAS add an address — both temporary, reverted when you quit and recovered on the next launch after a force-close.'],
+        ['① CARD · ② LAPTOP IP', 'Which cable, and the laptop\'s address on it (chips). SET LAPTOP IP… and + ALIAS add an address that stays until you change it (→ DHCP or MULTI-IP on the IP tab).'],
         ['ADDRESSES TO HAND OUT', 'First, last, mask, gateway (blank = laptop) and lease (1 min … 1 day, default 5 min). Filled in from the laptop address you pick. ADVANCED adds DNS, domain, NTP, TFTP, boot file, vendor option 43 and the idle timer.'],
         ['Profiles', 'Save the settings under a name and load them on the next job — checked against the card when loaded.'],
         ['SERVE EVERYONE…', 'Answer every device on the cable. Asks first, scans the wire, warns about another live server or a second network.'],
@@ -171,14 +177,14 @@ const doc = new Document({
       bullet([B('⚡ BLINK'), T(' — with a host toned, 20 seconds of tiny packets to it so that port\'s activity LED strobes on the switch. Find the port without pulling anything. Same subnet only.')]),
       bullet('The sonar pitch drops as latency climbs, so a struggling link is audible before it fails. If the HUD is in the tray when the toned host flips state, a Windows toast tells you; clicking it brings the HUD back.'),
       bullet('TRCRT runs a live traceroute to that host. ◉ opens a Wireshark capture filtered to that host (when Wireshark is installed). COPY puts the whole summary on the clipboard for the service report.'),
-      bullet('PAUSE freezes the display and keeps the data; STOP clears everything.'),
+      bullet('PAUSE freezes the display and keeps the data; STOP clears everything. Closing the lid pauses a running monitor (PAUSED — LAPTOP ASLEEP) and waking resumes it.'),
 
       // ── 6 ──
       H1('6. SCAN — subnet discovery'),
       P('Two buttons, two ways to find things. SCAN SUBNET sweeps a /24 with ICMP and ARP, probes fourteen service ports on every responder (web, RTSP, RDP, SSH and the Hikvision, Dahua, Bosch and Genetec ports), then resolves names. DISCOVER asks the wire instead: one WS-Discovery/ONVIF probe, one SSDP, one mDNS, three seconds. Discovery runs alongside every sweep and on its own, and it finds what a sweep cannot — a camera on a different subnet, a factory-default box on 169.254.x.x — because the probe is multicast and the reply comes back over the same cable regardless of IP.'),
       bullet('BASE IP is filled from the adapter. Narrow the range (for example 1-60) to finish faster.'),
       bullet('Site picker loads a saved site\'s subnet. Scanning a known subnet compares the results against that site\'s device list.'),
-      bullet('Each row shows IP, MAC, response time, hostname, vendor, open ports and — when the device answered discovery — a badge (ONVIF, SSDP, mDNS) with its name, model and URLs in the tooltip. Your own laptop is marked SELF. IP, MAC, PING and WSHARK copy, hand the device to the monitor, or open a Wireshark capture filtered to it. A row found by discovery alone shows the source where the response time would be.'),
+      bullet('Each row shows IP, MAC, response time, hostname, vendor, open ports and — when the device answered discovery — a badge (ONVIF, SSDP, mDNS) with its name, model and URLs in the tooltip. Your own laptop is marked SELF. IP, MAC, PING and WSHARK copy, hand the device to the monitor, or open a Wireshark capture filtered to it. A row found by discovery alone shows the source where the response time would be. Rows that answered discovery have a violet frame, and the ◎ N DISCOVERY chip in the header shows only those.'),
       bullet([B('REACH'), T(' appears on 169.254 rows. It adds a temporary link-local address to your adapter (converting a DHCP adapter to static first, with a warning), opens the device\'s web page, and shows an amber LINK-LOCAL chip with REMOVE. The alias is removed when you quit, and cleaned up on the next launch if the app was force-closed.')]),
       bullet('Hostnames come from reverse DNS or, failing that, a NetBIOS name query — which is what most Windows PCs, NAS units, printers and NVRs answer.'),
       bullet('Vendor names come from a bundled offline database of 57,000 manufacturer prefixes, with short names for the brands you meet on site. ONLINE VENDOR LOOKUP controls whether misses are looked up on macvendors.com; your IT department can force it off.'),
@@ -231,9 +237,10 @@ const doc = new Document({
       P('Version chip → DIAGNOSTICS.'),
       bullet('TOOLS — MTU → 1500 for the adapter selected on the IP tab.'),
       bullet('STATE — version, whether the app is elevated, your user and machine, where the data lives, Wireshark and tshark, credential storage status, the DHCP engine\'s state, and any policy in effect.'),
-      bullet([B('PROCESS LAUNCH'), T(' — how long one bare process launch (cmd /c ver) takes on this laptop, timed at start-up, with a verdict, plus how many launches the app has made and the slowest. Endpoint security inspects every launch; on a healthy box it is tens of milliseconds, on a managed laptop a few hundred, and over a second means every action that runs a command will lag — the first number to read on an "it\'s slow" report. PS WORKER shows the one PowerShell the app keeps open for its read-only queries.')]),
+      bullet([B('PROCESS LAUNCH'), T(' — how long one bare process launch (cmd /c ver) takes on this laptop, timed at start-up, with a verdict, plus how many launches the app has made and the slowest. Endpoint security inspects every launch; on a healthy box it is tens of milliseconds, on a managed laptop a few hundred, and over a second means every action that runs a command will lag — the first number to read on an "it\'s slow" report. PS WORKER shows the one PowerShell the app keeps open for its queries (all read-only, except clearing a saved static address when a card with no cable goes back to DHCP).')]),
       bullet('LOG — every adapter change the app made, with the exact commands run, their output, and whether the change was confirmed. Also launches, backups, imports, DHCP engine and firewall changes, rogue-server scans, discovery and RECON summaries, Wake-on-LAN, port blinks and name-resolution timings. Survives restarts.'),
       bullet('COPY DIAGNOSTICS — puts a plain-text report on the clipboard.'),
+      bullet('If a data file (sites, presets, the site database) can\'t be read at launch, it is copied aside, never overwritten, and a notice says where it went. Saved sites are backed up automatically (first save of the day, before an import, before anything would empty the database).'),
       note('If something doesn\'t work, that report is what to send. It says exactly what Windows was asked to do and what Windows said back.'),
 
       // ── 10 ──
@@ -241,11 +248,11 @@ const doc = new Document({
       H2('Arriving at a new site'),
       P('Plug in. The IP tab shows the adapter, its link speed and its current state in LIVE. Not sure what the port is? RECON → LISTEN: in a minute you know the switch and port you are on, whether it wants 802.1X, which VLAN, who hands out addresses, and a free address you could take. Then pick a preset or a Factory Default, APPLY, and the status line, the IP field and the top bar all confirm the change. If the device you need is on a second subnet, add a Multi-IP instead of changing your primary.'),
       H2('A box of new cameras on a bench switch'),
-      P('DHCP tab. ① pick the card; ② SET LAPTOP IP… if it has no address (192.168.0.1). Cameras appear as they ask: type the address each should end up on, ▶ SERVE, ↗ OPEN, set it static, next row. SERVE EVERYONE… if you just want them all to have an address. Quit when done — the laptop\'s adapter goes back the way it was.'),
+      P('DHCP tab. ① pick the card; ② SET LAPTOP IP… if it has no address (192.168.0.1). Cameras appear as they ask: type the address each should end up on, ▶ SERVE, ↗ OPEN, set it static, next row. SERVE EVERYONE… if you just want them all to have an address. Quit when done. The laptop keeps the address you gave it; next launch offers ↩ PUT BACK.'),
       H2('One device on a live customer network'),
       P('DHCP tab. Watch the table; the device shows up ASKING with the address it would get. SERVE on that row — only that device is answered, the customer\'s DHCP is untouched.'),
       H2('A factory-default camera'),
-      P('DHCP tab: a camera on its fallback address shows as ◇ SITTING with its model, even though your laptop is on another subnet. ⇢ REACH gives the laptop a temporary address next to it and opens its web page. (SCAN → DISCOVER and REACH do the same from the SCAN tab.) Give it its real address, then REMOVE on the chip (or just quit).'),
+      P('DHCP tab: a camera on its fallback address shows as ◇ SITTING with its model, even though your laptop is on another subnet. ⇢ REACH gives the laptop a temporary address next to it and opens its web page. (SCAN → DISCOVER and REACH do the same from the SCAN tab.) Give it its real address, then REMOVE on the chip (or just quit — REACH addresses are temporary).'),
       H2('Finding which cable is which'),
       P('PING the device, press ♪ on its row, walk to the switch. Pull cables until the sonar turns into the alarm; that\'s the one. Or press ⚡ BLINK and watch for the port LED that strobes — no pulling needed.'),
       H2('Finding a camera that\'s stopped answering'),
