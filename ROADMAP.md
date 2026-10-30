@@ -6,7 +6,7 @@ Goal: one fleet update that lasts. Everything 7.2 added gets its bench round ins
 - Wi-Fi ENABLE timeout (60 s, state decides).
 - Audit round 1 (state files, adapter changes, renderer errors, IPC, below-the-fold prompts) and the process-launch audit (timeouts, read-back after every write, per-card write lock) — see README changelog.
 - Done: bench pass (TESTING.md § 7.3.0), Guide 6.0. Also in: sleep pause, cards with no cable (saved settings), pulled USB adapter. Video script still to do.
-- Waiting on IT (Nick, emailed 10-30): EPM rule re-anchored to PCA 2021 + Program Files path (the current rule pins one rotating intermediate, so 7.2+ prompts or won't elevate); Intune detection ≥ 7.3.0.0 or supersedence (exact-match detection reinstalls 7.1).
+- Waiting on IT (emailed 10-30): an EPM rule that survives intermediate rotation (see README → EPM RULES), and Intune detection ≥ 7.3.0.0 or supersedence (exact-match detection reinstalls the old version).
 - Left for later on purpose: SCAN still launches one ping.exe per address (budgets fixed; batching or raw ICMP is the real fix); firewall-rule adds aren't read back; tshark's 'error' event on a missing binary isn't watched (detection runs first).
 - Not changed on purpose: launch-snapshot is still retaken every launch (a crash mid-session moves the RESTORE LAUNCH STATE baseline — leftovers now cover the real case); ~~a removed adapter stays selected on the IP tab~~ → rc.8: APPLY / → DHCP / REVERT say the card isn't there.
 

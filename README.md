@@ -169,23 +169,19 @@ Optional HKLM values for managed fleets (Intune / GPO). Read once at launch.
 
 ---
 
-## EPM RULE — WHY 7.2+ GETS A UAC PROMPT (managed laptops)
+## EPM RULES FOR A SIGNED BUILD (managed laptops)
 
-Found 2026-10-29 from the EPM agent log (`tools/NET-ETHER-timeline.ps1`). The fleet's EPM elevation rule for `NET-ETHER.exe` (RuleId 94f93419…) is a certificate rule of type **IssuerCertificateAuthority** pinned to **Microsoft ID Verified CS EOC CA 03** (SHA-256 `BFF5C1A54B421E0C…`). Microsoft's Artifact Signing picks among several intermediates per signing, so a rule pinned to one of them matches only some builds:
+Releases are signed through Microsoft Artifact Signing. Each signing gets a short-lived certificate in Johan Broman's name, issued by one of several Microsoft intermediates that rotate (seen so far: Microsoft ID Verified CS EOC CA 03, EOC CA 04, AOC CA 03). An elevation rule pinned to one intermediate, or to the signing certificate itself, will match some builds and not others: an admin then gets a UAC prompt, a standard user gets no elevation at all.
 
-| Build | Intermediate CA | Rule |
-|---|---|---|
-| 7.1.0 | EOC CA 03 (`BFF5C1A5…`) | match — elevates silently |
-| 7.2.2, 7.3.0-rc.5 | AOC CA 03 (`ACAA07D5…`) | no match |
-| 7.3.0-rc.1 | EOC CA 04 (`BC309555…`) | no match |
+Every build chains to **Microsoft ID Verified Code Signing PCA 2021** — SHA-256 `3D29798CC5D3F0644A7E0DC9CB1CADE523EA5EC83B335109B605BFEAA7D5F5C1`, SHA-1 `8E750F459DAF9A79D6370DB747AD2226866AD818` (under Microsoft Identity Verification Root Certificate Authority 2020). For an EPM rule that survives rotation: certificate type *certificate authority* with PCA 2021, file name `NET-ETHER.exe`, **and** file path `C:\Program Files\Broman Enterprises\NET-ETHER\`. PCA 2021 is shared by every Artifact Signing customer, so the path condition is what keeps the rule tight (only an admin or the deployment tool can write there). The alternative is a file-hash rule per release.
 
-No match = a UAC prompt for an admin, **no elevation at all for a standard user**. Every build chains to **Microsoft ID Verified Code Signing PCA 2021** — SHA-256 `3D29798CC5D3F0644A7E0DC9CB1CADE523EA5EC83B335109B605BFEAA7D5F5C1`, SHA-1 `8E750F459DAF9A79D6370DB747AD2226866AD818`. Fix options for IT: a file-hash rule per release (tightest; one ticket per release), or anchor the CA rule to PCA 2021 with the file-name condition kept (never breaks on rotation; PCA 2021 is shared by every Artifact Signing customer — the same exposure the current intermediate-pinned rule already has).
+To see why a launch did or didn't elevate, `tools/NET-ETHER-timeline.ps1` collects the EPM agent's rule-lookup lines for that launch.
 
 ---
 
 ## FIRST LAUNCH WITHOUT INTERNET (managed laptops)
 
-Seen on two fleet laptops (2026-10-28/29), proven with `tools/NET-ETHER-timeline.ps1`: the first launch of the day, with no internet, EPM read the signature and then waited about **four minutes** before approving the elevation. Nothing shows meanwhile, so it looks dead; clicking again or rebooting only starts the wait over. It came up offline on its own — going online was a coincidence. Once it has launched, later launches are seconds, online or not. Likely EPM checking the certificate online and waiting out the timeouts; the fix is on the EPM side. Until then: wait, or launch once on a connected network before going on site.
+Seen on managed laptops (2026-10-28/29), proven with `tools/NET-ETHER-timeline.ps1`: the first launch of the day, with no internet, EPM read the signature and then waited about **four minutes** before approving the elevation. Nothing shows meanwhile, so it looks dead; clicking again or rebooting only starts the wait over. It came up offline on its own — going online was a coincidence. Once it has launched, later launches are seconds, online or not. Likely EPM checking the certificate online and waiting out the timeouts; the fix is on the EPM side. Until then: wait, or launch once on a connected network before going on site.
 
 ---
 
@@ -260,7 +256,7 @@ Started from a day in the field on two addresses where ─ simply refused to hid
 
 **rc.6 — back to DHCP on a card with no cable (2026-10-29, work laptop)**
 - **→ DHCP, REVERT and PUT BACK now work on an unplugged card that's set static.** Windows answers netsh's "set to DHCP" with "DHCP is already enabled" (the same wrong reading rc.5 works around), so the static stayed saved and came back with the cable — while ETHER logged "DHCP enabled — was already". ETHER now clears the saved static directly (PowerShell: saved address, saved gateway route, DHCP on in the saved settings) and only calls it done once nothing is saved for the card. Log: `dhcp_saved` / `revert_saved` with what was cleared.
-- The README now records why 7.2+ gets a UAC prompt on fleet laptops (the EPM rule is pinned to one rotating Microsoft intermediate CA) and the fix options for IT.
+- README: how to write an EPM rule that survives Microsoft's rotating signing intermediates (see EPM RULES).
 
 **rc.5 — a card with no cable (2026-10-29, work laptop)**
 - **A card with no cable shows the static it's set to.** Windows saves the address and uses it the moment there's link, but until then nothing is live — and its quick answers ("DHCP enabled: Yes", the registry's EnableDHCP) still say DHCP. ETHER believed them: after SET LAPTOP IP or APPLY on an unplugged USB card, both tabs labelled it DHCP, the top bar said NO ADAPTER, the DHCP tab showed the laptop as "—", and the IP tab's form looked like unsaved changes. ETHER now reads Windows' saved settings for a card without an address: top bar `192.168.0.1 · NO CABLE` + STATIC, the card line `NO CABLE · 192.168.0.1 SAVED`, the DHCP tab `static 192.168.0.1 — saved, used when the cable is in`.
