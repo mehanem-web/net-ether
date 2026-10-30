@@ -250,6 +250,7 @@ Started from a day in the field on two addresses where ─ simply refused to hid
 - APPLY with no network card picked (the USB adapter was pulled) says "PICK A NETWORK CARD FIRST" instead of netsh's "Invalid adapter name".
 - An unplugged card on DHCP reads `NO CABLE · DHCP · <card>` in the top bar (was NO ADAPTER), and → DHCP on an unplugged card empties the address field instead of leaving the static that was just removed.
 - The log's saved-settings clear line shows `[powershell <n>ms]` instead of `[? ]`.
+- User Guide (? → FULL MANUAL) updated for 7.3: one-click quit and minimize to the taskbar, the leftover line, REVERT / RESTORE LAUNCH STATE, cards with no cable, lid-close pause, violet discovery rows (document version 6.0).
 
 **rc.6 — back to DHCP on a card with no cable (2026-10-29, work laptop)**
 - **→ DHCP, REVERT and PUT BACK now work on an unplugged card that's set static.** Windows answers netsh's "set to DHCP" with "DHCP is already enabled" (the same wrong reading rc.5 works around), so the static stayed saved and came back with the cable — while ETHER logged "DHCP enabled — was already". ETHER now clears the saved static directly (PowerShell: saved address, saved gateway route, DHCP on in the saved settings) and only calls it done once nothing is saved for the card. Log: `dhcp_saved` / `revert_saved` with what was cleared.
