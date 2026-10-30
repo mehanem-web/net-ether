@@ -169,6 +169,12 @@ Optional HKLM values for managed fleets (Intune / GPO). Read once at launch.
 
 ---
 
+## FIRST LAUNCH WITHOUT INTERNET (managed laptops)
+
+Seen on two fleet laptops (2026-10-28/29), proven with `tools/NET-ETHER-timeline.ps1`: the first launch of the day, with no internet, EPM read the signature and then waited about **four minutes** before approving the elevation. Nothing shows meanwhile, so it looks dead; clicking again or rebooting only starts the wait over. It came up offline on its own — going online was a coincidence. Once it has launched, later launches are seconds, online or not. Likely EPM checking the certificate online and waiting out the timeouts; the fix is on the EPM side. Until then: wait, or launch once on a connected network before going on site.
+
+---
+
 ## DATA FILES
 
 All data is per-user in `%APPDATA%\net-ether\`, pinned explicitly regardless of how the exe was launched. Nothing is transmitted anywhere except the optional macvendors.com OUI lookup.
@@ -222,9 +228,13 @@ NET-ETHER/
 
 ## CHANGELOG
 
-### v7.3.0 (in progress — rc.3, 2026-10-28)
+### v7.3.0 (in progress — rc.4, 2026-10-29)
 The stability release: what 7.2 added, plus a full bug hunt, so the fleet gets one update that lasts.
 Started from a day in the field on two addresses where ─ simply refused to hide the window.
+
+**rc.4 — sleep (2026-10-29)**
+- **Closing the lid pauses ETHER's background work.** A laptop with its lid closed is only half asleep on Modern Standby machines (the Framework 16 is one): with the DHCP engine listening, a wire capture and a PING loop still running, one went into a backpack and came out hot with a flat battery. Now, when Windows says the laptop is going to sleep, the DHCP engine, the wire watch and a running PING pause; on wake (after a few seconds for the network cards) exactly those start again. The PING tab says "PAUSED — LAPTOP ASLEEP" / "RESUMED AFTER SLEEP"; the DHCP log says "Suspended — laptop asleep"; both moves land in the diagnostics log (`power`). Locking the screen changes nothing.
+- New `tools/` folder (not part of the app): `NET-ETHER-triage.ps1` (why won't it start / elevate — one read-only report) and `NET-ETHER-timeline.ps1` (one time-sorted list of EPM, Intune, network, power and ETHER events — found the 4-minute EPM wait below).
 
 **rc.3 — from the rc.2 check, same night (2026-10-28)**
 - **Discovery rows get a violet frame** (plus a violet ◎ and filter chip) — the ◎ alone was too quiet. Violet because amber/orange already mean camera/NVR; the left edge keeps the device-type colour.

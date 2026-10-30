@@ -21,6 +21,11 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 § 7.2.0 (lines marked *(7.3.0)* changed), at home. Then one real site day on the work laptop
 (MANAGED LAPTOP). Anything that breaks → COPY DIAGNOSTICS → next rc. The fleet only sees 7.3.0.
 
+**rc.4 additions**
+- [ ] DHCP engine listening + PING running → close the lid (or Start → Sleep) for a minute → open: PING says "RESUMED AFTER SLEEP", DHCP log shows "Suspended — laptop asleep" then "Resumed — listen". Diagnostics shows two `power` lines. *If there are no `power` lines, Windows didn't tell ETHER — report it.*
+- [ ] PING paused by hand → sleep → wake: stays paused.
+- [ ] Lock the screen (Win+L) with DHCP serving → nothing pauses.
+
 **rc.3 additions**
 - [ ] PING a dead target, minimize ETHER → tray icon turns solid pulsing red (visible on the grey hover too); the taskbar button gets a red ! badge and flashes orange once; click in → flash stops; target back up → badge gone, tray green.
 - [ ] SCAN → discovery rows have a violet frame + violet ◎; the left edge still shows the device type colour.
