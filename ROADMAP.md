@@ -1,13 +1,14 @@
 # NET//ETHER — Roadmap
 
-## 7.3.0 — the stability release (in progress, started 2026-10-27)
+## 7.3.0 — the stability release (released 2026-10-30, eight rcs)
 Goal: one fleet update that lasts. Everything 7.2 added gets its bench round inside 7.3 (TESTING.md § 7.3.0 "the one pass"); rcs stay on Johan's machines; the fleet gets 7.3.0 only, then 7.3.x for things that block work.
 - Quit/hide: ─ always hides, ✕ always quits, no prompts. One rule: what the tech set stays; what ETHER did on its own (REACH, SILENT, DHCP engine) is cleaned up. Leftover line on next launch replaces every quit prompt.
 - Wi-Fi ENABLE timeout (60 s, state decides).
 - Audit round 1 (state files, adapter changes, renderer errors, IPC, below-the-fold prompts) and the process-launch audit (timeouts, read-back after every write, per-card write lock) — see README changelog.
-- Still to do before 7.3.0 final: the bench pass (TESTING.md § 7.3.0), Guide regenerated (minor bump), video script.
+- Done: bench pass (TESTING.md § 7.3.0), Guide 6.0. Also in: sleep pause, cards with no cable (saved settings), pulled USB adapter. Video script still to do.
+- Waiting on IT (Nick, emailed 10-30): EPM rule re-anchored to PCA 2021 + Program Files path (the current rule pins one rotating intermediate, so 7.2+ prompts or won't elevate); Intune detection ≥ 7.3.0.0 or supersedence (exact-match detection reinstalls 7.1).
 - Left for later on purpose: SCAN still launches one ping.exe per address (budgets fixed; batching or raw ICMP is the real fix); firewall-rule adds aren't read back; tshark's 'error' event on a missing binary isn't watched (detection runs first).
-- Not changed on purpose: launch-snapshot is still retaken every launch (a crash mid-session moves the RESTORE LAUNCH STATE baseline — leftovers now cover the real case); a removed adapter stays selected on the IP tab until refresh (APPLY just fails with netsh's message).
+- Not changed on purpose: launch-snapshot is still retaken every launch (a crash mid-session moves the RESTORE LAUNCH STATE baseline — leftovers now cover the real case); ~~a removed adapter stays selected on the IP tab~~ → rc.8: APPLY / → DHCP / REVERT say the card isn't there.
 
 ## Delivered in 7.2.2 (2026-10-24)
 OPEN / REACH choose http or https by asking the device first (AXIS OS 12 ships https-only, so http:// looked like a dead device).

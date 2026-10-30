@@ -242,7 +242,7 @@ NET-ETHER/
 
 ## CHANGELOG
 
-### v7.3.0 (in progress — rc.8, 2026-10-30)
+### v7.3.0 (2026-10-30)
 The stability release: what 7.2 added, plus a full bug hunt, so the fleet gets one update that lasts.
 Started from a day in the field on two addresses where ─ simply refused to hide the window.
 
