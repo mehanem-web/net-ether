@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('hud', {
 
   // ── Network config ───────────────────────────────────────
   applyConfig:      (cfg)     => ipcRenderer.invoke('apply-network-config', cfg),
+  revealLastExport: ()        => ipcRenderer.invoke('reveal-last-export'),   // v7.3.1
   applyDhcp:        (adapter, tag) => ipcRenderer.invoke('apply-dhcp', { adapter, tag }),
   ping:             (host)    => ipcRenderer.invoke('ping-host', host),
   getAdapters:      ()        => ipcRenderer.invoke('get-adapters'),

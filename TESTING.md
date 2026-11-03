@@ -16,6 +16,32 @@ into the bug report. That is the only observable on a managed laptop.
 Run twice: once from `dev.bat` (unelevated — chip AMBER, UAC per operation) and
 once from the portable build (UAC once at launch — chip normal, no prompts).
 
+### v7.3.1 — THE ONE TEST (work laptop, installed + elevated build)
+Most of 7.3.1 was tried live at home while it was built. What home couldn't prove:
+- [ ] APPLY onto a camera's subnet from another subnet → ✓ ACTIVE, the verify lands about a second after netsh (DIAGNOSTICS: OP apply → VERIFY apply).
+- [ ] Same, onto an address a device already has → red "ALREADY TAKEN BY …", REVERT puts the laptop back.
+- [ ] + ADD A 2ND NETWORK ADDRESS, then APPLY a different main address → the 2nd address field is still there (status says KEPT).
+- [ ] FACTORY DEFAULTS → AXIS → + ADD → ADD → on both networks; the camera opens.
+- [ ] DHCP: serve one device, OPEN it; a second device appearing grows the window.
+- [ ] SITES: open the site you're on (● YOU'RE HERE), ▶ SCAN, changes header shows the date.
+
+Feel pass (done at home 2026-11-01; recheck only if something looks off on the work laptop):
+- [ ] Every tab: click through all six. Underline glides, panel settles in, nothing flickers, window height still fits.
+- [ ] Wide tabs: IP → SCAN → DHCP → IP. Underline lands under the right tab after each width change.
+- [ ] PING, 4+ hosts running: no amber blink every second; numbers change in place; pull one cable → that row flashes red once and the dot breathes; plug back → one green flash.
+- [ ] PING: hover TRCRT while running — the hover stays. Toner on a host — the pulse doesn't stutter. TRCRT open on a host — the button keeps ■ STOP.
+- [ ] DHCP, a device asking: click into its address box, type, leave the caret mid-number — the device re-asks (watch the count) and the caret, text and focus stay put.
+- [ ] DHCP: ▶ SERVE → the row's pill glows, the row slides to its new place, ↗ OPEN shows. ✕ revoke → it slides back.
+- [ ] DHCP: ☆ pin → the reservation box opens and keeps focus while the device keeps asking; SAVE / ESC work. ★ clears.
+- [ ] DHCP: tick two asking rows → RESERVE SELECTED still sees both ticks after a re-ask.
+- [ ] DHCP: ◇ SITTING row appears with the wire watch; REACH / OPEN work.
+- [ ] SCAN SUBNET: skeleton rows until the first answer, then rows ease in sorted by IP, one sweep line at the bottom until done. STOP mid-scan → sweep line goes.
+- [ ] DISCOVER alone on an empty list: skeleton while it listens; nothing answers → the empty-state line comes back.
+- [ ] Status bars: message slides in; a repeated identical message doesn't jump; READY after auto-clear; ok flash still shows.
+- [ ] ◐ theme: switching presets crossfades; launch shows the saved theme straight away (no fade from green).
+- [ ] DEPTH: ON by default; OFF → flat; survives a restart. Text still readable in every preset.
+- [ ] Windows Settings → Accessibility → Visual effects → **Animation effects off**, restart ETHER: no motion at all, failing PING dot is solid red (no blink), everything else reads the same.
+
 ### v7.3.0 — THE ONE PASS (also covers § 7.2.2, § 7.2.1, § 7.2.0 below)
 7.2.x never got its bench round, so 7.3 carries it: do this section, then § 7.2.2 → § 7.2.1 →
 § 7.2.0 (lines marked *(7.3.0)* changed), at home. Then one real site day on the work laptop

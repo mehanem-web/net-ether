@@ -80,13 +80,30 @@
   /* Consistent border-radius */
   --radius:  4px;
   --radius-sm: 3px;
+
+  /* v7.3.1 — one motion language. Every interactive control transitions the same
+     properties on the same clock; no `transition: all` (it animated layout and made
+     wrapping controls wobble). Reduced-motion (Windows "Animation effects" off) zeroes it. */
+  --dur-fast: 90ms;
+  --dur:      160ms;
+  --dur-slow: 320ms;
+  --ease:     cubic-bezier(.2, .7, .2, 1);
+  --t-ui: color var(--dur) var(--ease), background-color var(--dur) var(--ease),
+          border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease),
+          opacity var(--dur) var(--ease), transform var(--dur-fast) var(--ease),
+          filter var(--dur) var(--ease);
+  --t-ui-slow: color var(--dur-slow) var(--ease), background-color var(--dur-slow) var(--ease),
+          border-color var(--dur-slow) var(--ease), box-shadow var(--dur-slow) var(--ease),
+          opacity var(--dur-slow) var(--ease), transform var(--dur-slow) var(--ease);
+  /* depth overlay strength — 0.25 agreed 2026-11-01 ("I see it, but I don't SEE it") */
+  --depth: 0.25;
 }
 
 html, body {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  background: transparent;
+  background: rgb(var(--bgr), var(--bgg), var(--bgb));   /* v7.3.1: corners behind the rounded HUD match it (were the window's dark green) */
   font-family: var(--font-mono);
   font-size: 14px;
   font-weight: 700;
@@ -99,7 +116,7 @@ html, body {
   height: 100vh;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 8px;   /* v7.3.1: = Windows 11's own window corner, so the two edges line up (was 10px) */
   overflow: hidden;
   position: relative;
   display: flex;
@@ -185,7 +202,7 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s;
+  transition: var(--t-ui);
   font-size: 12px;
   font-weight: 700;
   color: var(--green-dim);
@@ -218,7 +235,7 @@ html, body {
   color: var(--label-dim);
   cursor: pointer;
   border-bottom: 2px solid transparent;
-  transition: all 0.15s;
+  transition: var(--t-ui);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -377,7 +394,7 @@ html, body {
   border-radius: var(--radius);
   cursor: pointer;
   text-align: center;
-  transition: all 0.15s;
+  transition: var(--t-ui);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -405,7 +422,7 @@ html, body {
   border-radius: var(--radius);
   cursor: pointer;
   text-align: center;
-  transition: all 0.15s;
+  transition: var(--t-ui);
 }
 .small-btn:hover { color: var(--green); border-color: var(--green-dim); background: var(--green-faint); }
 .small-btn.accent { border-color: rgba(255,204,0,0.4); color: rgba(255,204,0,0.6); }
@@ -434,7 +451,7 @@ html, body {
 /* Status dot */
 .adapter-status-dot {
   width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
-  background: rgba(var(--ar),var(--ag),var(--ab),0.2); transition: all 0.3s;
+  background: rgba(var(--ar),var(--ag),var(--ab),0.2); transition: var(--t-ui-slow);
 }
 .adapter-status-dot.connected {
   background: var(--green);
@@ -479,7 +496,7 @@ html, body {
   font-size: 16px;
   color: rgba(var(--ar),var(--ag),var(--ab),0.60);
   flex-shrink: 0;
-  transition: all 0.15s;
+  transition: var(--t-ui);
   user-select: none;
   line-height: 1;
 }
@@ -512,7 +529,7 @@ html, body {
   border-radius: var(--radius);
   cursor: pointer;
   text-align: center;
-  transition: all 0.15s;
+  transition: var(--t-ui);
 }
 .apply-btn:hover { background: rgba(var(--ar), var(--ag), var(--ab), 0.2); }
 .apply-btn:active { transform: scale(0.97); }
@@ -547,7 +564,7 @@ html, body {
   border-radius: var(--radius);
   cursor: pointer;
   text-align: center;
-  transition: all 0.15s;
+  transition: var(--t-ui);
 }
 .cmd-btn:hover { color: var(--green); border-color: var(--green-dim); }
 .cmd-btn.active { color: var(--green); border-color: var(--green); background: rgba(var(--ar), var(--ag), var(--ab), 0.1); }
@@ -558,7 +575,7 @@ html, body {
 .dhcp-status-badge {
   font-size: var(--sz-micro); font-weight: 700; letter-spacing: 1px;
   padding: 1px 6px; border-radius: var(--radius-sm); border: 1px solid;
-  flex-shrink: 0; transition: all 0.2s;
+  flex-shrink: 0; transition: var(--t-ui);
 }
 .dhcp-status-badge.dhcp   { color: var(--green); border-color: rgba(var(--ar),var(--ag),var(--ab),0.3); background: rgba(var(--ar),var(--ag),var(--ab),0.07); }
 .dhcp-status-badge.static { color: rgba(255,204,0,0.7); border-color: rgba(255,204,0,0.3); background: rgba(255,204,0,0.05); }
@@ -570,7 +587,7 @@ html, body {
   background: rgba(255, 204, 0, 0.05);
   border: 1px solid rgba(255, 204, 0, 0.25);
   border-radius: var(--radius); cursor: pointer;
-  transition: all 0.15s; user-select: none;
+  transition: var(--t-ui); user-select: none;
 }
 .revert-btn:hover { background: rgba(255,204,0,0.1); border-color: rgba(255,204,0,0.5); }
 .revert-btn:active { transform: scale(0.98); }
@@ -655,7 +672,7 @@ html, body {
   padding: var(--pad-chip);
   border: 1px solid rgba(var(--ar), var(--ag), var(--ab), 0.15);
   border-radius: var(--radius-sm);
-  transition: all 0.15s;
+  transition: var(--t-ui);
 }
 .copy-small:hover { color: var(--green); border-color: rgba(var(--ar), var(--ag), var(--ab), 0.4); }
 
@@ -722,7 +739,7 @@ html, body {
   font-weight: 700;
   letter-spacing: 1px;
   text-align: center;
-  transition: all 0.15s;
+  transition: var(--t-ui);
 }
 .modal-btn.ok   { background: rgba(var(--ar), var(--ag), var(--ab), 0.1); border: 1px solid var(--green); color: var(--green); }
 .modal-btn.ok:hover { background: rgba(var(--ar), var(--ag), var(--ab), 0.2); }
@@ -746,7 +763,7 @@ html, body {
   border: 1px solid rgba(255,68,85,0.2); background: transparent;
   color: rgba(255,68,85,0.4); font-size: 13px; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  transition: all 0.15s; flex-shrink: 0;
+  transition: var(--t-ui); flex-shrink: 0;
 }
 .host-remove-btn:hover { color: var(--red); border-color: rgba(255,68,85,0.6); background: rgba(255,68,85,0.08); }
 .add-host-btn {
@@ -755,7 +772,7 @@ html, body {
   color: rgba(var(--ar), var(--ag), var(--ab), 0.35);
   font-family: var(--font-mono); font-size: var(--sz-secondary); font-weight: 700;
   letter-spacing: 0; padding: var(--pad-secondary); border-radius: var(--radius);
-  cursor: pointer; text-align: center; transition: all 0.15s;
+  cursor: pointer; text-align: center; transition: var(--t-ui);
 }
 .add-host-btn:hover { color: var(--green-dim); border-color: var(--border); border-style: solid; }
 
@@ -767,7 +784,7 @@ html, body {
   color: rgba(var(--ar),var(--ag),var(--ab),0.40);
   font-family: var(--font-mono); font-size: var(--sz-micro); font-weight: 700;
   letter-spacing: 0; padding: 4px 8px; border-radius: var(--radius);
-  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+  cursor: pointer; transition: var(--t-ui); white-space: nowrap;
 }
 .host-fill-btn:hover { color: var(--green); border-color: var(--green-dim); background: var(--green-faint); }
 
@@ -776,7 +793,7 @@ html, body {
   color: rgba(var(--ar),var(--ag),var(--ab),0.35);
   font-family: var(--font-mono); font-size: var(--sz-micro); font-weight: 700;
   letter-spacing: 0; padding: 4px 8px; border-radius: var(--radius);
-  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+  cursor: pointer; transition: var(--t-ui); white-space: nowrap;
 }
 .mon-copy-btn:hover { color: var(--green); border-color: var(--green-dim); }
 
@@ -795,7 +812,7 @@ html, body {
   color: rgba(var(--ar), var(--ag), var(--ab), 0.4);
   font-family: var(--font-mono); font-size: var(--sz-secondary); font-weight: 700;
   letter-spacing: 1px; padding: var(--pad-secondary); border-radius: var(--radius);
-  cursor: pointer; transition: all 0.15s;
+  cursor: pointer; transition: var(--t-ui);
 }
 .mon-interval-btn:hover { color: var(--green-dim); border-color: var(--green-dim); }
 .mon-interval-btn.active { color: var(--green); border-color: var(--green); background: rgba(var(--ar), var(--ag), var(--ab), 0.1); }
@@ -804,7 +821,7 @@ html, body {
   border-radius: var(--radius); cursor: pointer;
   font-family: var(--font-hud); font-size: 13px; font-weight: 900;
   letter-spacing: 1px; padding: 6px 8px; border: 1px solid;
-  transition: all 0.15s; flex-shrink: 0; white-space: nowrap;
+  transition: var(--t-ui); flex-shrink: 0; white-space: nowrap;
 }
 .mon-action-btn:active { transform: scale(0.96); }
 .mon-btn-start { border-color: var(--green); color: var(--green); background: rgba(var(--ar),var(--ag),var(--ab),0.08); }
@@ -871,7 +888,7 @@ html, body {
   color: rgba(var(--ar),var(--ag),var(--ab),0.3);
   border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.12);
   border-radius: var(--radius-sm); padding: 1px 4px;
-  cursor: pointer; transition: all 0.15s; user-select: none;
+  cursor: pointer; transition: var(--t-ui); user-select: none;
   white-space: nowrap;
 }
 .trcrt-btn:hover { color: var(--green); border-color: var(--green-dim); }
@@ -880,7 +897,7 @@ html, body {
 .tone-btn {
   font-size: 11px; line-height: 1; text-align: center; color: rgba(var(--ar),var(--ag),var(--ab),0.3);
   border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.12); border-radius: var(--radius-sm); padding: 1px 0;
-  cursor: pointer; transition: all 0.15s; user-select: none;
+  cursor: pointer; transition: var(--t-ui); user-select: none;
 }
 .tone-btn:hover { color: var(--green); border-color: var(--green-dim); }
 .tone-btn.on { color: var(--green); border-color: var(--green); background: var(--green-faint); box-shadow: 0 0 6px rgba(var(--ar),var(--ag),var(--ab),0.4); animation: tone-pulse 1s ease-in-out infinite; }
@@ -913,7 +930,7 @@ html, body {
   padding: var(--pad-chip);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  transition: all 0.15s;
+  transition: var(--t-ui);
   user-select: none;
 }
 .copy-ip-btn:hover { color: var(--green); border-color: rgba(var(--ar), var(--ag), var(--ab), 0.3); }
@@ -996,7 +1013,7 @@ html, body {
   background: var(--surface);
   border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.15);
   border-radius: var(--radius); padding: 6px 8px;
-  cursor: pointer; transition: all 0.15s;
+  cursor: pointer; transition: var(--t-ui);
 }
 .default-chip:hover { border-color: rgba(var(--ar),var(--ag),var(--ab),0.40); background: rgba(var(--ar),var(--ag),var(--ab),0.06); }
 .default-chip:active { transform: scale(0.97); }
@@ -1017,7 +1034,7 @@ html, body {
   border-radius: var(--radius);
   cursor: pointer;
   text-align: center;
-  transition: all 0.15s;
+  transition: var(--t-ui);
 }
 .dhcp-btn:hover { color: var(--amber); border-color: rgba(255,204,0,0.5); background: rgba(255,204,0,0.06); }
 .dhcp-btn:active { transform: scale(0.97); }
@@ -1036,7 +1053,7 @@ html, body {
   border-radius: var(--radius);
   cursor: pointer;
   text-align: center;
-  transition: all 0.15s;
+  transition: var(--t-ui);
 }
 .mtu-btn:hover { color: var(--red); border-color: rgba(255,68,85,0.5); background: rgba(255,68,85,0.06); }
 .mtu-btn:active { transform: scale(0.97); }
@@ -1058,7 +1075,7 @@ html, body {
   letter-spacing: 1.5px;
   border-radius: var(--radius);
   border: 1px solid;
-  transition: all 0.15s;
+  transition: var(--t-ui);
   user-select: none;
 }
 .rbtn-restore {
@@ -1183,7 +1200,7 @@ html, body {
   justify-content: center;
   border-radius: var(--radius);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: var(--t-ui);
   flex-shrink: 0;
   align-self: flex-end;
   margin-bottom: 1px;
@@ -1203,7 +1220,7 @@ html, body {
   border-radius: var(--radius);
   cursor: pointer;
   text-align: center;
-  transition: all 0.15s;
+  transition: var(--t-ui);
   margin-bottom: 10px;
 }
 .scan-start-btn:hover  { background: rgba(var(--ar), var(--ag), var(--ab), 0.2); }
@@ -1277,7 +1294,7 @@ html, body {
   padding: var(--pad-chip);
   border: 1px solid rgba(var(--ar), var(--ag), var(--ab), 0.12);
   border-radius: var(--radius-sm);
-  transition: all 0.15s;
+  transition: var(--t-ui);
 }
 .scan-clear-btn:hover { color: var(--red); border-color: rgba(255,68,85,0.4); }
 
@@ -1443,7 +1460,7 @@ html, body {
   border-radius: var(--radius-sm);
   cursor: pointer;
   border: 1px solid;
-  transition: all 0.12s;
+  transition: var(--t-ui);
   flex-shrink: 0;
 }
 .scan-action-open {
@@ -1461,7 +1478,7 @@ html, body {
   cursor: pointer;
   border: 1px solid rgba(var(--ar), var(--ag), var(--ab), 0.15);
   color: rgba(var(--ar), var(--ag), var(--ab), 0.3);
-  transition: all 0.12s;
+  transition: var(--t-ui);
   flex-shrink: 0;
   user-select: none;
 }
@@ -1535,7 +1552,7 @@ html, body {
   cursor: pointer;
   border: 1px solid rgba(var(--ar), var(--ag), var(--ab), 0.3);
   color: rgba(var(--ar), var(--ag), var(--ab), 0.5);
-  transition: all 0.15s;
+  transition: var(--t-ui);
 }
 .scan-save-site-btn:hover {
   border-color: var(--green);
@@ -1619,7 +1636,7 @@ html, body {
   border: 1px solid var(--green);
   color: var(--green);
   background: rgba(var(--ar), var(--ag), var(--ab), 0.1);
-  transition: all 0.15s;
+  transition: var(--t-ui);
   white-space: nowrap;
 }
 .scan-name-confirm:hover { background: rgba(var(--ar), var(--ag), var(--ab), 0.18); }
@@ -1633,7 +1650,7 @@ html, body {
   border: 1px solid var(--border);
   color: var(--label-dim);
   background: transparent;
-  transition: all 0.15s;
+  transition: var(--t-ui);
 }
 .scan-name-cancel:hover { border-color: var(--red); color: var(--red); }
 
@@ -1657,7 +1674,7 @@ html, body {
   border: 1px solid rgba(var(--ar), var(--ag), var(--ab), 0.1);
   border-radius: var(--radius);
   margin-bottom: 5px;
-  transition: all 0.15s;
+  transition: var(--t-ui);
 }
 .site-chip:hover { border-color: rgba(var(--ar), var(--ag), var(--ab), 0.55); }
 .site-chip-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
@@ -1698,7 +1715,7 @@ html, body {
   cursor: pointer;
   border: 1px solid rgba(var(--ar), var(--ag), var(--ab), 0.15);
   color: rgba(var(--ar), var(--ag), var(--ab), 0.4);
-  transition: all 0.15s;
+  transition: var(--t-ui);
 }
 .site-chip-btn:hover { border-color: var(--green-dim); color: var(--green); background: var(--green-faint); }
 .site-chip-btn.del:hover { border-color: rgba(255,68,85,0.4); color: var(--red); background: rgba(255,68,85,0.06); }
@@ -1720,7 +1737,7 @@ html, body {
   border-radius: var(--radius);
   cursor: pointer;
   text-align: center;
-  transition: all 0.15s;
+  transition: var(--t-ui);
 }
 .site-io-btn:hover { color: var(--green-dim); border-color: var(--border); border-style: solid; }
 
@@ -1753,7 +1770,7 @@ html, body {
   font-size: var(--sz-micro); font-weight: 700; letter-spacing: 1px;
   color: var(--label-dim); cursor: pointer; user-select: none;
   padding: 2px 6px; border: 1px solid transparent; border-radius: var(--radius-sm);
-  transition: all 0.15s;
+  transition: var(--t-ui);
 }
 .scan-opt-toggle:hover { border-color: var(--border); color: var(--label); }
 .scan-opt-toggle .pill {
@@ -1788,7 +1805,7 @@ html, body {
   border: 1px solid currentColor;
   border-radius: var(--radius-sm);
   flex-shrink: 0;
-  transition: all 0.15s;
+  transition: var(--t-ui);
 }
 .scan-changes-chip .chip-view:hover { background: rgba(255,204,0,0.15); }
 .scan-changes-chip.clean .chip-view:hover { background: var(--green-faint); }
@@ -1834,7 +1851,7 @@ html, body {
   border-radius: var(--radius);
   cursor: pointer;
   border: 2px solid transparent;
-  transition: all 0.15s;
+  transition: var(--t-ui);
   position: relative;
 }
 .palette-swatch:hover { transform: scale(1.1); }
@@ -1902,7 +1919,7 @@ html, body {
   cursor: pointer;
   text-align: center;
   margin-bottom: 2px;
-  transition: all 0.15s;
+  transition: var(--t-ui);
 }
 /* ── TITLEBAR VERSION CHIP → DIAGNOSTICS ─────────────────── */
 .ver-chip {
@@ -1918,7 +1935,7 @@ html, body {
   line-height: 15px;
   cursor: pointer;
   user-select: none;
-  transition: all 0.15s;
+  transition: var(--t-ui);
   white-space: nowrap;
 }
 .ver-chip:hover { color: var(--green); border-color: var(--green-dim); }
@@ -2050,7 +2067,7 @@ html, body {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: var(--t-ui);
 }
 .help-tab:hover { color: var(--label); }
 .help-tab.active { color: var(--green); border-color: var(--green-dim); background: var(--green-ghost); }
@@ -2068,7 +2085,7 @@ html, body {
   font-size: 13px;
   cursor: pointer;
   color: rgba(var(--ar), var(--ag), var(--ab), 0.4);
-  transition: all 0.15s;
+  transition: var(--t-ui);
   user-select: none;
   margin-top: -1px;
 }
@@ -2148,7 +2165,7 @@ html, body {
   background: rgba(var(--ar), var(--ag), var(--ab), 0.04);
   border: 1px solid rgba(var(--ar), var(--ag), var(--ab), 0.2);
   border-radius: var(--radius); cursor: pointer;
-  transition: all 0.15s; user-select: none;
+  transition: var(--t-ui); user-select: none;
 }
 .multiip-toggle-row:hover {
   background: rgba(var(--ar), var(--ag), var(--ab), 0.08);
@@ -2207,7 +2224,7 @@ html, body {
   display: flex; align-items: center; justify-content: space-between;
   padding: 5px 9px; background: rgba(0,0,0,0.25);
   border: 1px solid rgba(var(--ar), var(--ag), var(--ab), 0.12);
-  border-radius: var(--radius); transition: all 0.15s;
+  border-radius: var(--radius); transition: var(--t-ui);
 }
 .alias-row:hover { border-color: rgba(var(--ar), var(--ag), var(--ab), 0.45); }
 .alias-row.primary { opacity: 0.6; cursor: default; }
@@ -2218,11 +2235,11 @@ html, body {
 .alias-row-actions { display: flex; gap: 5px; align-items: center; }
 .alias-row-tag { font-size: 11px; font-weight: 700; letter-spacing: 1px; color: rgba(var(--ar), var(--ag), var(--ab), 0.35); border: 1px solid rgba(var(--ar), var(--ag), var(--ab), 0.15); border-radius: var(--radius-sm); padding: 1px 5px; flex-shrink: 0; }
 .alias-row-tag.primary-tag { color: rgba(var(--ar), var(--ag), var(--ab), 0.45); border-color: rgba(var(--ar), var(--ag), var(--ab), 0.2); }
-.alias-del-btn { font-size: var(--sz-secondary); font-weight: 700; cursor: pointer; color: rgba(255,68,85,0.4); padding: var(--pad-secondary); border-radius: var(--radius); border: 1px solid rgba(255,68,85,0.2); transition: all 0.15s; letter-spacing: 1px; }
+.alias-del-btn { font-size: var(--sz-secondary); font-weight: 700; cursor: pointer; color: rgba(255,68,85,0.4); padding: var(--pad-secondary); border-radius: var(--radius); border: 1px solid rgba(255,68,85,0.2); transition: var(--t-ui); letter-spacing: 1px; }
 .alias-del-btn:hover { color: var(--red); border-color: rgba(255,68,85,0.5); background: rgba(255,68,85,0.08); }
-.alias-use-btn { font-size: var(--sz-secondary); font-weight: 700; cursor: pointer; color: rgba(var(--ar), var(--ag), var(--ab), 0.4); padding: var(--pad-secondary); border-radius: var(--radius); border: 1px solid rgba(var(--ar), var(--ag), var(--ab), 0.15); transition: all 0.15s; letter-spacing: 1px; }
+.alias-use-btn { font-size: var(--sz-secondary); font-weight: 700; cursor: pointer; color: rgba(var(--ar), var(--ag), var(--ab), 0.4); padding: var(--pad-secondary); border-radius: var(--radius); border: 1px solid rgba(var(--ar), var(--ag), var(--ab), 0.15); transition: var(--t-ui); letter-spacing: 1px; }
 .alias-use-btn:hover { color: var(--green); border-color: var(--green); background: var(--green-faint); }
-.alias-refresh-btn { font-size: 14px; cursor: pointer; color: rgba(var(--ar), var(--ag), var(--ab), 0.4); transition: all 0.15s; user-select: none; }
+.alias-refresh-btn { font-size: 14px; cursor: pointer; color: rgba(var(--ar), var(--ag), var(--ab), 0.4); transition: var(--t-ui); user-select: none; }
 .alias-refresh-btn:hover { color: var(--green); }
 .alias-refresh-btn.spinning { animation: spin 0.6s linear infinite; }
 .alias-cmd-box { margin-top: 8px; background: rgba(0,0,0,0.5); border: 1px solid rgba(var(--ar), var(--ag), var(--ab), 0.12); border-radius: var(--radius); padding: 10px; }
@@ -2234,7 +2251,7 @@ html, body {
   color: rgba(var(--ar), var(--ag), var(--ab), 0.4);
   font-family: var(--font-mono); font-size: var(--sz-secondary);
   font-weight: 700; letter-spacing: 1px; padding: var(--pad-secondary);
-  border-radius: var(--radius); cursor: pointer; transition: all 0.15s;
+  border-radius: var(--radius); cursor: pointer; transition: var(--t-ui);
 }
 .intel-toolbar-btn:hover { color: var(--green); border-color: var(--green-dim); background: var(--green-faint); }
 .intel-toolbar-btn.accent { border-color: rgba(var(--ar),var(--ag),var(--ab),0.4); color: var(--green); }
@@ -2244,7 +2261,7 @@ html, body {
 .intel-site-list { display: flex; flex-direction: column; gap: 6px; }
 .intel-site-card {
   background: rgba(0,0,0,0.28); border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.20);
-  border-radius: var(--radius); padding: 10px 12px; cursor: pointer; transition: all 0.15s;
+  border-radius: var(--radius); padding: 10px 12px; cursor: pointer; transition: var(--t-ui);
 }
 .intel-site-card:hover { border-color: rgba(var(--ar),var(--ag),var(--ab),0.40); background: rgba(var(--ar),var(--ag),var(--ab),0.05); }
 .intel-site-card.active { border-color: rgba(var(--ar),var(--ag),var(--ab),0.55); background: rgba(var(--ar),var(--ag),var(--ab),0.08); }
@@ -2274,7 +2291,7 @@ html, body {
   flex-shrink: 0; background: var(--surface); border: 1px solid var(--border);
   color: rgba(var(--ar),var(--ag),var(--ab),0.4); font-family: var(--font-mono);
   font-size: var(--sz-secondary); font-weight: 700; letter-spacing: 1px;
-  padding: var(--pad-secondary); border-radius: var(--radius); cursor: pointer; transition: all 0.15s;
+  padding: var(--pad-secondary); border-radius: var(--radius); cursor: pointer; transition: var(--t-ui);
 }
 .intel-back-btn:hover { color: var(--green); border-color: var(--green-dim); }
 
@@ -2323,7 +2340,7 @@ html, body {
   font-size: var(--sz-micro); font-weight: 700; letter-spacing: 1px;
   padding: 1px 5px; border-radius: var(--radius-sm);
   border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.22);
-  color: rgba(var(--ar),var(--ag),var(--ab),0.45); cursor: pointer; transition: all 0.15s;
+  color: rgba(var(--ar),var(--ag),var(--ab),0.45); cursor: pointer; transition: var(--t-ui);
 }
 .intel-device-type:hover { border-color: var(--green-dim); color: var(--green); }
 .intel-device-type.tc-camera     { color: rgba(255,204,0,0.80);   border-color: rgba(255,204,0,0.35); }
@@ -2455,7 +2472,7 @@ html, body {
 .intel-save-btn {
   font-family: var(--font-hud); font-size: 11px; font-weight: 700;
   letter-spacing: 2px; padding: 7px 14px;
-  border-radius: var(--radius); cursor: pointer; transition: all 0.15s; border: 1px solid;
+  border-radius: var(--radius); cursor: pointer; transition: var(--t-ui); border: 1px solid;
   color: var(--green); border-color: rgba(var(--ar),var(--ag),var(--ab),0.50);
   background: rgba(var(--ar),var(--ag),var(--ab),0.10);
 }
@@ -2464,7 +2481,7 @@ html, body {
 .intel-del-device-btn {
   font-family: var(--font-hud); font-size: 11px; font-weight: 700;
   letter-spacing: 2px; padding: 7px 14px;
-  border-radius: var(--radius); cursor: pointer; transition: all 0.15s; border: 1px solid;
+  border-radius: var(--radius); cursor: pointer; transition: var(--t-ui); border: 1px solid;
   color: rgba(255,68,85,0.55); border-color: rgba(255,68,85,0.22);
   background: transparent; margin-left: auto;
 }
@@ -2489,7 +2506,7 @@ html, body {
 .intel-status-bar.ok   { color: var(--green); border-color: rgba(var(--ar),var(--ag),var(--ab),0.3); }
 .intel-status-bar.warn { color: var(--amber); border-color: rgba(255,204,0,0.3); }
 .intel-status-bar.err  { color: var(--red);   border-color: rgba(255,68,85,0.3); }
-.intel-scan-link { font-size: var(--sz-secondary); font-weight: 700; letter-spacing: 1px; color: rgba(var(--ar),var(--ag),var(--ab),0.4); cursor: pointer; padding: var(--pad-secondary); border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.15); border-radius: var(--radius); transition: all 0.15s; text-align: center; margin-bottom: 8px; display: block; }
+.intel-scan-link { font-size: var(--sz-secondary); font-weight: 700; letter-spacing: 1px; color: rgba(var(--ar),var(--ag),var(--ab),0.4); cursor: pointer; padding: var(--pad-secondary); border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.15); border-radius: var(--radius); transition: var(--t-ui); text-align: center; margin-bottom: 8px; display: block; }
 .intel-scan-link:hover { color: var(--green); border-color: var(--green-dim); background: var(--green-faint); }
 .intel-device-mac { font-size: var(--sz-micro); color: rgba(var(--ar),var(--ag),var(--ab),0.55); letter-spacing: 0.5px; flex-shrink: 0; }
 
@@ -2585,7 +2602,7 @@ html, body {
   display: none; font-family: var(--font-hud); font-size: 8.5px; font-weight: 900; letter-spacing: 1px;
   padding: 2px 6px; border-radius: 3px; border: 1px solid rgba(255,204,0,0.35);
   color: rgba(255,204,0,0.75); background: rgba(255,204,0,0.05); cursor: pointer; white-space: nowrap;
-  transition: all 0.15s;
+  transition: var(--t-ui);
 }
 .adapter-dhcp-action.show { display: inline-block; }
 .adapter-dhcp-action:hover { color: var(--amber); border-color: var(--amber); background: rgba(255,204,0,0.12); }
@@ -2611,7 +2628,7 @@ html, body {
   font-family: var(--font-hud); font-size: 8.5px; font-weight: 900; letter-spacing: 1px;
   padding: 2px 6px; border-radius: 3px; border: 1px solid var(--border);
   color: var(--label-dim); background: var(--surface); cursor: pointer; white-space: nowrap;
-  user-select: none; transition: all 0.15s;
+  user-select: none; transition: var(--t-ui);
 }
 .tool-chip.show { display: inline-flex; }
 .tool-chip:hover { color: var(--green); border-color: var(--green-dim); background: var(--green-faint); }
@@ -2633,7 +2650,7 @@ html, body {
 .cap-btn {
   font-size: 12px; text-align: center; cursor: pointer; line-height: 1; padding: 3px 0;
   border-radius: var(--radius-sm); border: 1px solid transparent;
-  color: rgba(var(--ar),var(--ag),var(--ab),0.35); user-select: none; transition: all 0.15s;
+  color: rgba(var(--ar),var(--ag),var(--ab),0.35); user-select: none; transition: var(--t-ui);
 }
 .cap-btn { transition: none; }
 .cap-btn:hover { color: var(--green); border-color: var(--green-dim); }
@@ -2643,7 +2660,7 @@ html, body {
 .intel-wake-btn {
   font-family: var(--font-hud); font-size: 11px; font-weight: 700;
   letter-spacing: 2px; padding: 7px 14px;
-  border-radius: var(--radius); cursor: pointer; transition: all 0.15s; border: 1px solid;
+  border-radius: var(--radius); cursor: pointer; transition: var(--t-ui); border: 1px solid;
   color: var(--label-dim); border-color: var(--border); background: var(--surface);
 }
 .intel-wake-btn:hover { color: var(--green); border-color: var(--green-dim); background: var(--green-faint); }
@@ -2653,7 +2670,7 @@ html, body {
 .scan-export-btn {
   font-size: var(--sz-micro); font-weight: 700; letter-spacing: 1px; padding: 2px 7px;
   border-radius: var(--radius-sm); border: 1px solid var(--border); color: var(--label-dim);
-  cursor: pointer; user-select: none; transition: all 0.15s;
+  cursor: pointer; user-select: none; transition: var(--t-ui);
 }
 .scan-export-btn:hover { color: var(--green); border-color: var(--green-dim); background: var(--green-faint); }
 .scan-export-btn.copied { color: var(--green); border-color: var(--green); }
@@ -2826,7 +2843,7 @@ html, body {
 .serve-btn {
   background: rgba(255,204,0,0.08); border: 1px solid rgba(255,204,0,0.6); color: var(--amber);
   font-family: var(--font-hud); font-size: var(--sz-primary); font-weight: 700; letter-spacing: 2px;
-  padding: var(--pad-primary); border-radius: var(--radius); cursor: pointer; text-align: center; transition: all 0.15s;
+  padding: var(--pad-primary); border-radius: var(--radius); cursor: pointer; text-align: center; transition: var(--t-ui);
   display: flex; align-items: center; justify-content: center;
 }
 .serve-btn:hover { background: rgba(255,204,0,0.16); }
@@ -2834,15 +2851,17 @@ html, body {
 .serve-btn.stop:hover { background: rgba(255,68,85,0.16); }
 .serve-btn.bracket::before, .serve-btn.bracket::after { border-color: rgba(255,204,0,0.9); }
 .serve-btn.stop.bracket::before, .serve-btn.stop.bracket::after { border-color: rgba(255,68,85,0.9); }
-.serve-btn.disabled, .cmd-btn.disabled { opacity: 0.4; pointer-events: none; }
+.serve-btn.disabled { opacity: 0.4; pointer-events: none; }
+/* v7.3.1: a dim button × 0.4 opacity was ~12% — unreadable. Greyed but legible: "not yet", not "gone". */
+.cmd-btn.disabled { pointer-events: none; opacity: 1; color: var(--label-faint); border-color: rgba(var(--lr), var(--lg), var(--lb), 0.15); background: transparent; }
 .dhcp-devices-head { display: flex; align-items: center; justify-content: space-between; margin: 12px 0 5px; }
 .dhcp-devices-head .section-label { margin: 0; }
 .dhcp-devices-head .cnt { color: var(--green); font-size: 12px; margin-left: 4px; }
 .dhcp-tools { display: flex; gap: 4px; }
-.dhcp-table { background: rgba(0,0,0,0.3); border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.12); border-radius: var(--radius); min-height: 150px; display: flex; flex-direction: column; overflow: hidden; flex: 1 1 0; }
+.dhcp-table { background: rgba(0,0,0,0.3); border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.12); border-radius: var(--radius); min-height: 120px; display: flex; flex-direction: column; overflow: hidden; flex: 1 0 auto; }   /* v7.3.1: sized by its rows — the window grows to show every device, like SCAN */
 .dhcp-thead, .dhcp-row { display: grid; grid-template-columns: 96px 112px 118px 1.45fr 0.85fr 92px 150px; gap: 8px; align-items: center; padding: 0 10px; }
 .dhcp-thead { font-family: var(--font-hud); font-size: 8.5px; font-weight: 900; letter-spacing: 1.2px; color: var(--label-dim); padding-top: 6px; padding-bottom: 5px; border-bottom: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.12); }
-.dhcp-dev-list { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; }
+.dhcp-dev-list { display: flex; flex-direction: column; flex: 1 0 auto; }
 .dhcp-dev-list::-webkit-scrollbar { width: 4px; } .dhcp-dev-list::-webkit-scrollbar-thumb { background: rgba(var(--ar),var(--ag),var(--ab),0.2); }
 .dhcp-empty { text-align: center; padding: 26px 8px; color: var(--label-dim); font-size: 10px; letter-spacing: 1.5px; }
 .dhcp-row { min-height: 34px; padding-top: 5px; padding-bottom: 5px; border-bottom: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.06); border-left: 3px solid transparent; font-family: var(--font-mono); font-size: 11px; }
@@ -2879,11 +2898,17 @@ html, body {
 .dhcp-row .actions .cmd-btn.pin.on { color: var(--amber); }
 .dhcp-row .actions .cmd-btn.x { color: var(--red); border-color: rgba(255,68,85,0.35); }
 .dhcp-resv-input { width: 108px; background: var(--surface); border: 1px solid var(--amber); border-radius: 3px; color: var(--amber); font-family: var(--font-mono); font-size: 11px; font-weight: 700; padding: 2px 5px; outline: none; }
-.dhcp-logrow { display: flex; gap: 6px; align-items: stretch; flex: 1 1 0; min-height: 72px; }
+.dhcp-logrow { display: flex; gap: 6px; align-items: stretch; flex: 0 0 auto; margin-top: 8px; }
+/* v7.3.1: the engine log is a two-line strip (newest at the bottom); ▸ LOG opens it to ~10 lines */
+.dhcp-logrow .dhcp-log { height: 41px; transition: height var(--dur-slow) var(--ease), border-color var(--dur) var(--ease); }
+.dhcp-logrow.open .dhcp-log { height: 160px; }
+.dhcp-logrow:not(.open) .dhcp-log { overflow: hidden; cursor: pointer; }
+.dhcp-logrow:not(.open) .dhcp-log:hover { border-color: var(--border); }
+.dhcp-logrow.alert:not(.open) .dhcp-log { border-color: rgba(255,204,0,0.55); }
+.dhcp-logbtns { display: flex; flex-direction: column; gap: 4px; }
+.dhcp-logbtns { align-self: flex-start; }
+.dhcp-logbtns .cmd-btn { justify-content: center; width: 64px; height: 19px; padding: 0; box-sizing: border-box; flex: none; }   /* same size, stacked; together they match the closed strip */
 /* Draggable divider between the device table and the log — ratio is remembered */
-.dhcp-splitter { height: 10px; margin: 2px 0; cursor: row-resize; display: flex; align-items: center; justify-content: center; flex-shrink: 0; user-select: none; }
-.dhcp-splitter span { width: 48px; height: 3px; border-radius: 2px; background: rgba(var(--ar),var(--ag),var(--ab),0.25); transition: background 0.15s, width 0.15s; }
-.dhcp-splitter:hover span, .dhcp-splitter.dragging span { background: var(--green); width: 72px; box-shadow: 0 0 6px var(--green); }
 body.dhcp-resizing { cursor: row-resize; user-select: none; }
 .dhcp-log { flex: 1; min-height: 0; overflow-y: auto; background: rgba(0,0,0,0.35); border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.1); border-radius: var(--radius); padding: 5px 8px; font-family: var(--font-mono); font-size: 10px; line-height: 1.5; color: var(--label-dim); }
 .dhcp-log .ok { color: var(--green); } .dhcp-log .warn { color: var(--amber); } .dhcp-log .err { color: var(--red); } .dhcp-log .info { opacity: 0.7; }
@@ -2938,6 +2963,262 @@ select.field-input.dhcp-lease { padding: 5px 6px; font-size: 12px; cursor: point
 .diag-tools .cmd-btn { flex: none; padding: 4px 10px; }
 .diag-tools .note { font-size: 10px; color: var(--label-dim); flex: 1; line-height: 1.4; }
 .help-cidr .cidr-table { margin-top: 4px; }
+/* ══════════════ v7.3.1 — FEEL PASS ══════════════
+   Renderer-only polish: nothing here changes what a control does. */
+
+/* accent crossfade — the triplets are registered as numbers so a palette change
+   animates instead of hard-cutting. html.theme-anim is set after the saved theme
+   loads, so launch doesn't fade in from the default green. */
+@property --ar  { syntax: '<number>'; inherits: true; initial-value: 0; }
+@property --ag  { syntax: '<number>'; inherits: true; initial-value: 255; }
+@property --ab  { syntax: '<number>'; inherits: true; initial-value: 144; }
+@property --lr  { syntax: '<number>'; inherits: true; initial-value: 160; }
+@property --lg  { syntax: '<number>'; inherits: true; initial-value: 220; }
+@property --lb  { syntax: '<number>'; inherits: true; initial-value: 255; }
+@property --bgr { syntax: '<number>'; inherits: true; initial-value: 9; }
+@property --bgg { syntax: '<number>'; inherits: true; initial-value: 13; }
+@property --bgb { syntax: '<number>'; inherits: true; initial-value: 18; }
+html.theme-anim {
+  transition: --ar .45s var(--ease), --ag .45s var(--ease), --ab .45s var(--ease),
+              --lr .45s var(--ease), --lg .45s var(--ease), --lb .45s var(--ease),
+              --bgr .45s var(--ease), --bgg .45s var(--ease), --bgb .45s var(--ease);
+}
+
+/* press feedback on the buttons that didn't have it */
+:is(.cmd-btn, .small-btn, .preset-btn, .rbtn, .modal-btn, .serve-btn, .tool-chip,
+    .scan-result-action, .scan-export-btn, .scan-save-site-btn, .scan-auto-btn, .scan-clear-btn,
+    .site-chip-btn, .site-io-btn, .intel-toolbar-btn, .intel-wake-btn, .cap-btn, .palette-apply-btn,
+    .mon-interval-btn, .mon-copy-btn, .add-host-btn, .host-fill-btn, .trcrt-btn, .tone-btn,
+    .copy-small, .copy-ip-btn, .alias-use-btn, .scan-name-confirm, .depth-chip):active {
+  transform: scale(0.96);
+}
+
+/* tabs — the underline glides between tabs; the panel settles in after the switch.
+   The window itself still snaps to the new height (Windows can't animate a window). */
+.tab-bar { position: relative; }
+.tab-bar.has-ink .tab.active { border-bottom-color: transparent; }
+.tab-ink {
+  position: absolute; left: 0; bottom: 0; height: 2px; width: 0;
+  background: var(--green); box-shadow: 0 0 8px rgba(var(--ar), var(--ag), var(--ab), 0.6);
+  pointer-events: none; z-index: 2;
+  transition: transform var(--dur-slow) var(--ease), width var(--dur-slow) var(--ease);
+}
+.tab-ink.no-anim { transition: none; }
+.panel.active { animation: panel-in var(--dur-slow) var(--ease) both; }
+@keyframes panel-in { from { opacity: 0; transform: translateY(4px); } }
+
+/* rows — new ones ease in, changed values glow once, replies get a ring on the dot */
+.row-enter { animation: row-in var(--dur-slow) var(--ease) both; }
+@keyframes row-in { from { opacity: 0; transform: translateY(-4px); } }
+.chg { animation: cell-glow .7s var(--ease); }
+@keyframes cell-glow { 0% { text-shadow: 0 0 10px currentColor; } }
+.dot { transition: background-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), opacity var(--dur) var(--ease); }
+.dot.wait { opacity: 0.55; }
+.dot.ack { animation: dot-ack .45s var(--ease); }
+@keyframes dot-ack { 0% { box-shadow: 0 0 0 0 rgba(var(--ar), var(--ag), var(--ab), 0.7); } 100% { box-shadow: 0 0 0 7px rgba(var(--ar), var(--ag), var(--ab), 0); } }
+.dot.warn.ack { animation-name: dot-ack-warn; }
+@keyframes dot-ack-warn { 0% { box-shadow: 0 0 0 0 rgba(255,204,0,0.7); } 100% { box-shadow: 0 0 0 7px rgba(255,204,0,0); } }
+.dhcp-row { transition: border-left-color var(--dur-slow) var(--ease), background-color var(--dur) var(--ease), opacity var(--dur-slow) var(--ease); }
+.dhcp-row.flip { transition: transform var(--dur-slow) var(--ease), border-left-color var(--dur-slow) var(--ease); }
+.dhcp-row.row-chg .dhcp-pill { animation: cell-glow .7s var(--ease); }
+
+/* waiting looks alive — skeleton rows with a sweep while a scan or discovery spins up */
+.scan-skel {
+  height: 30px; position: relative; overflow: hidden;
+  display: grid; grid-template-columns: 110px 1fr 70px; gap: 10px; align-items: center; padding: 0 8px;
+  border-bottom: 1px solid rgba(var(--ar), var(--ag), var(--ab), 0.06);
+}
+.scan-skel i { height: 8px; border-radius: 2px; background: rgba(var(--ar), var(--ag), var(--ab), 0.08); }
+.scan-skel i:nth-child(2) { width: 70%; }
+.scan-skel i:nth-child(3) { width: 60%; justify-self: end; }
+.scan-skel::after {
+  content: ''; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(var(--ar), var(--ag), var(--ab), 0.10), transparent);
+  animation: skel-sweep 1.1s ease-in-out infinite;
+}
+@keyframes skel-sweep { to { transform: translateX(100%); } }
+
+/* status lines — the message slides in instead of swapping */
+.sb-msg { display: inline-block; max-width: 100%; vertical-align: top; }
+.sb-msg.swap { animation: msg-in var(--dur-slow) var(--ease); }
+@keyframes msg-in { from { opacity: 0; transform: translateY(6px); } }
+
+/* depth — faint scanlines, a soft vignette and an accent sheen on rows, at --depth.
+   On by default; the DEPTH chip in the colour-theme menu turns it off. */
+body.depth .hud::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: inherit; z-index: 1;
+  background:
+    repeating-linear-gradient(0deg, rgba(255,255,255, calc(0.09 * var(--depth))) 0 1px, transparent 1px 3px),
+    radial-gradient(120% 90% at 50% 40%, transparent 50%, rgba(0,0,0, calc(0.7 * var(--depth))));
+}
+body.depth .hud { box-shadow: inset 0 0 calc(40px * var(--depth)) rgba(var(--ar), var(--ag), var(--ab), calc(0.18 * var(--depth))); }
+body.depth :is(.monitor-row, .dhcp-dev-list, .scan-results) {
+  background-image: linear-gradient(180deg, rgba(var(--ar), var(--ag), var(--ab), calc(0.12 * var(--depth))), transparent 60%);
+}
+.depth-row { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+.depth-chip {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1px;
+  padding: 3px 9px; border-radius: var(--radius-sm); cursor: pointer; user-select: none;
+  border: 1px solid var(--border); color: var(--label-dim); transition: var(--t-ui);
+}
+.depth-chip.on { color: var(--green); border-color: var(--green); background: var(--green-ghost); }
+
+/* ── v7.3.1 IP tab: card → how it gets its address → the fields → one button that says what it does ── */
+.opt { font-family: var(--font-mono); font-size: 10px; font-weight: 400; letter-spacing: 0.3px; color: var(--label-faint); text-transform: none; margin-left: 6px; }
+.section-label .opt { margin-left: 2px; }
+.multiip-toggle-label { white-space: nowrap; }
+.multiip-toggle-label .opt { display: inline; }
+.field-label.ip-label { display: flex; align-items: center; gap: 8px; }
+.ip-mode { margin-left: auto; display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; background: var(--surface); }
+.ip-mode-opt {
+  position: relative; font-family: var(--font-hud); font-size: 9.5px; font-weight: 900; letter-spacing: 1.2px;
+  padding: 3px 11px 3px 12px; color: var(--label-dim); cursor: pointer; user-select: none; transition: var(--t-ui);
+}
+.ip-mode-opt + .ip-mode-opt { border-left: 1px solid var(--border); }
+.ip-mode-opt:hover { color: var(--label); }
+.ip-mode-opt.on { color: var(--green); background: var(--green-faint); }
+/* the side the card is really on right now — a dot, so "picked" vs "is" never blur */
+.ip-mode-opt.is-now::before { content: ''; position: absolute; left: 4px; top: 50%; width: 4px; height: 4px; margin-top: -2px; border-radius: 50%; background: currentColor; opacity: 0.8; }
+.ip-fields.locked .field-input { opacity: 0.5; cursor: pointer; }
+.ip-fields.locked .field-input:hover { opacity: 0.7; }
+.ip-fields.locked .copy-ip-btn { opacity: 0.8; }
+.ip-fields.locked .ca-addrow .field-input { opacity: 1; cursor: text; }
+.ca-extras { display: contents; }
+.ca-extra .field-label .ord { color: var(--label-dim); }
+.ca-ro {
+  display: flex; align-items: baseline; gap: 6px; cursor: default; user-select: text;
+  border-color: rgba(var(--ar), var(--ag), var(--ab), 0.2); background: rgba(0,0,0,0.18);
+  color: var(--green-dim); padding-right: 140px;
+}
+.ca-ro .m { color: var(--label-faint); font-size: 12px; }
+.ca-extra .ca-acts { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); display: flex; gap: 4px; }
+.ca-extra .ca-acts span {
+  font-size: var(--sz-micro); font-weight: 700; letter-spacing: 1px; padding: var(--pad-chip);
+  border: 1px solid transparent; border-radius: var(--radius-sm); cursor: pointer; user-select: none; transition: var(--t-ui);
+}
+.ca-extra .ca-acts .cp { color: rgba(var(--ar), var(--ag), var(--ab), 0.35); }
+.ca-extra .ca-acts .cp:hover { color: var(--green); border-color: var(--green-dim); }
+.ca-extra .ca-acts .rm { color: rgba(255,68,85,0.55); }
+.ca-extra .ca-acts .rm:hover { color: var(--red); border-color: rgba(255,68,85,0.5); background: rgba(255,68,85,0.08); }
+.ca-extra.row-enter { animation: row-in var(--dur-slow) var(--ease) both; }
+.ca-addwrap { display: flex; justify-content: center; margin: -2px 0 10px; }
+.ca-extra { margin-top: 0; }
+.ca-add {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 1px; color: var(--green);
+  border: 1px dashed rgba(var(--ar), var(--ag), var(--ab), 0.55); border-radius: var(--radius-sm);
+  padding: 2px 8px; cursor: pointer; user-select: none; transition: var(--t-ui); white-space: nowrap;
+}
+.ca-add:hover { border-style: solid; background: var(--green-ghost); }
+.ca-add:active { transform: scale(0.96); }
+.ca-addwrap:has(.ca-add.open) { display: none; }
+.ca-addrow { margin: -4px 0 10px; padding: 8px; border: 1px solid rgba(var(--ar), var(--ag), var(--ab), 0.3); border-radius: var(--radius); background: rgba(0,0,0,0.22); }
+.ca-addrow.row-enter { animation: row-in var(--dur-slow) var(--ease) both; }
+.ca-hint { font-size: 11px; line-height: 1.45; color: var(--label-dim); margin-bottom: 6px; }
+.ca-hint b { color: var(--amber); font-weight: 700; }
+.ca-fields { display: grid; grid-template-columns: minmax(0, 1fr) 112px auto auto; gap: 5px; align-items: stretch; }
+.ca-fields .field-input { padding: 5px 8px; font-size: 13px; }
+.ca-go { padding: 5px 12px; display: flex; align-items: center; justify-content: center; }
+.ca-x { display: flex; align-items: center; justify-content: center; padding: 0 7px; flex: none; }
+.ca-addrow .alias-cmd-box { margin-top: 6px; }
+.default-chip-acts { display: flex; gap: 4px; margin-top: 5px; }
+.default-chip-acts span { flex: 1; text-align: center; font-size: 9.5px; font-weight: 700; letter-spacing: 1px; padding: 2px 0; border-radius: 2px; border: 1px solid var(--border); color: var(--label-dim); transition: var(--t-ui); }
+.default-chip-acts .dc-add { color: var(--green); border-style: dashed; border-color: rgba(var(--ar), var(--ag), var(--ab), 0.55); }
+.default-chip-acts span:hover { color: var(--green); border-color: var(--green); background: var(--green-ghost); }
+.gw-clear { margin-left: 4px; padding: 0 6px; border: 1px solid rgba(255,204,0,0.5); border-radius: 2px; cursor: pointer; font-weight: 700; letter-spacing: 1px; white-space: nowrap; }
+.gw-clear:hover { background: rgba(255,204,0,0.12); }
+.gw-warn { margin-top: 5px; font-size: 11px; line-height: 1.45; color: var(--amber); letter-spacing: 0.3px; }
+.apply-btn.idle { opacity: 0.45; cursor: default; pointer-events: none; }
+
+/* ── v7.3.1: RAINBOW ── the accent triplet runs the spectrum (registered numbers, so it
+   interpolates); tabs, buttons and rows each run it offset, so colour washes across the HUD.
+   Derived tokens are re-declared on those elements so they pick up the local triplet. */
+@keyframes rainbow-hue {
+  0%   { --ar: 255; --ag: 51;  --ab: 85;  }
+  16%  { --ar: 255; --ag: 149; --ab: 0;   }
+  33%  { --ar: 255; --ag: 230; --ab: 0;   }
+  50%  { --ar: 0;   --ag: 255; --ab: 120; }
+  66%  { --ar: 0;   --ag: 200; --ab: 255; }
+  83%  { --ar: 154; --ag: 90;  --ab: 255; }
+  100% { --ar: 255; --ag: 51;  --ab: 85;  }
+}
+html.rainbow { animation: rainbow-hue 14s linear infinite; }
+/* rows mid-effect (flash, ease-in, slide, discovery pulse) keep their own animation */
+html.rainbow :is(.tab, .preset-btn, .section-label, .ip-mode-opt, .default-chip, .win-btn),
+html.rainbow :is(.monitor-row, .dhcp-row, .scan-result-row):not(.flash-ok):not(.flash-fail):not(.row-enter):not(.row-chg):not(.flip):not(.disc-pulse) {
+  animation: rainbow-hue 14s linear infinite;
+  --green:        rgb(var(--ar), var(--ag), var(--ab));
+  --green-dim:    rgba(var(--ar), var(--ag), var(--ab), 0.75);
+  --green-faint:  rgba(var(--ar), var(--ag), var(--ab), 0.22);
+  --green-ghost:  rgba(var(--ar), var(--ag), var(--ab), 0.12);
+  --border:       rgba(var(--ar), var(--ag), var(--ab), 0.35);
+  --border-bright:rgba(var(--ar), var(--ag), var(--ab), 0.80);
+}
+html.rainbow :is(.tab, .preset-btn, .win-btn, .default-chip):nth-child(6n+1) { animation-delay: 0s; }
+html.rainbow :is(.tab, .preset-btn, .win-btn, .default-chip):nth-child(6n+2) { animation-delay: -1.4s; }
+html.rainbow :is(.tab, .preset-btn, .win-btn, .default-chip):nth-child(6n+3) { animation-delay: -2.8s; }
+html.rainbow :is(.tab, .preset-btn, .win-btn, .default-chip):nth-child(6n+4) { animation-delay: -4.2s; }
+html.rainbow :is(.tab, .preset-btn, .win-btn, .default-chip):nth-child(6n+5) { animation-delay: -5.6s; }
+html.rainbow :is(.tab, .preset-btn, .win-btn, .default-chip):nth-child(6n)   { animation-delay: -7s; }
+html.rainbow :is(.monitor-row, .dhcp-row, .scan-result-row):not(.flash-ok):not(.flash-fail):not(.row-enter):not(.row-chg):not(.flip):not(.disc-pulse):nth-child(odd)  { animation-delay: -3.5s; }
+html.rainbow :is(.monitor-row, .dhcp-row, .scan-result-row):not(.flash-ok):not(.flash-fail):not(.row-enter):not(.row-chg):not(.flip):not(.disc-pulse):nth-child(4n)  { animation-delay: -7s; }
+html.rainbow :is(.monitor-row, .dhcp-row, .scan-result-row):not(.flash-ok):not(.flash-fail):not(.row-enter):not(.row-chg):not(.flip):not(.disc-pulse):nth-child(4n+3) { animation-delay: -10.5s; }
+html.rainbow .hud-logo {
+  background: linear-gradient(90deg, #ff3355, #ff9500, #ffe600, #00ff78, #00c8ff, #9a5aff, #ff3355);
+  background-size: 200% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  text-shadow: none; filter: drop-shadow(0 0 5px rgba(255, 102, 204, 0.55));
+  animation: logo-rainbow 5s linear infinite;
+}
+@keyframes logo-rainbow { to { background-position: 200% 0; } }
+
+/* v7.3.1: while the window is being dragged to a new size, nothing animates — transitions
+   off, animations frozen where they are (RGB included) — so the drag repaints like 7.3 did.
+   body.resizing is set on every resize event and cleared ~200 ms after the last one. */
+body.resizing *, body.resizing *::before, body.resizing *::after { transition: none !important; animation-play-state: paused !important; }
+html:has(body.resizing) { animation-play-state: paused !important; transition: none !important; }
+
+/* v7.3.1: the HUD's // mark on every field label — muted accent, same as section headings */
+.field-label::before {
+  content: '//'; margin-right: 6px;
+  color: rgba(var(--ar), var(--ag), var(--ab), 0.45);
+  font-family: var(--font-hud); font-size: 10px; font-weight: 900; letter-spacing: 0;
+}
+.field-label.adapter-label::before, .field-label.ip-label::before { margin-right: 0; }
+.dhcp-field .field-label::before { margin-right: 4px; font-size: 9px; }
+.dhcp-grid5 .field-label::before { content: none; }   /* the 5-across range row reads cleaner bare */   /* flex rows already have a gap */
+
+/* ── v7.3.1 SITES ── */
+.intel-site-list { display: flex; flex-direction: column; gap: 6px; }
+.intel-site-top { display: flex; align-items: center; gap: 8px; }
+.intel-site-net { font-size: 12px; color: var(--green-dim); font-variant-numeric: tabular-nums; margin-top: 1px; cursor: pointer; }
+.intel-here { font-size: 9.5px; font-weight: 700; letter-spacing: 1px; color: var(--green); border: 1px solid var(--green-dim); background: var(--green-ghost); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
+.intel-site-card.here { border-color: rgba(var(--ar), var(--ag), var(--ab), 0.55); box-shadow: 0 0 0 1px rgba(var(--ar), var(--ag), var(--ab), 0.15) inset; }
+.intel-card-scan { font-size: 10.5px; font-weight: 700; letter-spacing: 1px; color: var(--green); border: 1px solid rgba(var(--ar), var(--ag), var(--ab), 0.45); border-radius: var(--radius-sm); padding: 2px 8px; cursor: pointer; white-space: nowrap; transition: var(--t-ui); }
+.intel-card-scan:hover { background: var(--green-ghost); border-color: var(--green); }
+.intel-card-scan:active { transform: scale(0.96); }
+.intel-housekeeping { display: flex; align-items: center; gap: 6px; margin-top: 14px; padding-top: 8px; border-top: 1px solid rgba(var(--ar), var(--ag), var(--ab), 0.08); }
+.intel-housekeeping .k { font-size: 10px; letter-spacing: 1px; color: var(--label-faint); }
+.intel-housekeeping .sep { flex: 1; }
+.intel-hk-btn { font-size: 10.5px; font-weight: 700; letter-spacing: 1px; color: var(--label-dim); border: 1px solid rgba(var(--lr), var(--lg), var(--lb), 0.18); border-radius: var(--radius-sm); padding: 2px 9px; cursor: pointer; transition: var(--t-ui); }
+.intel-hk-btn:hover { color: var(--green); border-color: var(--green-dim); }
+.intel-hk-btn:active { transform: scale(0.96); }
+.intel-hk-btn.danger { color: rgba(255,68,85,0.6); border-color: rgba(255,68,85,0.25); }
+.intel-hk-btn.danger:hover { color: var(--red); border-color: rgba(255,68,85,0.6); background: rgba(255,68,85,0.06); }
+.intel-empty-start { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 28px 16px; }
+.intel-empty-start .t { font-family: var(--font-hud); font-size: 12px; font-weight: 900; letter-spacing: 2px; color: var(--label); }
+.intel-empty-start .s { font-size: 12px; line-height: 1.55; color: var(--label-dim); max-width: 46ch; text-align: center; }
+.intel-empty-start .s b { color: var(--green); }
+
+/* v7.3.1: selected text in the accent, not Windows grey */
+::selection { background: rgba(var(--ar), var(--ag), var(--ab), 0.35); color: #fff; }
+
+/* Windows "Animation effects" off → no motion anywhere; states still show, just instantly */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important; animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
 </style>
 </head>
 <body>
@@ -3006,21 +3287,8 @@ select.field-input.dhcp-lease { padding: 5px 6px; font-size: 12px; cursor: point
   <div class="panel active" id="panel-net">
   <div class="panel-scroll"><div class="panel-content">
 
-    <div class="section-label">PRESETS</div>
-    <div class="preset-bar" id="preset-bar"></div>
-    <div class="preset-save-row">
-      <div class="small-btn accent" id="save-preset-btn" onclick="saveToActivePreset()" style="display:none">SAVE TO PRESET</div>
-      <div class="small-btn defaults-btn" id="defaults-toggle" onclick="toggleDefaults()" title="Manufacturer out-of-box addresses">FACTORY DEFAULTS <span id="defaults-chevron">▾</span></div>
-    </div>
-    <!-- Factory defaults — manufacturer out-of-box IPs, one click puts YOU on that subnet -->
-    <div class="defaults-panel" id="defaults-panel" style="display:none">
-      <div class="defaults-grid" id="defaults-grid"></div>
-    </div>
-
-    <div class="section-label" style="margin-top:6px">IP CONFIGURATION</div>
-
     <div class="field-row">
-      <div class="field-label adapter-label">ADAPTER
+      <div class="field-label adapter-label">NETWORK CARD
         <span class="adapter-refresh-btn" id="adapter-refresh-btn" onclick="loadAdapters()" title="Refresh adapter list">⟳</span>
         <!-- v7.1.0: adapter tools — enable/disable, Wireshark, Wi-Fi -->
         <div class="adapter-tools" id="adapter-tools">
@@ -3048,8 +3316,15 @@ select.field-input.dhcp-lease { padding: 5px 6px; font-size: 12px; cursor: point
       <!-- v7.3.0: a static / extra addresses left on this card by the last session -->
       <div class="adapter-warn leftover" id="adapter-leftover" style="display:none"></div>
     </div>
+    <div class="ip-fields" id="ip-fields">
     <div class="field-row">
-      <div class="field-label">IP ADDRESS</div>
+      <div class="field-label ip-label">IP ADDRESS
+        <!-- v7.3.1: how the card gets its address — right where you type it -->
+        <span class="ip-mode" id="ip-mode" role="radiogroup" aria-label="How this card gets its address">
+          <span class="ip-mode-opt" id="ip-mode-static" role="radio" tabindex="0" onclick="setIpMode('static')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();setIpMode('static')}" title="You type the address — cameras, panels, anything with a fixed address">STATIC</span>
+          <span class="ip-mode-opt" id="ip-mode-dhcp" role="radio" tabindex="0" onclick="setIpMode('dhcp')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();setIpMode('dhcp')}" title="The network hands out the address — office or customer LAN">DHCP</span>
+        </span>
+      </div>
       <div class="ip-field-wrap">
         <input class="field-input" id="ip" type="text" placeholder="e.g. 192.168.0.100" oninput="markChanged(this); autoFillSubnet(this.value)">
         <span class="ip-applied-tag" id="ip-applied-tag">✓ ACTIVE</span>
@@ -3057,60 +3332,43 @@ select.field-input.dhcp-lease { padding: 5px 6px; font-size: 12px; cursor: point
       </div>
     </div>
 
-    <div class="multiip-toggle-row" id="multiip-toggle-row" onclick="toggleAliasPeek()" title="Expand Multi-IP manager">
-      <span class="multiip-toggle-label">MULTI-IP</span>
-      <span class="multiip-toggle-badge" id="alias-peek-badge"></span>
-      <span class="multiip-empty-hint" id="alias-empty-hint"></span>
-      <span class="alias-refresh-btn" id="alias-tab-refresh" onclick="event.stopPropagation(); loadAliasTab()" title="Refresh list" style="font-size:13px; margin-right:4px;">⟳</span>
-      <span class="multiip-toggle-chevron" id="multiip-chevron">▾</span>
-    </div>
-    <div class="alias-peek" id="alias-peek" style="display:none">
-      <div class="multiip-section-inner">
-        <div class="alias-list" id="alias-list"></div>
-        <div class="field-row" style="margin-bottom:5px">
-          <div class="field-label">IP ADDRESS</div>
-          <input class="field-input" id="alias-new-ip" type="text" placeholder="e.g. 192.168.2.100"
-            oninput="autoFillAliasSubnet(this.value)">
+    <!-- v7.3.1: extra addresses on this card, and a second network one click away -->
+    <div class="ca-extras" id="card-addr-chips"></div>
+    <div class="ca-addwrap"><span class="ca-add" id="ca-add" onclick="cardAddToggle(true)" title="Keep this address and add one on another subnet — reach the cameras and this network at the same time">+ ADD A 2ND NETWORK ADDRESS</span></div>
+    <div class="ca-addrow" id="ca-addrow" style="display:none">
+      <div class="ca-hint" id="ca-hint">Keeps your address and adds one on another subnet.</div>
+      <div class="ca-fields">
+        <input class="field-input" id="alias-new-ip" type="text" placeholder="e.g. 192.168.1.250" spellcheck="false" oninput="autoFillAliasSubnet(this.value)" onkeydown="if(event.key==='Enter')cardAddSubmit();if(event.key==='Escape')cardAddToggle(false)" aria-label="Second address">
+        <input class="field-input" id="alias-new-subnet" type="text" placeholder="255.255.255.0" value="255.255.255.0" spellcheck="false" oninput="this.dataset.userEdited='1'" aria-label="Subnet mask for the second address">
+        <span class="apply-btn ca-go" onclick="cardAddSubmit()">ADD</span>
+        <span class="cmd-btn ca-x" onclick="cardAddToggle(false)" title="Close">✕</span>
+      </div>
+      <div class="alias-cmd-box" id="alias-cmd-box" style="display:none">
+        <div class="cmd-box-header">
+          <span class="cmd-box-title">RUN AS ADMIN</span>
+          <span class="copy-small" onclick="aliasCopyToClipboard()">COPY</span>
         </div>
-        <div class="field-row" style="margin-bottom:5px">
-          <div class="field-label">SUBNET MASK</div>
-          <input class="field-input" id="alias-new-subnet" type="text" placeholder="e.g. 255.255.255.0" value="255.255.255.0" oninput="this.dataset.userEdited='1'">
-        </div>
-        <div class="action-row" style="margin-top:0;margin-bottom:4px">
-          <div class="apply-btn" onclick="aliasAdd()">ADD MULTI-IP</div>
-          <div class="cmd-btn"   onclick="aliasCopyCmd('add')">CMD</div>
-        </div>
-        <div class="alias-cmd-box" id="alias-cmd-box" style="display:none">
-          <div class="cmd-box-header">
-            <span class="cmd-box-title">RUN AS ADMIN</span>
-            <span class="copy-small" onclick="aliasCopyToClipboard()">COPY</span>
-          </div>
-          <span class="cmd-text" id="alias-cmd-text"></span>
-        </div>
+        <span class="cmd-text" id="alias-cmd-text"></span>
       </div>
     </div>
-
-    <div class="field-row" style="margin-top: 10px;">
+    <div class="field-row">
       <div class="field-label">SUBNET MASK</div>
       <input class="field-input" id="subnet" type="text" placeholder="e.g. 255.255.255.0" oninput="markChanged(this)">
     </div>
     <div class="field-row">
-      <div class="field-label">DEFAULT GATEWAY</div>
+      <div class="field-label">GATEWAY <span class="opt">optional — leave blank on a camera / panel network</span></div>
       <input class="field-input" id="gateway" type="text" placeholder="e.g. 192.168.0.1" oninput="markChanged(this); updateLiveBar()">
+      <div class="gw-warn" id="gw-warn" style="display:none"></div>
     </div>
     <div class="field-row">
-      <div class="field-label">DNS SERVER</div>
-      <input class="field-input" id="dns" type="text" placeholder="e.g. 8.8.8.8 (optional)" oninput="markChanged(this)">
+      <div class="field-label">DNS <span class="opt">optional</span></div>
+      <input class="field-input" id="dns" type="text" placeholder="e.g. 8.8.8.8" oninput="markChanged(this)">
     </div>
 
+    </div><!-- /ip-fields -->
     <div class="action-row">
       <div class="action-row-primary">
-        <div class="apply-btn bracket" id="apply-btn" onclick="applyConfig()">APPLY CONFIG</div>
-      </div>
-    </div>
-    <div class="action-row copy-cmd-row">
-      <div class="action-row-primary">
-        <div class="cmd-btn" id="cmd-toggle-btn" onclick="toggleCmd()" title="Show the exact netsh lines to run yourself in an admin prompt — the fallback if APPLY can't">COPY COMMANDS</div>
+        <div class="apply-btn bracket" id="apply-btn" onclick="applyClick()">APPLY CONFIG</div>
       </div>
     </div>
     <div class="revert-btn" id="revert-btn" style="display:none" onclick="revertConfig()">
@@ -3121,6 +3379,22 @@ select.field-input.dhcp-lease { padding: 5px 6px; font-size: 12px; cursor: point
 
     <div class="restore-launch-btn hidden" id="restore-launch-btn" onclick="restoreLaunchStateClick()" title="Restore all adapters to the state they were in when this session started">↩ RESTORE LAUNCH STATE</div>
 
+    <div class="field-label" style="margin-top:14px">SHORTCUTS</div>
+    <div class="preset-bar" id="preset-bar"></div>
+    <div class="preset-save-row">
+      <div class="small-btn accent" id="save-preset-btn" onclick="saveToActivePreset()" style="display:none">SAVE TO PRESET</div>
+      <div class="small-btn defaults-btn" id="defaults-toggle" onclick="toggleDefaults()" title="Manufacturer out-of-box addresses">FACTORY DEFAULTS <span id="defaults-chevron">▾</span></div>
+    </div>
+    <!-- Factory defaults — manufacturer out-of-box IPs, one click puts YOU on that subnet -->
+    <div class="defaults-panel" id="defaults-panel" style="display:none">
+      <div class="defaults-grid" id="defaults-grid"></div>
+    </div>
+
+    <div class="action-row copy-cmd-row">
+      <div class="action-row-primary">
+        <div class="cmd-btn" id="cmd-toggle-btn" onclick="toggleCmd()" title="Show the exact netsh lines to run yourself in an admin prompt — the fallback if APPLY can't">COPY COMMANDS</div>
+      </div>
+    </div>
     <div class="cmd-box" id="cmd-box">
       <div class="cmd-box-header">
         <span class="cmd-box-title">NETSH COMMANDS — RUN AS ADMIN</span>
@@ -3233,10 +3507,12 @@ select.field-input.dhcp-lease { padding: 5px 6px; font-size: 12px; cursor: point
       <div class="dhcp-dev-list" id="dhcp-dev-list"></div>
     </div>
 
-    <div class="dhcp-splitter" id="dhcp-splitter" title="Drag to resize devices / log"><span></span></div>
     <div class="dhcp-logrow" id="dhcp-logrow">
-      <div class="dhcp-log" id="dhcp-log"></div>
-      <span class="cmd-btn dhcp-mini dhcp-logbtn" onclick="dhcpCopyLog()" title="Copy the activity log">⎘ LOG</span>
+      <div class="dhcp-log" id="dhcp-log" onclick="dhcpLogToggle(true)" title="Engine log — click to open"></div>
+      <div class="dhcp-logbtns">
+        <span class="cmd-btn dhcp-mini dhcp-logbtn" id="dhcp-log-toggle" onclick="dhcpLogToggle()" title="Open or close the engine log">▸ LOG</span>
+        <span class="cmd-btn dhcp-mini dhcp-logbtn" onclick="dhcpCopyLog()" title="Copy the engine log">⎘ COPY</span>
+      </div>
     </div>
 
   </div></div><!-- /panel-content /panel-scroll -->
@@ -3412,18 +3688,21 @@ select.field-input.dhcp-lease { padding: 5px 6px; font-size: 12px; cursor: point
 
     <!-- SITE LIST VIEW -->
     <div id="intel-list-view">
-      <div class="intel-toolbar">
-        <div class="intel-toolbar-btn" onclick="exportSites()" title="Export sites to Excel (.xlsx)">EXCEL</div>
-        <div class="intel-toolbar-btn" onclick="exportSitesJson()" title="Export sites to a portable JSON file">JSON</div>
-        <div class="intel-toolbar-btn" onclick="importSites()" title="Import sites from a JSON export">IMPORT</div>
-      </div>
       <div class="intel-action-strip" id="intel-action-strip" style="display:none">
         <div class="intel-action-msg" id="intel-action-msg"></div>
         <div class="restore-banner-actions" id="intel-action-btns"></div>
       </div>
 
-      <div class="intel-site-list" id="intel-site-list">
-        <div class="intel-empty">// NO SITES YET — CREATE ONE TO BEGIN</div>
+      <div class="intel-site-list" id="intel-site-list"></div>
+      <!-- v7.3.1: housekeeping lives under the list, quietly -->
+      <div class="intel-housekeeping">
+        <span class="k">EXPORT:</span>
+        <span class="intel-hk-btn" onclick="exportSites()" title="Every site and device as an Excel sheet — no credentials">EXCEL</span>
+        <span class="intel-hk-btn" onclick="exportSitesJson()" title="A portable JSON file — bring your sites to another laptop">JSON</span>
+        <span class="sep"></span>
+        <span class="intel-hk-btn" onclick="revealExports()" title="Open the folder your last export went to">📁 SHOW FILES</span>
+        <span class="sep"></span>
+        <span class="intel-hk-btn" onclick="importSites()" title="Bring sites in from a JSON export — merges by MAC, or replaces">IMPORT</span>
       </div>
     </div>
 
@@ -3439,13 +3718,12 @@ select.field-input.dhcp-lease { padding: 5px 6px; font-size: 12px; cursor: point
           >—</div>
           <div class="intel-detail-sub"  id="intel-detail-sub">—</div>
         </div>
-        <div class="intel-back-btn" onclick="intelShowList()">← SITES</div>
+        <div class="intel-back-btn" onclick="intelShowList()">← BACK TO ALL SITES</div>
       </div>
 
 
       <div class="intel-toolbar" style="margin-bottom:8px">
         <div class="intel-toolbar-btn accent" onclick="intelLinkScan()" title="Run a scan on this site's subnet">▶ SCAN NOW</div>
-        <div class="intel-toolbar-btn danger" onclick="intelDeleteSite()" title="Delete this site">DELETE</div>
       </div>
 
       <div class="section-label" id="intel-change-label" style="display:none">CHANGES SINCE LAST SCAN</div>
@@ -3456,6 +3734,10 @@ select.field-input.dhcp-lease { padding: 5px 6px; font-size: 12px; cursor: point
         <div class="intel-empty">// NO DEVICES — RUN A SCAN TO POPULATE</div>
       </div>
 
+      <div class="intel-housekeeping">
+        <span class="sep"></span>
+        <span class="intel-hk-btn danger" onclick="intelDeleteSite()" title="Delete this site and every device record in it (a backup is made first)">DELETE SITE</span>
+      </div>
     </div>
 
   </div></div><!-- /panel-content /panel-scroll -->
@@ -3485,6 +3767,11 @@ select.field-input.dhcp-lease { padding: 5px 6px; font-size: 12px; cursor: point
       <span class="palette-row-label">BACKGROUND</span>
       <input class="palette-color-input" type="color" id="custom-bg" value="#090d12">
     </div>
+    </div>
+    <hr class="palette-divider">
+    <div class="depth-row">
+      <span class="palette-row-label">DEPTH</span>
+      <span class="depth-chip on" id="depth-chip" onclick="toggleDepth()" title="Faint scanlines and edge shading. Turn off for a flat look.">ON</span>
     </div>
   </div>
   <!-- Adapter dropdown — lives at hud root so panel overflow:auto doesn't clip it -->
@@ -3739,6 +4026,9 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
   loadSavedTheme();
   renderPaletteSwatches();
+  loadDepth();       // v7.3.1
+  initTabInk();      // v7.3.1
+  requestAnimationFrame(() => requestAnimationFrame(() => document.documentElement.classList.add('theme-anim')));
   initDiag();
   initOnlineVendorToggle();
   loadTools();   // v7.1.0: Wireshark / tshark presence → tool chips, capture buttons
@@ -4070,10 +4360,21 @@ function scheduleFit() {
   if (_fitRaf) clearTimeout(_fitRaf);
   _fitRaf = setTimeout(() => { _fitRaf = null; _doFit(); }, 140);
 }
+// v7.3.1 — a NEW row (device on the DHCP tab, host during a sweep) grows the window to show
+// it even when the user set their own size. Updates to rows already there never resize, and
+// the user's size otherwise holds (they can still make it smaller). Our own setSize isn't a
+// user drag, so this doesn't lock anything new.
+let _growRaf = null;
+function growForNewRow() {
+  if (!window.hud) return;
+  if (!_userResized) { autoResize(); return; }
+  if (_growRaf) clearTimeout(_growRaf);
+  _growRaf = setTimeout(() => { _growRaf = null; _doFit(true); }, 160);
+}
 function fitNow() { _userResized = false; _lastFitH = 0; _doFit(); }
 
-async function _doFit() {
-  if (!window.hud || _userResized) return;
+async function _doFit(growOnly) {
+  if (!window.hud || (_userResized && !growOnly)) return;
   const panel = document.querySelector('.panel.active');
   if (!panel) return;
   const scroll  = panel.querySelector('.panel-scroll');
@@ -4100,6 +4401,8 @@ async function _doFit() {
     try { const m = await hud.getMaxHeight(); if (m) _maxH = m; } catch {}
   }
   const target = Math.min(Math.max(Math.ceil(raw) + 1, MIN_HEIGHT), _maxH);
+  // v7.3.1: grow-only — a new row arrived while the user has their own size; never shrink
+  if (growOnly && target <= window.innerHeight + 1) return;
   if (target === _lastFitH) return;
   _lastFitH = target;
   hud.setSize(target);
@@ -4236,11 +4539,44 @@ function reportUiError(err, where) {
 window.addEventListener('unhandledrejection', e => reportUiError(e.reason, 'promise'));
 window.addEventListener('error', e => reportUiError(e.error || e.message, (e.filename || '').split('/').pop() + ':' + (e.lineno || '')));
 
+// v7.3.1 — the active-tab underline is one element that glides between tabs.
+// Added by JS, so if anything here fails the tabs keep their own border underline.
+let _tabInk = null;
+function initTabInk() {
+  const bar = document.querySelector('.tab-bar');
+  if (!bar || _tabInk) return;
+  _tabInk = document.createElement('span');
+  _tabInk.className = 'tab-ink no-anim';
+  bar.appendChild(_tabInk);
+  bar.classList.add('has-ink');
+  moveTabInk();
+  // window resizes (wide tabs, user drag) move the tabs — the ink re-aims and keeps gliding
+  if (window.ResizeObserver) new ResizeObserver(() => moveTabInk()).observe(bar);
+  requestAnimationFrame(() => _tabInk && _tabInk.classList.remove('no-anim'));
+}
+// only the user's own drags (main tells them apart from ETHER's own setSize on a tab switch,
+// which keeps its glide)
+let _resizeTimer = null;
+function markUserResizing() {
+  document.body.classList.add('resizing');
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(() => document.body.classList.remove('resizing'), 200);
+}
+if (window.hud && hud.onUserResized) hud.onUserResized(markUserResizing);
+function moveTabInk() {
+  if (!_tabInk) return;
+  const a = document.querySelector('.tab-bar .tab.active');
+  if (!a) return;
+  _tabInk.style.width = a.offsetWidth + 'px';
+  _tabInk.style.transform = `translateX(${a.offsetLeft}px)`;
+}
+
 function switchTab(tab) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('tab-' + tab).classList.add('active');
   document.getElementById('panel-' + tab).classList.add('active');
+  moveTabInk();   // v7.3.1
   if (tab === 'scan')  { scanAutoDetect(true); scanPopulateSitePicker(); }
   if (tab === 'tools') monRenderHostEditor();
   if (tab === 'intel') intelOnTabOpen();
@@ -4273,8 +4609,9 @@ function renderPresetBar() {
     const btn = document.createElement('div');
     const isActive = i === activePreset;
     btn.className = 'preset-btn' + (isActive ? ' active' : '') + (isActive && isDirty ? ' dirty' : '');
-    btn.textContent = p.name + (isActive && isDirty ? ' *' : '');
-    btn.title = (p.ip || '—') + ' — double-click to rename';
+    const nm = i === 0 ? 'CURRENT' : p.name;   // v7.3.1: "LIVE" meant nothing to a new tech
+    btn.textContent = nm + (isActive && isDirty ? ' *' : '');
+    btn.title = i === 0 ? 'What this card is set to right now' : (p.ip || '—') + ' — double-click to rename';
     btn.onclick = () => loadPreset(i);
     btn.ondblclick = (e) => { e.stopPropagation(); loadPreset(i); renameActivePreset(); };
     bar.appendChild(btn);
@@ -4297,7 +4634,10 @@ function loadPreset(idx, silent) {
   if (display) display.textContent = p.adapter || '';
   updateAdapterLabel();
   hideCmdBox();
-  if (!silent) setNetStatus('PRESET LOADED: ' + p.name, 'ok', 3000);
+  // v7.3.1: CURRENT follows the card; a saved shortcut is always a static address
+  ipMode = idx === 0 ? (cardIsDhcp() ? 'dhcp' : 'static') : 'static';
+  renderIpMode();
+  if (!silent) setNetStatus((idx === 0 ? 'CURRENT SETTINGS' : 'SHORTCUT LOADED: ' + p.name) + (idx === 0 ? '' : ' — PRESS APPLY TO USE IT'), 'ok', 3000);
 }
 
 function markChanged(el) {
@@ -4307,7 +4647,126 @@ function markChanged(el) {
   renderPresetBar();
   if (el.id === 'adapter') updateAdapterLabel();
   setNetStatus('UNSAVED CHANGES', 'warn');
+  // v7.3.1: typing an address (or a shortcut filling one) means MANUAL
+  if (['ip', 'subnet', 'gateway', 'dns'].includes(el.id)) ipMode = 'static';
+  renderIpMode();
 }
+
+// ── v7.3.1: AUTOMATIC (DHCP) / MANUAL (STATIC) ─────────────
+// ipMode is what the tech has chosen; the card's real state comes from the registry
+// (isDhcp). With nothing edited on CURRENT, the switch simply follows the card.
+var ipMode = 'static';   // var: init code can reach renderIpMode before this line runs
+function cardIsDhcp() { const a = currentAdapterEntry(); return !!(a && a.isDhcp === true); }
+function syncIpMode() {
+  if (!isDirty && activePreset === 0) ipMode = cardIsDhcp() ? 'dhcp' : 'static';
+  renderIpMode();
+}
+function setIpMode(m) {
+  if (m === ipMode) return;
+  const a = currentAdapterEntry();
+  const cardMode = a && a.isDhcp === true ? 'dhcp' : 'static';
+  if (m === 'dhcp' && cardMode === 'dhcp') {
+    // back to what the card already is — drop the edits and show what DHCP gave it
+    ipMode = 'dhcp';
+    loadPreset(0, true);
+    setNetStatus('ON DHCP — NOTHING TO CHANGE', 'ok', 3000);
+    return;
+  }
+  ipMode = m;
+  isDirty = true;
+  renderPresetBar();
+  renderIpMode();
+  if (m === 'static') {
+    const ip = document.getElementById('ip');
+    if (ip) { ip.focus(); ip.select(); }
+    setNetStatus('STATIC — TYPE THE ADDRESS, THEN APPLY', 'warn');
+  } else {
+    setNetStatus('DHCP — PRESS SWITCH TO DHCP TO HAND THE CARD BACK', 'warn');
+  }
+}
+function renderIpMode() {
+  const a = currentAdapterEntry();
+  const now = a && a.isDhcp !== null && a.isDhcp !== undefined ? (a.isDhcp ? 'dhcp' : 'static') : null;
+  for (const m of ['dhcp', 'static']) {
+    const el = document.getElementById('ip-mode-' + m);
+    if (!el) continue;
+    el.classList.toggle('on', ipMode === m);
+    el.classList.toggle('is-now', now === m);
+    el.setAttribute('aria-checked', ipMode === m ? 'true' : 'false');
+    el.title = el.title.replace(/ · this card is on .*$/, '') + (now === m ? ' · this card is on this now' : '');
+  }
+  const locked = ipMode === 'dhcp';
+  document.getElementById('ip-fields')?.classList.toggle('locked', locked);
+  ['ip', 'subnet', 'gateway', 'dns'].forEach(id => {
+    const el = document.getElementById(id); if (!el) return;
+    el.readOnly = locked;
+    el.title = locked ? 'Handed out by DHCP — click to type your own (switches to STATIC)' : '';
+  });
+  updateApplyBtn();
+  updateGwWarn();
+}
+function updateApplyBtn() {
+  const btn = document.getElementById('apply-btn'); if (!btn) return;
+  let label, idle = false, title;
+  if (ipMode === 'dhcp') {
+    if (cardIsDhcp()) { label = '✓ ON DHCP'; idle = true; title = 'This card already gets its address automatically'; }
+    else { label = 'SWITCH TO DHCP'; title = 'Hand this card back to the network — it asks for an address automatically'; }
+  } else {
+    const ip = (document.getElementById('ip')?.value || '').trim();
+    label = ip && isValidIP(ip) ? 'APPLY ' + ip : 'APPLY';
+    title = 'Put this address on the card';
+  }
+  if (btn.textContent !== label) btn.textContent = label;
+  btn.title = title;
+  btn.classList.toggle('idle', idle);
+}
+var _applyClickBusy = false;
+var _dupOverride = null;   // { ip, at } — a second APPLY on a taken address within 15 s goes ahead
+async function applyClick() {
+  if (_applyClickBusy) return;
+  _applyClickBusy = true;
+  try {
+    if (ipMode === 'dhcp') { if (!cardIsDhcp()) await applyDhcp(); }
+    else await applyConfig();
+  } finally { _applyClickBusy = false; renderIpMode(); }
+}
+// a gateway on a second card can steal the laptop's internet route
+function updateGwWarn() {
+  const w = document.getElementById('gw-warn'); if (!w) return;
+  const gw = (document.getElementById('gateway')?.value || '').trim();
+  // v7.3.1: the IP moved to another subnet and the old gateway came along — say it now, not after APPLY
+  const ipv = (document.getElementById('ip')?.value || '').trim(), mk = (document.getElementById('subnet')?.value || '').trim();
+  if (ipMode === 'static' && gw && isDirty && isValidIP(gw) && isValidIP(ipv) && isValidSubnet(mk) && !gatewayInSubnet(ipv, mk, gw)) {
+    const net = ipv.split('.').slice(0, 3).join('.') + '.x';
+    w.innerHTML = `⚠ ${escHtml(gw)} isn't on ${escHtml(net)} — the gateway has to be on the same network as the address. <span class="gw-clear" onclick="gwClear()">CLEAR IT</span>`;
+    w.style.display = '';
+    return;
+  }
+  const sel = (document.getElementById('adapter')?.value || '').trim().toLowerCase();
+  let other = '';
+  if (ipMode === 'static' && gw && isDirty) {   // only while you're about to change something
+    const wifi = (typeof wifiList !== 'undefined' ? wifiList : []).find(x => x.adminUp && /^up$/i.test(x.status || ''));
+    const wired = adapterList.find(x => x.name.toLowerCase() !== sel && x.connected && x.gateway);
+    other = wifi ? wifi.name : wired ? wired.name : '';
+  }
+  if (other) {
+    w.textContent = `⚠ ${other} already has internet. A gateway here can send the laptop's internet down this cable instead — leave it blank unless this network is your way out.`;
+    w.style.display = '';
+  } else w.style.display = 'none';
+}
+function gwClear() {
+  const g = document.getElementById('gateway'); if (!g) return;
+  g.value = ''; markChanged(g); updateLiveBar();
+}
+document.addEventListener('DOMContentLoaded', () => {
+  // clicking a greyed field means "I want to type my own" → MANUAL
+  document.getElementById('ip-fields')?.addEventListener('mousedown', e => {
+    if (ipMode === 'dhcp' && e.target.classList && e.target.classList.contains('field-input') && !e.target.closest('.ca-addrow')) {
+      setIpMode('static');
+      setTimeout(() => { e.target.focus(); e.target.select(); }, 0);
+    }
+  });
+});
 
 function updateAdapterLabel() {
   // Delegates to updateAdapterStatus — updates the live pill
@@ -4431,6 +4890,7 @@ async function loadWifi() {
   if (!window.hud || !hud.getWifi) return;
   try { wifiList = await hud.getWifi() || []; } catch { wifiList = []; }
   renderAdapterTools(currentAdapterEntry());
+  updateGwWarn();
 }
 function currentAdapterEntry() {
   const v = document.getElementById('adapter').value.trim().toLowerCase();
@@ -4443,7 +4903,7 @@ function renderAdapterTools(a) {
   // enable / disable the selected adapter
   if (a) {
     const disabled = a.admin === 'Disabled';
-    power.textContent = disabled ? 'ENABLE' : 'DISABLE';
+    power.textContent = disabled ? 'ENABLE CARD' : 'DISABLE CARD';
     power.title = disabled ? `Enable ${a.name}` : `Disable ${a.name} — it comes back with ENABLE`;
     power.classList.toggle('warn', disabled);
     power.classList.add('show');
@@ -4611,6 +5071,7 @@ function updateAdapterStatus() {
   updateAdapterWarn(a);
   updateLeftover(a);
   updateLiveBar();
+  syncIpMode();   // v7.3.1
 }
 
 // ── v7.2.0: WRONG-ADDRESS WARNING ──────────────────────────
@@ -4855,24 +5316,25 @@ const HELP_TABS = ['net', 'tools', 'scan', 'intel', 'dhcp', 'recon', 'cidr'];
 const HELP_LABEL = { net: 'IP', dhcp: 'DHCP', tools: 'PING', scan: 'SCAN', intel: 'SITES', recon: 'RECON', cidr: 'CIDR' };
 const HELP_CONTENT = {
   net: {
-    lead: 'Adapter IP configuration. Everything you change here goes through netsh on the selected adapter.',
+    lead: 'The laptop\'s address on a network card. Top to bottom: the card, the address, one button that says what it will do.',
     rows: [
-      ['PRESETS',    'LIVE always mirrors the adapter right now. Slots 2–4 are yours — fill the fields, SAVE TO PRESET.'],
-      ['FACTORY DEFAULTS', 'Manufacturer out-of-box addresses. A tile fills in that device\'s subnet and puts YOU one address above it.'],
-      ['APPLY',      'Writes IP / mask / gateway / DNS, then verifies. Green stripe, ✓ ACTIVE on the IP field and a flash in the top bar mean it really took. REVERT undoes the last APPLY.'],
-      ['→ DHCP',     'Beside the STATIC badge in the adapter row. One click hands the adapter back to DHCP.'],
-      ['COPY COMMANDS', 'Shows the exact netsh lines without running them — copy into an admin prompt if APPLY can\'t.'],
+      ['NETWORK CARD', 'The card your cable is in, with its link speed and STATIC / DHCP. DISABLE CARD drops the link and keeps the settings (ENABLE CARD brings it back). WI-FI switches wireless off so SCAN, DHCP and PING go out the wire.'],
+      ['STATIC | DHCP', 'How the card gets its address — on the IP ADDRESS line. A dot marks what the card is on right now. On DHCP the fields are greyed and show what DHCP handed out; click one to type your own and it flips to STATIC.'],
+      ['APPLY',      'Says what it will do — APPLY 192.168.1.50, SWITCH TO DHCP, or ✓ ON DHCP when there\'s nothing to do — then reads the card back. Green stripe and ✓ ACTIVE mean it really took. REVERT undoes the last APPLY.'],
+      ['TAKEN?',     'On the subnet you\'re already on, ETHER checks the address first and stops if something has it (press APPLY again to use it anyway). Jumping to a new subnet, Windows checks right after APPLY — if it\'s taken you get a red line with the other device\'s MAC, REVERT ready, and the IP box selected for another try.'],
+      ['2ND NETWORK ADDRESS', '+ ADD A 2ND NETWORK ADDRESS keeps your address and adds one on another subnet — reach the cameras and the customer network at the same time. It shows as its own field with COPY / REMOVE, and APPLY on the main address keeps it. A DHCP card is set static on its current address first.'],
+      ['GATEWAY',    'Optional — leave it blank on a camera or panel network. A gateway left over from the old subnet gets a CLEAR IT button; one typed while Wi-Fi has internet gets a warning, because it can move the laptop\'s internet onto this cable.'],
+      ['SHORTCUTS',  'CURRENT is what the card is set to now. The three saved setups fill the form — edit, then SAVE TO PRESET; double-click to rename. FACTORY DEFAULTS: USE puts you next to a device\'s out-of-box address, + ADD keeps your network and adds one next to it.'],
+      ['COPY COMMANDS', 'Shows the exact netsh lines without running them — copy into an admin prompt if APPLY can\'t. With the 2nd-address row open, it shows that command instead.'],
       ['MTU',        'Moved to DIAGNOSTICS (version chip → DIAGNOSTICS → TOOLS). Resets MTU to 1500 — fixes "can ping, can\'t load pages."'],
       ['CIDR',       'The CIDR tab in this guide. Click a row to put that mask in the subnet field.'],
-      ['MULTI-IP',   'Adds a second IP without touching the primary. On a DHCP adapter it converts to static first, keeping its address, gateway and DNS. Aliases stay on quit and survive reboots — next launch flags them as a leftover.'],
-      ['LINK SPEED', 'A connected adapter shows its negotiated speed where CONNECTED used to be. Green 1 Gbps, amber 100 Mbps, red 10. A gigabit port stuck at 100 is a bad crimp, cable or port.'],
-      ['DISABLE / ENABLE', 'In the ADAPTER line. Drops the link, keeps the IP config, comes back with ENABLE. Blocked while the DHCP server is serving on that adapter.'],
-      ['WI-FI',      'Switches every wireless adapter off so SCAN, DHCP and PING go out the wire. The chip stays amber until you turn it back on — and it stays off through a reboot.'],
-      ['LEFTOVER LINE', 'Quit never asks or undoes anything — what you set stays set. If the last session left this card on a static it wasn\'t on before, or with extra addresses, one amber line under the adapter says so: ↩ PUT BACK or KEEP.'],
+      ['LINK SPEED', 'Green 1 Gbps, amber 100 Mbps, red 10. A gigabit port stuck at 100 is a bad crimp, cable or port.'],
+      ['LEFTOVER LINE', 'Quit never asks or undoes anything — what you set stays set. If the last session left this card on a static it wasn\'t on before, or with extra addresses, one amber line under the card says so: ↩ PUT BACK or KEEP.'],
       ['─ / ✕',      '─ minimizes (taskbar, Alt+Tab or the tray icon bring it back), ✕ quits. One click each, always. Temporary addresses ETHER added for REACH go on quit.'],
       ['SITE REPORT', 'Version chip → SITE REPORT. One click copies a markdown summary of this session: adapter, scans and site changes, DHCP leases, ping results, every privileged operation. Paste into the ticket.'],
+      ['LOOK',       '▣ in the title bar: six colour themes (RGB runs the whole spectrum), your own colours, and DEPTH — faint scanlines, on by default. Windows\' "Animation effects" off stops all motion.'],
     ],
-    gotcha: 'Modern Axis cameras have no factory IP — they fall back to 169.254.x.x. Use the AXIS tile to join that /16, then find the camera\'s address in its label or the Axis tool.',
+    gotcha: 'Modern Axis cameras have no factory IP — they fall back to 169.254.x.x. Use the AXIS tile (USE, or + ADD to keep your network), then find the camera with DISCOVER on SCAN or the ◇ SITTING list on DHCP.',
   },
   dhcp: {
     lead: 'The laptop is the DHCP server. ① pick the card the device is plugged into, ② pick (or set) the laptop\'s address on that cable — devices get addresses next to it. Listening starts when you open this tab; nothing is served until you say so.',
@@ -4888,6 +5350,7 @@ const HELP_CONTENT = {
       ['SELF-TEST',   'Card, port 67, firewall rule, other servers — in plain language.'],
       ['★ PIN / ★ RESERVE TICKED', 'Reserve a fixed address for a MAC, or tick several and give a start address. ✕ takes an address back.'],
       ['AUTO-STOP',   'Serving drops back to listening after N idle minutes (ADVANCED, default 30). Click the status chip to turn the engine OFF and release UDP 67.'],
+      ['LIST',        'Devices hold their place by IP; ASKING ones stay first-plugged-first. The window grows to show a new device. The engine log is a two-line strip under the list — ▸ LOG opens it, and it goes amber when something worth reading lands.'],
     ],
     gotcha: 'DEVICE shows what the device says it is — Axis puts model and firmware in its DHCP request. Every SERVE and firewall change is written to DIAGNOSTICS. IT can switch this tab off with the DisableDhcpServer policy value.',
   },
@@ -4923,17 +5386,18 @@ const HELP_CONTENT = {
     gotcha: 'ARP only sees hosts on your own subnet. If you\'re on the wrong subnet you\'ll get ping hits but no MACs.',
   },
   intel: {
-    lead: 'Site knowledge base. Devices are anchored by MAC address, so IP changes are tracked instead of duplicated.',
+    lead: 'Your notebook for each site: devices, notes and logins, saved from a scan. Devices are anchored by MAC address, so an IP change is tracked instead of duplicated.',
     rows: [
-      ['SITE CARD',  'Name, tag, last scan, device count, and change badges since the previous scan.'],
-      ['DRAWER',     'Click a device for MAC, hostname, first/last seen, open ports, notes, and credentials.'],
+      ['NEW SITE',   'Sites come from a scan — sweep the network on SCAN, then SAVE SITE. An empty list has a ▶ GO TO SCAN button.'],
+      ['SITE CARD',  'Name (click to rename), subnet, customer, last scan, device count and change badges. The site your card is on right now is pinned first with ● YOU\'RE HERE. ▶ SCAN sweeps that site straight away.'],
+      ['DEVICE',     'Click a row for MAC, hostname, first/last seen, open ports, notes and logins. Notes and logins save when you click away; SAVE is there too. ↗ OPEN its web page, PING it, or WAKE it.'],
       ['WAKE',       'Wake-on-LAN. Sends a magic packet to the device\'s MAC on every connected subnet. Give it 30 s, then scan.'],
       ['TYPE CHIP',  'Click to cycle CAMERA · NVR/DVR · NETWORK · SERVER · WORKSTATION · ACCESS CTL · PRINTER · OTHER.'],
-      ['SCAN NOW',   'Loads this site\'s subnet into SCAN. Results come back as a change chip — nothing switches tabs on you.'],
-      ['EXCEL',      'Formatted workbook of every site and device.'],
-      ['JSON / IMPORT','Portable export for another machine. IMPORT backs up your current data first, then MERGE (by MAC) or REPLACE.'],
+      ['SCAN NOW',   'Jumps to SCAN and sweeps this site\'s subnet straight away. What changed shows at the top of the site — with the date of the scan that found it and the one it was compared with.'],
+      ['EXPORT / IMPORT', 'Under the site list. EXCEL is a workbook of every site and device; JSON is a portable file for another laptop; 📁 SHOW FILES opens where your last export went. IMPORT backs up your current data first, then MERGE (by MAC) or REPLACE.'],
+      ['DELETE SITE', 'At the bottom of a site. A backup is made first.'],
     ],
-    gotcha: 'Credentials are encrypted on disk with Windows DPAPI — readable only by your account on this machine. JSON export leaves them out unless you choose WITH CREDS, which writes plaintext.',
+    gotcha: 'Logins are encrypted on disk with Windows DPAPI — readable only by your account on this machine. JSON export leaves them out unless you choose WITH CREDS, which writes plaintext.',
   },
   recon: {
     lead: 'Plug in and listen. In about a minute the port tells you what it is — without you sending a single packet. Needs Wireshark 4.6+ (tshark + npcap).',
@@ -5312,6 +5776,7 @@ function clearDirtyState() {
   document.querySelectorAll('.field-input').forEach(el => el.classList.remove('changed'));
   isDirty = false;
   renderPresetBar();
+  syncIpMode();   // v7.3.1
 }
 
 async function applyConfig() {
@@ -5507,14 +5972,27 @@ async function applyConfig() {
   }
 
   // ── SAFEGUARD: Duplicate IP check ──────────────────────
-  if (window.hud) {
-    try {
-      const dup = await hud.checkDuplicateIp(f.ip);
-      if (dup.conflict) {
-        const who = dup.vendor ? `${dup.mac} (${dup.vendor})` : dup.mac;
-        setNetStatus(`WARNING: ${f.ip} IN USE BY ${who} — APPLYING ANYWAY`, 'warn', 8000);
-      }
-    } catch {}
+  // v7.3.1: before APPLY the laptop is still on its old address, so a ping/ARP can only see
+  // the subnet the card is already on — check there, skip it otherwise (saves ~1 s on a
+  // subnet jump). A hit stops the APPLY; press it again within 15 s to use the address anyway.
+  // The new subnet is covered after APPLY by Windows' own duplicate detection (main).
+  if (window.hud && !revertInProgress) {
+    const cur = currentAdapterEntry();
+    const sameNet = cur && cur.ip && cur.subnet && cur.ip !== f.ip && isValidSubnet(cur.subnet) && gatewayInSubnet(cur.ip, cur.subnet, f.ip);
+    if (sameNet && !(_dupOverride && _dupOverride.ip === f.ip && Date.now() - _dupOverride.at < 15000)) {
+      try {
+        setNetStatus(`CHECKING ${f.ip} IS FREE...`, '');
+        const dup = await hud.checkDuplicateIp(f.ip);
+        if (dup.conflict) {
+          const who = dup.vendor ? `${dup.mac.toUpperCase()} (${dup.vendor})` : String(dup.mac).toUpperCase();
+          _dupOverride = { ip: f.ip, at: Date.now() };
+          setNetStatus(`✕ ${f.ip} IS ALREADY TAKEN BY ${who} — PICK ANOTHER, OR PRESS APPLY AGAIN TO USE IT ANYWAY`, 'err', 15000);
+          const ipEl = document.getElementById('ip'); if (ipEl) { ipEl.classList.add('changed'); ipEl.focus(); ipEl.select(); }
+          return false;
+        }
+      } catch {}
+    }
+    _dupOverride = null;
   }
 
   if (window.hud) {
@@ -5524,7 +6002,23 @@ async function applyConfig() {
         adapter: f.adapter || '',
         ip: f.ip, subnet: f.subnet, gateway: f.gateway, dns: f.dns,
         tag: revertInProgress ? 'revert' : undefined,
+        keep: cardExtras.filter(x => x.ip !== f.ip),   // v7.3.1: changing the main never drops a 2nd network
       });
+      if (result.ok && result.duplicate) {
+        // v7.3.1: Windows found the address already used on the wire and won't use it.
+        // REVERT is armed (one click back); the IP box is selected for another try.
+        unlockApplyBtn();
+        if (snapshot && (snapshot.dhcp || isValidIP(snapshot.ip))) previousConfig = snapshot;
+        clearDirtyState();
+        if (previousConfig) showRevertBtn(previousConfig);
+        const who = result.dupMac ? ` BY ${result.dupMac.toUpperCase()}${result.dupVendor ? ' (' + result.dupVendor + ')' : ''}` : ' BY ANOTHER DEVICE';
+        setNetStatus(`✕ ${f.ip} IS ALREADY TAKEN${who} — WINDOWS WON'T USE IT. TYPE ANOTHER ADDRESS AND APPLY, OR REVERT`, 'err');
+        markIpApplied(false);
+        ipMode = 'static'; renderIpMode();
+        const ipEl = document.getElementById('ip'); if (ipEl) { ipEl.classList.add('changed'); setTimeout(() => { ipEl.focus(); ipEl.select(); }, 50); }
+        setTimeout(() => loadAdapters(true), 2000);
+        return false;
+      }
       if (result.ok) {
         unlockApplyBtn();
         // rc.2: REVERT = undo the last APPLY. It used to hold the state from before the
@@ -5534,9 +6028,11 @@ async function applyConfig() {
         clearDirtyState();
         if (previousConfig) showRevertBtn(previousConfig);
         else hideRevertBtn();
-        if (result.partial) setNetStatus(`✓ ${f.ip} IS ON ${(f.adapter || 'ADAPTER').toUpperCase()} — BUT A LATER STEP FAILED (${String(result.partialErr || 'DNS').toUpperCase().slice(0, 60)}) — CHECK DNS`, 'warn', 9000);
+        if (result.partial) setNetStatus(`✓ ${f.ip} IS ON ${(f.adapter || 'ADAPTER').toUpperCase()} — BUT A LATER STEP FAILED (${String(result.partialErr || 'DNS').toUpperCase().slice(0, 60)}) — CHECK DNS${result.kept && result.kept.length ? ' AND THE 2ND ADDRESS' : ''}`, 'warn', 9000);
         else if (result.saved) setNetStatus(`✓ SET — ${f.ip} IS SAVED ON ${(f.adapter || 'ADAPTER').toUpperCase()} · NO CABLE YET; IT'S USED AS SOON AS THERE'S LINK`, 'ok', 9000);
-        else setNetStatus(`✓ APPLIED — ${f.ip} IS ACTIVE ON ${(f.adapter || 'ADAPTER').toUpperCase()}`, 'ok');
+        else if (result.lost && result.lost.length) setNetStatus(`✓ ${f.ip} IS ACTIVE — BUT ${result.lost.join(', ')} DIDN'T COME BACK. ADD IT AGAIN BELOW THE IP`, 'warn', 9000);
+        else if (cardExtras.some(x => x.ip === f.ip)) setNetStatus(`✓ ${f.ip} IS NOW THE MAIN ADDRESS ON ${(f.adapter || 'ADAPTER').toUpperCase()}`, 'ok');
+        else setNetStatus(`✓ APPLIED — ${f.ip} IS ACTIVE ON ${(f.adapter || 'ADAPTER').toUpperCase()}` + (result.kept && result.kept.length ? ` · ${result.kept.join(', ')} KEPT` : ''), 'ok');
         markIpApplied(true, result.saved);
         hud.traySetMode(isHalfOpacity ? 'dim' : 'idle');
         setTimeout(() => loadAdapters(true), 2000);
@@ -5613,8 +6109,16 @@ function buildDefaultsGrid() {
     chip.innerHTML = `
       <div class="default-chip-name">${escHtml(d.name)}</div>
       <div class="default-chip-ip">DEV ${escHtml(devIp)}</div>
-      <div class="default-chip-ip">YOU ${escHtml(techIp)}</div>`;
-    chip.onclick = () => applyDefaultConfig(d);
+      <div class="default-chip-ip">YOU ${escHtml(techIp)}</div>
+      <div class="default-chip-acts">
+        <span class="dc-use" title="Put the card on ${escHtml(techIp)} instead (fills the form — press APPLY)">USE</span>
+        <span class="dc-add" title="Keep your current address and add ${escHtml(techIp)} next to the device">+ ADD</span>
+      </div>`;
+    // v7.3.1: USE replaces your address; + ADD keeps your network and adds one next to the device
+    chip.onclick = (e) => {
+      if (e.target.closest('.dc-add')) { cardAddToggle(true, techIp, d.subnet); setNetStatus(`PRESS ADD — KEEPS YOUR ADDRESS, ADDS ${techIp} NEXT TO ${d.name.toUpperCase()}`, 'ok', 6000); return; }
+      applyDefaultConfig(d);
+    };
     grid.appendChild(chip);
   });
 }
@@ -5643,8 +6147,20 @@ function applyDefaultConfig(d) {
 }
 
 function toggleCmd() {
+  // v7.3.1: with the 2nd-address row open, COPY COMMANDS means that command
+  const addRow = document.getElementById('ca-addrow');
+  if (addRow && addRow.style.display !== 'none') {
+    const box = document.getElementById('alias-cmd-box');
+    if (box && box.style.display === 'block') { box.style.display = 'none'; autoResize(); return; }
+    aliasCopyCmd('add'); return;
+  }
   if (cmdVisible) { hideCmdBox(); return; }
   const f = getFields();
+  if (ipMode === 'dhcp') {   // v7.3.1
+    if (!f.adapter) { setNetStatus('PICK A NETWORK CARD FIRST', 'warn', 3000); return; }
+    document.getElementById('cmd-text').textContent = `netsh interface ip set address "${f.adapter}" dhcp\nnetsh interface ip set dns "${f.adapter}" dhcp`;
+    showCmdBox(); return;
+  }
   if (!f.ip || !f.subnet) {
     setNetStatus('FILL IN REQUIRED FIELDS FIRST', 'warn', 3000);
     return;
@@ -5837,10 +6353,24 @@ function copyCmd() {
 
 // ── STATUS BAR (generic) ───────────────────────────────────
 const _statusTimers = {};
+// v7.3.1 — the message sits in a span so a new one can slide in; the bar's stripe stays put.
+// Same text again (a repeat status) doesn't move. el.textContent still reads the message.
+function setStatusText(el, msg) {
+  const txt = String(msg);
+  let span = el.firstElementChild;
+  if (!span || !span.classList.contains('sb-msg') || el.childNodes.length !== 1) {
+    el.textContent = '';
+    span = document.createElement('span');
+    span.className = 'sb-msg';
+    el.appendChild(span);
+  } else if (span.textContent === txt) return;
+  span.textContent = txt;
+  span.classList.remove('swap'); void span.offsetWidth; span.classList.add('swap');
+}
 function setStatus(id, cssBase, msg, type, autoClearMs) {
   const el = document.getElementById(id);
   if (!el) return;
-  el.textContent = msg;
+  setStatusText(el, msg);
   // v7.0.0: an in-progress message ("…ING...") animates the accent stripe;
   // READY shows the idle cursor; ok flashes once so the change is seen.
   let cls = type || '';
@@ -5851,7 +6381,7 @@ function setStatus(id, cssBase, msg, type, autoClearMs) {
   if (_statusTimers[id]) { clearTimeout(_statusTimers[id]); delete _statusTimers[id]; }
   if (autoClearMs) {
     _statusTimers[id] = setTimeout(() => {
-      el.textContent = 'READY';
+      setStatusText(el, 'READY');
       el.className = cssBase + ' idle';
     }, autoClearMs);
   }
@@ -6214,7 +6744,10 @@ function monPaintRow(host, dotState, idx) {
   if (idx === undefined) idx = monActiveHosts().indexOf(host);
   const d = monHostData[host] || { history: [], sent: 0, successful: 0 };
   const last = d.history[d.history.length - 1];
-  const ds = dotState || (last ? (last.ok ? (last.ms >= 150 ? 'warn' : 'ok') : 'fail') : 'idle');
+  const settled = last ? (last.ok ? (last.ms >= 150 ? 'warn' : 'ok') : 'fail') : 'idle';
+  // v7.3.1: while a ping is out, a host that already has a result keeps its colour and
+  // just dims — no amber repaint every cycle. Only a host with no result yet shows amber.
+  const ds = dotState === 'pinging' && last ? settled + ' wait' : (dotState || settled);
   const okH = d.history.filter(x => x.ok).slice(-20);
   const avg = okH.length ? Math.round(okH.reduce((a, x) => a + x.ms, 0) / okH.length) : null;
   const loss = d.sent > 0 ? Math.round(((d.sent - d.successful) / d.sent) * 100) : -1;
@@ -6229,7 +6762,7 @@ function monPaintRow(host, dotState, idx) {
   const avgStr = avg !== null ? avg + 'ms' : '—';
   const avgCls = avg !== null ? (avg < 100 ? 'ok' : 'warn') : 'dim';
   const resolved = d.resolved && d.resolved !== host ? `<div class="host-name-resolved">${escHtml(d.resolved)}</div>` : '';
-  el.innerHTML = `
+  monApplyRow(el, `
     <div class="row-num">${idx + 1}</div>
     <div class="dot-cell"><div class="dot ${ds}"></div></div>
     <div class="host-name-wrap">
@@ -6242,12 +6775,48 @@ function monPaintRow(host, dotState, idx) {
     <div class="spark-cell">${monSparkline(d.history)}</div>
     <div class="trcrt-btn" onclick="tracertToggle('${escHtml(host)}')" title="Traceroute">TRCRT</div>
     <div class="tone-btn${monToneHost === host ? ' on' + (last && !last.ok ? ' alarm' : '') : ''}" onclick="monToneToggle('${escHtml(host)}')" title="Toner: hear this host — sonar while it answers, alarm when it doesn't. Pull cables at the switch and listen.">♪</div>
-    ${el.classList.contains('has-cap') ? `<div class="cap-btn" onclick="monCapture('${escHtml(host)}')" title="Open a live Wireshark capture filtered to this host">◉</div>` : ''}`;
+    ${el.classList.contains('has-cap') ? `<div class="cap-btn" onclick="monCapture('${escHtml(host)}')" title="Open a live Wireshark capture filtered to this host">◉</div>` : ''}`);
 
   // Restore tracert button state if a tracert is active for this host
   if (tracertActiveHost === host) {
     const btn = el.querySelector('.trcrt-btn');
     if (btn) { btn.classList.add('active'); btn.textContent = '■ STOP'; }
+  }
+}
+
+// v7.3.1 — update a PING row in place instead of rebuilding it every cycle.
+// Builds the same markup as before into a scratch node, then copies only what changed:
+// leaf cells get their class/text/title updated (so colours transition and a threshold
+// change glows once), anything structural is swapped. Hover, the toner pulse and the
+// tracert button state are no longer reset every second.
+const _monScratch = document.createElement('div');
+function monApplyRow(el, html) {
+  _monScratch.innerHTML = html;
+  if (!el.firstElementChild || el.children.length !== _monScratch.children.length) {
+    el.innerHTML = html; return;
+  }
+  monPatchChildren(el, _monScratch);
+}
+function monPatchChildren(oldP, newP) {
+  const olds = oldP.children, news = newP.children;
+  if (olds.length !== news.length) { oldP.innerHTML = newP.innerHTML; return; }
+  for (let i = 0; i < news.length; i++) {
+    const o = olds[i], n = news[i];
+    if (o.outerHTML === n.outerHTML) continue;
+    if (o.tagName !== n.tagName || o.classList.contains('spark-cell') || o.tagName === 'svg') { o.replaceWith(n.cloneNode(true)); continue; }
+    if (!n.firstElementChild && !o.firstElementChild) {
+      const glow = (o.classList.contains('metric') || o.classList.contains('loss-val')) && o.className !== n.className;
+      if (o.className !== n.className) o.className = n.className;
+      if (o.textContent !== n.textContent) o.textContent = n.textContent;
+      for (const a of ['title', 'onclick']) {
+        const v = n.getAttribute(a);
+        if (v === null) o.removeAttribute(a); else if (o.getAttribute(a) !== v) o.setAttribute(a, v);
+      }
+      if (glow) { o.classList.remove('chg'); void o.offsetWidth; o.classList.add('chg'); }
+      continue;
+    }
+    if (o.className !== n.className) o.className = n.className;
+    monPatchChildren(o, n);
   }
 }
 
@@ -6270,6 +6839,11 @@ function monSparkline(history) {
   return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${rects}</svg>`;
 }
 
+function monAckDot(host) {
+  const dot = document.querySelector('#mr-' + safeid(host) + ' .dot');
+  if (!dot) return;
+  dot.classList.remove('ack'); void dot.offsetWidth; dot.classList.add('ack');
+}
 function monFlashRow(host, ok) {
   const el = document.getElementById('mr-' + safeid(host));
   if (!el) return;
@@ -6306,7 +6880,10 @@ async function monRunCycle() {
     else { d.history.push({ ok: false, ms: 0, err: r.err || null, why: r.why || null }); anyFail = true; }
     if (d.history.length > MON_HISTORY_LEN) d.history.shift();
     monPaintRow(host, undefined, i);
-    monFlashRow(host, r.ok);
+    // v7.3.1: the whole row flashes only when the host flips up/down (or its first answer);
+    // otherwise a reply is a small ring on the dot.
+    if (!prev || prev.ok !== r.ok) monFlashRow(host, r.ok);
+    else if (r.ok) monAckDot(host);
     if (monToneHost === host) {
       monToneResult(r.ok, r.ms || 0);
       // v7.1.0: the toned host flipped — toast if the HUD is in the tray (main checks visibility)
@@ -6627,7 +7204,7 @@ function updateAdapterDhcpAction(a) {
   btn.dataset.mode = renew ? 'renew' : 'dhcp';
   btn.textContent = renew ? 'RENEW' : '→ DHCP';
   btn.title = renew ? 'Ask the DHCP server for a lease again (ipconfig /renew)' : 'Hand this adapter back to DHCP';
-  btn.classList.toggle('show', !!(a && (a.isDhcp === false || renew)));
+  btn.classList.toggle('show', renew);   // v7.3.1: → DHCP lives on the STATIC | DHCP switch now
 }
 async function adapterRenew() {
   const a = currentAdapterEntry(); if (!a || !window.hud || !hud.adapterRenew) return;
@@ -6754,7 +7331,8 @@ const PALETTES = [
   { id: 'cyan',   name: 'COLDTECH', accent: '#00ddff', bg: '#050d12', label: '#c0f0ff', swatch: '#00ddff' },
   { id: 'amber',  name: 'WARMOPS',  accent: '#ffaa00', bg: '#120f05', label: '#ffe0a0', swatch: '#ffaa00' },
   { id: 'red',    name: 'DANGER',   accent: '#ff3355', bg: '#120909', label: '#ffb0b0', swatch: '#ff3355' },
-  { id: 'purple', name: 'SYNTH',    accent: '#cc44ff', bg: '#0d0712', label: '#e0b0ff', swatch: '#cc44ff' },
+  // v7.3.1: SYNTH retired — RGB cycles the accent through the spectrum, in a wave across the HUD
+  { id: 'rainbow', name: 'RGB', accent: '#ff3355', bg: '#0b0910', label: '#f2e8ff', swatch: 'conic-gradient(#ff3355, #ff9500, #ffe600, #00ff78, #00c8ff, #9a5aff, #ff3355)', glow: '#ff66cc' },
   { id: 'gray',   name: 'STEALTH',  accent: '#aabbcc', bg: '#0a0a0c', label: '#d0d8e0', swatch: '#aabbcc' },
 ];
 
@@ -6792,6 +7370,7 @@ function applyPalette(accentHex, bgHex, paletteId, labelHex) {
   root.style.setProperty('--surface', `rgba(${sr}, ${sg}, ${sb}, 0.95)`);
 
   activePaletteId = paletteId || 'custom';
+  document.documentElement.classList.toggle('rainbow', activePaletteId === 'rainbow');   // v7.3.1
   renderPaletteSwatches();
 
   // persist
@@ -6808,7 +7387,7 @@ function renderPaletteSwatches() {
     const swatch = document.createElement('div');
     swatch.className = 'palette-swatch' + (activePaletteId === p.id ? ' active' : '');
     swatch.style.background = p.swatch;
-    swatch.style.boxShadow = activePaletteId === p.id ? `0 0 8px ${p.swatch}80` : 'none';
+    swatch.style.boxShadow = activePaletteId === p.id ? `0 0 8px ${p.glow || p.swatch}80` : 'none';
     swatch.onclick = () => {
       applyPalette(p.accent, p.bg, p.id, p.label);
       document.getElementById('custom-accent').value = p.accent;
@@ -6817,7 +7396,7 @@ function renderPaletteSwatches() {
     };
     const label = document.createElement('div');
     label.className = 'palette-swatch-label';
-    label.style.color = p.swatch;
+    label.style.color = p.glow || p.swatch;
     label.textContent = p.name;
     wrap.appendChild(swatch);
     wrap.appendChild(label);
@@ -6864,6 +7443,23 @@ function loadSavedTheme() {
     }
   } catch {}
   applyPalette('#00ff90', '#090d12', 'green', '#a0dcff');
+}
+
+// v7.3.1 — DEPTH (scanlines + edge shading). On unless the user turned it off.
+function applyDepth(on) {
+  document.body.classList.toggle('depth', on);
+  const chip = document.getElementById('depth-chip');
+  if (chip) { chip.classList.toggle('on', on); chip.textContent = on ? 'ON' : 'OFF'; }
+}
+function toggleDepth() {
+  const on = !document.body.classList.contains('depth');
+  applyDepth(on);
+  try { localStorage.setItem('netether-depth', on ? '1' : '0'); } catch {}
+}
+function loadDepth() {
+  let on = true;
+  try { on = localStorage.getItem('netether-depth') !== '0'; } catch {}
+  applyDepth(on);
 }
 
 // ── SUBNET SCANNER ─────────────────────────────────────────
@@ -7029,6 +7625,7 @@ function startScan() {
   document.getElementById('scan-progress-wrap').classList.add('visible');
   updateScanFoundCount();
   setScanProgress(0, total);
+  scanSkel(4);   // v7.3.1: the wait before the first answer looks alive
 
   const rangeLabel = scanStart === 1 && scanEnd === 254 ? `${base}.0/24` : `${base}.${scanStart}-${scanEnd}`;
   setScanStatus('SCANNING ' + rangeLabel, '');
@@ -7201,6 +7798,7 @@ function scanCounts() {
 }
 function finishScan(aborted) {
   scanRunning = false;
+  scanSkel(0);   // v7.3.1
   const cnt = scanCounts();
   const found = cnt.on;
   sessionScans.push({ ts: Date.now(), base: document.getElementById('scan-base').value.trim(), found, changes: '' });   // v7.1.0: site report
@@ -7294,6 +7892,18 @@ function buildMetaHtml(macDisplay, vendor) {
 }
 
 
+// v7.3.1 — skeleton rows with a sweep while a scan or discovery spins up. Kept at the
+// bottom of the list; real rows insert above them. n = 0 removes them.
+function scanSkel(n) {
+  const c = document.getElementById('scan-results'); if (!c) return;
+  const have = c.querySelectorAll(':scope > .scan-skel');
+  for (let i = have.length; i < n; i++) {
+    const sk = document.createElement('div'); sk.className = 'scan-skel'; sk.setAttribute('aria-hidden', 'true');
+    sk.innerHTML = '<i></i><i></i><i></i>';
+    c.appendChild(sk);
+  }
+  for (let i = have.length - 1; i >= n; i--) have[i].remove();
+}
 function appendScanResult(ip, ms, fromArp, mac, vendor) {
   const container = document.getElementById('scan-results');
   document.getElementById('scan-results-header').style.display = 'flex';
@@ -7336,8 +7946,10 @@ function appendScanResult(ip, ms, fromArp, mac, vendor) {
     const el = r.querySelector('.scan-result-ip');
     if (el && ipNum(el.textContent.trim()) > mine) { before = r; break; }
   }
-  container.insertBefore(row, before);
-  autoResize();
+  row.classList.add('row-enter');   // v7.3.1
+  container.insertBefore(row, before || container.querySelector(':scope > .scan-skel'));
+  if (scanRunning) scanSkel(1);      // results are flowing — one sweep line says "still going"
+  growForNewRow();
 }
 
 function enrichScanResult(ip, mac, vendor) {
@@ -8068,9 +8680,18 @@ async function scanDiscover(baseIp) {
   scanDiscBusy = true;
   const btn = document.getElementById('scan-discover-btn');
   if (btn) { btn.classList.add('busy'); btn.textContent = '◎ LISTENING…'; }
+  // v7.3.1: DISCOVER on its own (no sweep running, no rows yet) shows the sweep while it listens
+  const emptyEl = document.getElementById('scan-empty');
+  const skelOwn = !scanRunning && !document.querySelector('#scan-results .scan-result-row');
+  const emptyWas = emptyEl ? emptyEl.style.display : '';
+  if (skelOwn) { if (emptyEl) emptyEl.style.display = 'none'; scanSkel(3); autoResize(); }
   let r;
   try { r = await hud.discoverRun({ adapter, baseIp: baseIp || '' }); } catch (err) { r = { ok: false, err: err.message, results: [] }; }
   scanDiscBusy = false;
+  if (skelOwn && !scanRunning) {
+    scanSkel(0);
+    if (emptyEl && !(r && r.ok && r.results && r.results.length)) emptyEl.style.display = emptyWas;
+  }
   if (btn) { btn.classList.remove('busy'); btn.textContent = '◎ DISCOVER'; }
   if (!r.ok) {
     if (r.err === 'NO_IP') setScanStatus('DISCOVERY NEEDS AN IP ON THE ADAPTER', 'warn', 4000);
@@ -8453,7 +9074,7 @@ async function pollAliasUntil(adapter, expectIp, expectPresent, maxMs = 8000) {
 }
 
 // ── IP ALIAS MANAGER ───────────────────────────────────────
-let aliasPeekOpen = false;
+let aliasPeekOpen = true;   // v7.3.1: the address chips are always shown, so always refreshed
 
 function getAliasAdapter() {
   return document.getElementById('adapter').value.trim() || null;
@@ -8547,83 +9168,78 @@ async function aliasRemoveFromTab(ip) {
 }
 
 // ── ALIAS TAB ──────────────────────────────────────────────
+// v7.3.1 — "ON THIS CARD": the main address and every extra one as chips (click = copy,
+// × = remove), refreshed with the adapter list. Only touches the DOM when something changed.
+var cardExtras = [];   // v7.3.1: the 2nd/3rd addresses shown — APPLY puts them back
+const ordinal = n => n + (n % 10 === 2 && n % 100 !== 12 ? 'ND' : n % 10 === 3 && n % 100 !== 13 ? 'RD' : n % 10 === 1 && n % 100 !== 11 ? 'ST' : 'TH');
+const maskBits = m => (m || '').split('.').reduce((n, o) => n + ((+o >>> 0).toString(2).match(/1/g) || []).length, 0);
 async function loadAliasTab() {
-  // rc.3: build the new list, and only touch the DOM when it differs. It used to empty the list,
-  // show LOADING..., await Windows, then refill — every 15 s while the panel was open — so the
-  // window (fitted to its content) shrank and grew in a pulse once an alias was listed.
-  const adapter    = getAliasAdapter();
-  const listEl     = document.getElementById('alias-list');
-  const refreshBtn = document.getElementById('alias-tab-refresh');
-  const hint       = document.getElementById('alias-empty-hint');
-
-  function setHint(msg) {
-    if (!hint) return;
-    if (msg) { hint.textContent = msg; hint.classList.add('pulse'); }
-    else      { hint.textContent = '';  hint.classList.remove('pulse'); }
-  }
-  function show(html, hintMsg) {
-    setHint(hintMsg);
-    if (listEl.dataset.sig === html) return;   // nothing changed — leave the DOM (and the window) alone
-    listEl.dataset.sig = html;
-    listEl.innerHTML = html;
+  const adapter = getAliasAdapter();
+  const box = document.getElementById('card-addr-chips');
+  const wrap = null;
+  if (!box) return;
+  const a = currentAdapterEntry();
+  const paint = (items) => {
+    const sig = JSON.stringify(items);
+    if (box.dataset.sig === sig) return;
+    const before = new Set((box.dataset.ips || '').split(',').filter(Boolean));
+    box.dataset.sig = sig; box.dataset.ips = items.map(x => x.ip).join(',');
+    // the main address is the field above (and the top bar) — only the extras get a line
+    const extras = items.filter(x => !x.main);
+    cardExtras = extras.map(x => ({ ip: x.ip, subnet: x.subnet }));
+    box.innerHTML = extras.map((x, i) => `<div class="field-row ca-extra${before.size && !before.has(x.ip) ? ' row-enter' : ''}">
+        <div class="field-label">${ordinal(i + 2)} NETWORK ADDRESS</div>
+        <div class="ip-field-wrap"><div class="field-input ca-ro">${escHtml(x.ip)}<span class="m">/${maskBits(x.subnet) || '?'} · ${escHtml(x.subnet || '')}</span></div>
+          <span class="ca-acts"><span class="cp" title="Copy ${escHtml(x.ip)}" onclick="aliasCopyIp('${escHtml(x.ip)}')">COPY</span><span class="rm" title="Take ${escHtml(x.ip)} off this card" onclick="aliasRemoveFromTab('${escHtml(x.ip)}')">REMOVE</span></span></div>
+      </div>`).join('');
+    const add = document.getElementById('ca-add');
+    if (add) add.textContent = `+ ADD A ${ordinal(extras.length + 2)} NETWORK ADDRESS`;
     autoResize();
-  }
-
-  if (!adapter) { show('', 'NO ADAPTER'); return; }
-  if (!listEl.dataset.sig) setHint('LOADING...');   // first fill only — never on the background refresh
-  if (refreshBtn) refreshBtn.classList.add('spinning');
-
-  if (!window.hud) {
-    setHint('ELECTRON ONLY');
-    if (refreshBtn) refreshBtn.classList.remove('spinning');
+  };
+  if (wrap) wrap.style.display = adapter ? '' : 'none';
+  if (!adapter) return;
+  if (!window.hud || (a && a.isDhcp)) {
+    // a DHCP card has one address (Windows won't list extras until it's static)
+    paint(a && a.ip ? [{ ip: a.ip, subnet: a.subnet, main: true, dhcp: !!(a && a.isDhcp) }] : []);
+    const add = document.getElementById('ca-add'); if (add) add.textContent = '+ ADD A 2ND NETWORK ADDRESS';
+    cardAddHint();
     return;
   }
-
   let res;
-  try { res = await hud.getAliases(adapter); } catch (err) { res = { ok: false, err: err.message, aliases: [] }; }
-  finally { if (refreshBtn) refreshBtn.classList.remove('spinning'); }
-
-  // rc.3: a DHCP card can take a MULTI-IP — ADD converts it to static on its own address first
-  // (and keeps its DNS). This used to say "REQUIRES STATIC" in red. Quiet hint only.
-  const adapterEntry = adapterList.find(a => a.name === adapter);
-  if (adapterEntry && adapterEntry.isDhcp) { show('', 'DHCP — ADD SETS IT STATIC'); return; }
-
-  if (!res.ok) {
-    show(listEl.dataset.sig || '', 'READ ERROR');   // keep what was listed; a failed read isn't "no aliases"
-    setAliasStatus('FAILED TO READ ADAPTER', 'err', 5000);
-    return;
+  try { res = await hud.getAliases(adapter); } catch (err) { res = { ok: false, aliases: [] }; }
+  if (!res.ok) return;   // keep what's shown — a failed read isn't "no addresses"
+  const primIp = (a && a.ip) || (document.getElementById('ip')?.value || '').trim();
+  const prim = res.aliases.find(x => x.ip === primIp) || res.aliases[0];
+  paint(res.aliases.map(x => ({ ip: x.ip, subnet: x.subnet, main: x === prim })).sort((x, y) => (y.main - x.main)));
+  cardAddHint();
+}
+function cardAddHint() {
+  const h = document.getElementById('ca-hint'); if (!h) return;
+  const a = currentAdapterEntry();
+  h.innerHTML = a && a.isDhcp && a.ip
+    ? `Keeps <b>${escHtml(a.ip)}</b> (set static first — it's on DHCP) and adds one on another subnet.`
+    : `Keeps your address and adds one on another subnet.`;
+}
+function cardAddToggle(open, ip, mask) {
+  const row = document.getElementById('ca-addrow'), add = document.getElementById('ca-add');
+  if (!row) return;
+  row.style.display = open ? '' : 'none';
+  add?.classList.toggle('open', open);
+  if (open) {
+    row.classList.remove('row-enter'); void row.offsetWidth; row.classList.add('row-enter');
+    cardAddHint();
+    const ipEl = document.getElementById('alias-new-ip'), mEl = document.getElementById('alias-new-subnet');
+    if (ip !== undefined) { ipEl.value = ip; if (mask) { mEl.value = mask; mEl.dataset.userEdited = '1'; } else { delete mEl.dataset.userEdited; autoFillAliasSubnet(ip); } }
+    setTimeout(() => { ipEl.focus(); if (ip === undefined) ipEl.select(); }, 0);
+  } else {
+    const cb = document.getElementById('alias-cmd-box'); if (cb) cb.style.display = 'none';
   }
-  if (!res.aliases.length) { show('', 'NO IPS'); return; }
-
-  // Identify primary by matching the main #ip field — do NOT rely on array position;
-  // netsh output order is not guaranteed to put the primary IP first.
-  // v7.1.0: the adapter entry's ip is the gateway-holding address; the #ip field is the fallback
-  const primAdapter = currentAdapterEntry();
-  const knownPrimary = (primAdapter && primAdapter.ip) || (document.getElementById('ip')?.value || '').trim();
-  const primaryEntry = res.aliases.find(a => a.ip === knownPrimary) || res.aliases[0];
-  const extras = res.aliases.filter(a => a !== primaryEntry);
-
-  if (!extras.length) { show('', 'NO MULTI-IPS'); return; }
-  // Show primary as a slim read-only header, then all extra IPs with actions
-  const html = `
-    <div class="alias-row primary">
-      <div class="alias-row-info">
-        <div class="alias-row-ip">${escHtml(primaryEntry.ip)}</div>
-        <div class="alias-row-mask">${escHtml(primaryEntry.subnet)}</div>
-      </div>
-      <div class="alias-row-tag primary-tag">PRIMARY</div>
-    </div>` + extras.map(a => `
-    <div class="alias-row">
-      <div class="alias-row-info">
-        <div class="alias-row-ip">${escHtml(a.ip)}</div>
-        <div class="alias-row-mask">${escHtml(a.subnet)}</div>
-      </div>
-      <div class="alias-row-actions">
-        <div class="alias-use-btn" onclick="aliasCopyIp('${escHtml(a.ip)}')" title="Copy IP to clipboard">COPY</div>
-        <div class="alias-del-btn" onclick="aliasRemoveFromTab('${escHtml(a.ip)}')" title="Remove multi-ip">REMOVE</div>
-      </div>
-    </div>`).join('');
-  show(html, '');
+  autoResize();
+}
+async function cardAddSubmit() {
+  await aliasAdd();
+  // aliasAddRun empties the box on success — that's our cue to close
+  if (!document.getElementById('alias-new-ip')?.value) cardAddToggle(false);
 }
 
 let _aliasAddBusy = false;   // rc.3: fast repeat clicks queued extra adds
@@ -8651,7 +9267,7 @@ async function aliasAddRun() {
   const adapterEntry = adapterList.find(a => a.name === adapter);
   const isDhcp = adapterEntry?.isDhcp === true;
 
-  setAliasStatus(isDhcp ? 'CONVERTING TO STATIC, THEN ADDING...' : 'ADDING MULTI-IP...', '');
+  setAliasStatus(isDhcp ? 'SETTING THE CARD STATIC, THEN ADDING ' + ip + '...' : 'ADDING ' + ip + '...', '');
   const res = await hud.aliasAdd({ adapter, ip, subnet });
   if (res.ok) {
     document.getElementById('alias-new-ip').value = '';
@@ -8665,7 +9281,7 @@ async function aliasAddRun() {
     await loadAliasTab();
     updateMultiIpBadge();
     if (confirmed) {
-      setAliasStatus(res.already ? ip + ' IS ALREADY ON THIS CARD' : 'MULTI-IP ADDED: ' + ip + (res.converted ? ' — ADAPTER NOW STATIC (DNS KEPT)' : ''), 'ok', 5000);
+      setAliasStatus(res.already ? ip + ' IS ALREADY ON THIS CARD' : '✓ ' + ip + ' ADDED — THE CARD IS ON BOTH NETWORKS' + (res.converted ? ' (NOW STATIC, DNS KEPT)' : ''), 'ok', 6000);
     } else {
       // netsh exited 0 but the IP never appeared — output is in DIAGNOSTICS
       setAliasStatus('COMMAND RAN — IP NOT DETECTED. SEE DIAGNOSTICS (VERSION CHIP)', 'warn', 8000);
@@ -8818,6 +9434,14 @@ function intelNextTag() {
 }
 
 // ── SITE LIST ──────────────────────────────────────────────
+// v7.3.1: which saved site is the card on right now? (site subnets are stored as "a.b.c")
+function siteHereId() {
+  const a = currentAdapterEntry();
+  const ips = [a && a.ip, ...(typeof cardExtras !== 'undefined' ? cardExtras.map(x => x.ip) : [])].filter(Boolean);
+  const nets = new Set(ips.map(ip => ip.split('.').slice(0, 3).join('.')));
+  const hit = Object.values(intelDB || {}).find(s => s.subnet && nets.has(s.subnet));
+  return hit ? hit.id : null;
+}
 function intelRenderSiteList(filter) {
   const container = document.getElementById('intel-site-list');
   const sites = Object.values(intelDB);
@@ -8829,10 +9453,19 @@ function intelRenderSiteList(filter) {
         (s.subnet||'').includes(filter))
     : sites;
 
-  filtered.sort((a, b) => (b.lastScan || 0) - (a.lastScan || 0));
+  // v7.3.1: the site you're standing on (the card's address is on its subnet) comes first
+  const here = siteHereId();
+  filtered.sort((a, b) => (b.id === here) - (a.id === here) || (b.lastScan || 0) - (a.lastScan || 0));
 
   if (!filtered.length) {
-    container.innerHTML = '<div class="intel-empty">// NO SITES YET — CREATE ONE TO BEGIN</div>';
+    container.innerHTML = filter
+      ? '<div class="intel-empty">// NO SITE MATCHES</div>'
+      : `<div class="intel-empty intel-empty-start">
+          <div class="t">NO SITES YET</div>
+          <div class="s">A site is saved from a scan — sweep the network on SCAN, then press <b>SAVE SITE</b>. Its devices, notes and logins live here after that.</div>
+          <span class="intel-toolbar-btn accent" onclick="switchTab('scan')">▶ GO TO SCAN</span>
+        </div>`;
+    autoResize();
     return;
   }
 
@@ -8842,8 +9475,10 @@ function intelRenderSiteList(filter) {
     card.className = 'intel-site-card' + (intelActiveSite === site.id ? ' active' : '');
     const devCount = (site.devices || []).length;
     const lastScan = site.lastScan
-      ? new Date(site.lastScan).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'2-digit' })
+      ? 'last scan ' + new Date(site.lastScan).toLocaleDateString('en-US', { month:'short', day:'numeric', year: new Date(site.lastScan).getFullYear() === new Date().getFullYear() ? undefined : 'numeric' })
       : 'never scanned';
+    const isHere = site.id === here;
+    if (isHere) card.classList.add('here');
     const changes = intelPendingChanges[site.id];
     let badges = `<span class="intel-badge count">${devCount} DEVICE${devCount !== 1 ? 'S' : ''}</span>`;
     if (changes) {
@@ -8853,6 +9488,7 @@ function intelRenderSiteList(filter) {
     }
     const siteTag = escHtml(site.tag || '');
     card.innerHTML = `
+      <div class="intel-site-top">
       <div class="intel-site-name" contenteditable="true" spellcheck="false"
         title="Click to rename"
         onblur="intelRenameSite('${escHtml(site.id)}', this)"
@@ -8862,6 +9498,11 @@ function intelRenderSiteList(filter) {
         onfocus="event.stopPropagation()"
         data-orig="${escHtml(site.name || '—')}"
       >${escHtml(site.name || '—')}</div>
+      ${isHere ? '<span class="intel-here" title="Your network card is on this site\'s subnet">● YOU\'RE HERE</span>' : ''}
+      <span style="flex:1" onclick="intelOpenSite('${escHtml(site.id)}')"></span>
+      ${site.subnet ? `<span class="intel-card-scan" title="Scan ${escHtml(site.subnet)}.0/24 now" onclick="event.stopPropagation(); intelActiveSite='${escHtml(site.id)}'; intelLinkScan()">▶ SCAN</span>` : ''}
+      </div>
+      <div class="intel-site-net" onclick="intelOpenSite('${escHtml(site.id)}')">${site.subnet ? escHtml(site.subnet) + '.0/24' : 'no subnet saved'}</div>
       <div class="intel-site-meta" onclick="intelOpenSite('${escHtml(site.id)}')">
         <span>${escHtml(site.customer || '')}${site.address ? ' · ' + escHtml(site.address) : ''}</span>
         <span>${siteTag ? siteTag + ' · ' : ''}${lastScan}</span>
@@ -8967,7 +9608,10 @@ function intelLinkScan() {
   // Sync picker
   const sel = document.getElementById('scan-site-select');
   if (sel) { sel.value = intelActiveSite; sel.classList.add('loaded'); }
-  setScanStatus(`SITE LOADED: ${site.name || site.subnet} — HIT SCAN TO UPDATE`, 'ok', 5000);
+  // v7.3.1: SCAN NOW means scan now — one site at a time, so there's nothing to choose first.
+  // A sweep already running on another subnet is stopped and replaced.
+  if (scanRunning) stopScan();
+  requestAnimationFrame(() => startScan());
 }
 
 // ── CHANGE DETECTION ───────────────────────────────────────
@@ -9069,6 +9713,7 @@ function intelProcessScanResults(baseIp, scanResults) {
     }
   });
 
+  changes.at = now; changes.prev = site.lastScan || null;   // v7.3.1: when, and compared with when
   site.lastScan = now;
   intelPendingChanges[site.id] = changes;
 
@@ -9176,6 +9821,9 @@ function intelRenderChangesList(site) {
     return;
   }
   label.style.display = '';
+  // v7.3.1: say which scan found these, and what it was compared with
+  const fmt = t => new Date(t).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).toUpperCase();
+  label.innerHTML = `CHANGES FOUND BY THE SCAN ${changes.at ? 'ON ' + escHtml(fmt(changes.at)) : 'JUST NOW'}<span class="opt">${changes.prev ? 'compared with ' + escHtml(fmt(changes.prev).toLowerCase()) : 'first scan of this site'}</span>`;
   list.innerHTML = '';
 
   changes.moved.forEach(d => {
@@ -9316,6 +9964,7 @@ function intelBuildDrawer(device, siteId) {
         <div class="intel-drawer-label">NOTES</div>
         <textarea class="intel-note-input" rows="2" placeholder="device notes..."
           oninput="intelUpdateNote('${deviceKey}','${siteId}',this.value)"
+          onblur="intelAutoSave()"
         >${escHtml(device.notes||'')}</textarea>
       </div>
       <div class="intel-drawer-field intel-drawer-full">
@@ -9327,6 +9976,7 @@ function intelBuildDrawer(device, siteId) {
     <div class="intel-drawer-actions">
       <div class="intel-save-btn" onclick="intelSaveDevice('${deviceKey}','${siteId}')">SAVE</div>
       ${device.mac ? `<div class="intel-wake-btn" onclick="intelWake('${escHtml(device.mac)}', this)" title="Wake-on-LAN — send a magic packet to this MAC on every connected subnet">WAKE</div>` : ''}
+      ${device.ip ? `<div class="intel-wake-btn" onclick="openDevicePage('${escHtml(device.ip)}')" title="Open ${escHtml(device.ip)} in the browser">↗ OPEN</div><div class="intel-wake-btn" onclick="scanPingHost('${escHtml(device.ip)}')" title="Ping ${escHtml(device.ip)} on the PING tab">PING</div>` : ''}
       <div class="intel-del-device-btn" onclick="intelDeleteDevice('${deviceKey}','${siteId}')">REMOVE DEVICE</div>
     </div>`;
 }
@@ -9402,8 +10052,8 @@ function intelUpdateNote(deviceKey, siteId, value) {
 function intelCredRowsHtml(device, deviceKey, siteId) {
   return (device.creds || []).map((c, i) => `
     <div class="intel-cred-row">
-      <input class="intel-cred-key" value="${escHtml(c.key)}" placeholder="label" spellcheck="false" oninput="intelUpdateCred('${deviceKey}','${siteId}',${i},'key',this.value)">
-      <input class="intel-cred-val" type="password" value="${escHtml(c.val)}" placeholder="value" spellcheck="false" autocomplete="off" oninput="intelUpdateCred('${deviceKey}','${siteId}',${i},'val',this.value)">
+      <input class="intel-cred-key" value="${escHtml(c.key)}" placeholder="label" spellcheck="false" oninput="intelUpdateCred('${deviceKey}','${siteId}',${i},'key',this.value)" onchange="intelAutoSave()">
+      <input class="intel-cred-val" type="password" value="${escHtml(c.val)}" placeholder="value" spellcheck="false" autocomplete="off" oninput="intelUpdateCred('${deviceKey}','${siteId}',${i},'val',this.value)" onchange="intelAutoSave()">
       <div class="intel-cred-eye" onclick="intelToggleCredReveal(this)" title="Show / hide">◉</div>
       <div class="intel-cred-del" onclick="intelRemoveCred('${deviceKey}','${siteId}',${i})">✕</div>
     </div>`).join('');
@@ -9456,6 +10106,15 @@ function intelRemoveCred(deviceKey, siteId, idx) {
   autoResize();
 }
 
+async function revealExports() {
+  if (!window.hud || !hud.revealLastExport) return;
+  const r = await hud.revealLastExport().catch(() => null);
+  intelSetListStatus(r && r.ok ? '📁 OPENED ' + String(r.path).toUpperCase() : 'COULDN\'T OPEN THE FOLDER', r && r.ok ? 'ok' : 'warn', 4000);
+}
+// v7.3.1: notes and logins save when you click away — SAVE is still there as a "done"
+async function intelAutoSave() {
+  if (await intelPersist()) intelSetDetailStatus('✓ SAVED', 'ok', 1500);
+}
 function intelSaveDevice(deviceKey, siteId) {
   intelPersist();
   intelSetDetailStatus('DEVICE SAVED', 'ok', 2000);
@@ -9635,6 +10294,7 @@ function dhcpLog(msg, cls) {
   box.appendChild(line);
   while (box.children.length > 200) box.removeChild(box.firstChild);
   box.scrollTop = box.scrollHeight;
+  if ((cls === 'warn' || cls === 'err') && !_dhcpLogOpen) dEl('dhcp-logrow')?.classList.add('alert');
 }
 
 // ── lifecycle ──────────────────────────────────────────────
@@ -10146,32 +10806,24 @@ async function dhcpEngineToggle() {
 
 // ── devices ───────────────────────────────────────────────
 // ── devices / log splitter ────────────────────────────────
-let _dhcpSplit = 0.6;   // share of the flexible space the device table gets
-try { const v = parseFloat(localStorage.getItem('net-ether-dhcp-split')); if (v >= 0.2 && v <= 0.85) _dhcpSplit = v; } catch {}
-function dhcpApplySplit() {
-  const t = document.querySelector('#panel-dhcp .dhcp-table'), l = dEl('dhcp-logrow');
-  if (!t || !l) return;
-  t.style.flex = `${_dhcpSplit} 1 0`;
-  l.style.flex = `${1 - _dhcpSplit} 1 0`;
+// v7.3.1: the splitter is gone — the device table sizes to its rows and the window follows.
+// The log is a two-line strip; open it when something looks wrong. A warn/error line while
+// it's closed gives the strip an amber edge until you open it.
+var _dhcpLogOpen = false;   // var: dhcpLog may run before this line during startup
+try { _dhcpLogOpen = localStorage.getItem('net-ether-dhcp-log-open') === '1'; } catch {}
+function dhcpLogToggle(force) {
+  const row = dEl('dhcp-logrow'); if (!row) return;
+  const open = force === true ? true : force === false ? false : !row.classList.contains('open');
+  if (force === true && row.classList.contains('open')) return;
+  _dhcpLogOpen = open;
+  row.classList.toggle('open', open);
+  if (open) row.classList.remove('alert');
+  const b = dEl('dhcp-log-toggle'); if (b) b.textContent = open ? '▾ LOG' : '▸ LOG';
+  const box = dEl('dhcp-log'); if (box) { box.title = open ? '' : 'Engine log — click to open'; requestAnimationFrame(() => { box.scrollTop = box.scrollHeight; }); }
+  try { localStorage.setItem('net-ether-dhcp-log-open', open ? '1' : '0'); } catch {}
+  autoResize();
 }
-document.addEventListener('DOMContentLoaded', () => {
-  dhcpApplySplit();
-  const sp = dEl('dhcp-splitter'); if (!sp) return;
-  sp.addEventListener('mousedown', e => {
-    e.preventDefault();
-    const t = document.querySelector('#panel-dhcp .dhcp-table'), l = dEl('dhcp-logrow');
-    const top = t.getBoundingClientRect().top, bottom = l.getBoundingClientRect().bottom;
-    const total = bottom - top - sp.offsetHeight;
-    sp.classList.add('dragging'); document.body.classList.add('dhcp-resizing');
-    const move = ev => { _dhcpSplit = Math.max(0.2, Math.min(0.85, (ev.clientY - top) / total)); dhcpApplySplit(); };
-    const up = () => {
-      document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
-      sp.classList.remove('dragging'); document.body.classList.remove('dhcp-resizing');
-      try { localStorage.setItem('net-ether-dhcp-split', _dhcpSplit.toFixed(2)); } catch {}
-    };
-    document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
-  });
-});
+document.addEventListener('DOMContentLoaded', () => { if (_dhcpLogOpen) dhcpLogToggle(true); });
 const DHCP_STATE_ORDER = { asking: 0, offered: 1, declined: 2, leased: 3, releasing: 3, static: 4, sitting: 5, quiet: 6 };
 const DHCP_PILL = { asking: 'ASKING', offered: 'OFFERED', leased: 'SERVED', declined: 'CONFLICT', quiet: 'WENT QUIET', static: '✓ STATIC', releasing: 'CHECKING…', sitting: '◇ SITTING' };
 const dhcpIpNum = ip => ip ? ip.split('.').reduce((a, o) => (a << 8) + (+o), 0) >>> 0 : 0;
@@ -10237,18 +10889,79 @@ function dhcpRenderDevices() {
   const sorted = all.slice().sort((a, b) => {
     const so = DHCP_STATE_ORDER[a.state] - DHCP_STATE_ORDER[b.state];
     if (so !== 0) return so;
-    if (a.state === 'leased' || a.state === 'static') return dhcpIpNum(a.ip) - dhcpIpNum(b.ip);
     if (a.state === 'asking') return (a.firstSeen || 0) - (b.firstSeen || 0);    // first plugged in, first in the list
-    return (b.lastSeen || 0) - (a.lastSeen || 0);
+    // v7.3.1: everything else holds its place by IP — "last heard" made ◇ SITTING rows jump
+    // to the top on every mDNS/ARP packet. Rows with no address yet go last, by MAC.
+    const ai = a.ip ? dhcpIpNum(a.ip) : Infinity, bi = b.ip ? dhcpIpNum(b.ip) : Infinity;
+    if (ai !== bi) return ai - bi;
+    return String(a.mac || '').localeCompare(String(b.mac || ''));
   });
   const taken = new Set(D.devices.filter(d => d.ip).map(d => d.ip).concat(D.devices.map(d => d.chosen).filter(Boolean), [...D.askIp.values()]));
-  list.innerHTML = '';
-  for (const d of sorted) list.appendChild(dhcpBuildCard(d, taken));
-  if (focusMac) {
+  dhcpReconcile(list, sorted.map(d => { const r = dhcpBuildCard(d, taken); r.dataset.key = d.sitting ? 's:' + d.ip : 'm:' + d.mac; return r; }));
+  if (focusMac && !(document.activeElement && document.activeElement.dataset && document.activeElement.dataset.ask === focusMac)) {
     const el = list.querySelector(`[data-ask="${CSS.escape(focusMac)}"]`);
     if (el) { el.focus(); try { el.setSelectionRange(selS, selE); } catch {} }
   }
   dhcpUpdateSelectedBtn();
+}
+// v7.3.1 — devices re-ask every few seconds and every re-ask used to wipe and rebuild the
+// list. Now each row is keyed (MAC, or IP for a ◇ SITTING row): a row whose markup didn't
+// change keeps its node — focus, caret and hover stay put — a changed row is swapped and
+// its pill glows once, a new row eases in, and rows that move slide to their new place.
+const DHCP_FX = new Set(['row-enter', 'row-chg', 'flip']);
+function dhcpRowCls(el) { return [...el.classList].filter(c => !DHCP_FX.has(c)).join(' '); }
+function dhcpRowSig(el) {
+  // the ticking "ago"/"exp" text is updated in place every second, so it isn't a change
+  return dhcpRowCls(el) + '|' + el.innerHTML.replace(/(<span data-(?:ago|expires)="[^"]*">)[^<]*(<\/span>)/g, '$1$2');
+}
+function dhcpReconcile(list, rows) {
+  const before = new Map();
+  const old = new Map();
+  list.querySelectorAll(':scope > .dhcp-row[data-key]').forEach(el => {
+    old.set(el.dataset.key, el);
+    before.set(el.dataset.key, el.offsetTop);   // layout position — ignores any slide/ease-in in progress
+  });
+  [...list.children].forEach(el => { if (!el.dataset.key) el.remove(); });   // empty-state line
+  const keep = new Set();
+  let added = false;
+  const out = rows.map(nr => {
+    const k = nr.dataset.key, cur = old.get(k);
+    keep.add(k);
+    if (!cur) { nr.classList.add('row-enter'); added = true; return nr; }
+    if (dhcpRowSig(cur) === dhcpRowSig(nr)) {
+      // same row — keep the live node; refresh the ticking text from the fresh build
+      const fresh = nr.querySelectorAll('[data-ago],[data-expires]'), live = cur.querySelectorAll('[data-ago],[data-expires]');
+      if (fresh.length === live.length) fresh.forEach((f, i) => { if (live[i].textContent !== f.textContent) live[i].textContent = f.textContent; });
+      return cur;
+    }
+    if (dhcpRowCls(cur) !== dhcpRowCls(nr)) nr.classList.add('row-chg');   // state moved on — pill glows once
+    // carry what the user typed into an asking row's address box, if it's still that row
+    const ci = cur.querySelector('input.dhcp-ask-ip'), ni = nr.querySelector('input.dhcp-ask-ip');
+    if (ci && ni && ci === document.activeElement) { ni.value = ci.value; }
+    return nr;
+  });
+  old.forEach((el, k) => { if (!keep.has(k)) el.remove(); });
+  // place in order, moving only what's out of place
+  out.forEach((el, i) => {
+    if (list.children[i] !== el) {
+      const cur = old.get(el.dataset.key);
+      if (cur && cur !== el && cur.parentNode === list) cur.replaceWith(el);
+      if (list.children[i] !== el) list.insertBefore(el, list.children[i] || null);
+    }
+  });
+  if (added) growForNewRow();
+  // FLIP: rows that changed position slide from where they were
+  out.forEach(el => {
+    const k = el.dataset.key;
+    if (!before.has(k)) return;
+    const dy = before.get(k) - el.offsetTop;
+    if (Math.abs(dy) < 1) return;
+    el.classList.remove('flip');
+    el.style.transform = `translateY(${dy}px)`;
+    el.style.position = 'relative'; el.style.zIndex = dy > 0 ? '2' : '1';
+    requestAnimationFrame(() => requestAnimationFrame(() => { el.classList.add('flip'); el.style.transform = ''; }));
+    setTimeout(() => { el.classList.remove('flip'); el.style.zIndex = ''; el.style.position = ''; }, 420);
+  });
 }
 function dhcpBuildCard(d, taken) {
   const row = document.createElement('div');

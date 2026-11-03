@@ -1119,6 +1119,20 @@ async function ipAddrState(ip) {
   return st || null;
 }
 
+// v7.3.1: wait for Windows' duplicate-address detection to settle on a just-applied address —
+// polled every 300 ms until it's on the card and no longer Tentative, at most maxMs.
+async function dadVerdict(ip, maxMs = 3000) {
+  if (!isValidIp(ip)) return null;
+  const until = Date.now() + maxMs;
+  let st = '';
+  while (Date.now() < until) {
+    st = String((await SPAWN.psRun(`(Get-NetIPAddress -IPAddress '${ip}' -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -First 1).AddressState`, { timeoutMs: 3000 }).catch(() => ({ stdout: '' }))).stdout || '').trim();
+    if (st && !/tentative/i.test(st)) return st;
+    await new Promise(r => setTimeout(r, 300));
+  }
+  return st || null;
+}
+
 // v7.2.0: EnableDHCP for every interface in ONE reg.exe launch (was one per DHCP adapter,
 // each at up to 2 s on a locked-down laptop). Keyed by lower-case GUID.
 async function readEnableDhcpAll() {
@@ -3292,13 +3306,26 @@ ipcMain.handle('sitekb-backup', (e, label) => intelBackup(/^[a-z-]{1,24}$/.test(
 // portable, so opting in writes plaintext (the renderer warns before this).
 const EXPORT_FORMAT = 1;
 
+// v7.3.1: remember where the last export went — SHOW FILES opens that folder, and the next
+// export's save dialog starts there. Only paths main itself wrote are ever revealed.
+const LAST_EXPORT_FILE = () => path.join(app.getPath('userData'), 'last-export.json');
+function rememberExport(p) { try { fs.writeFileSync(LAST_EXPORT_FILE(), JSON.stringify({ path: p, at: Date.now() })); } catch {} }
+function lastExportPath() { try { const j = JSON.parse(fs.readFileSync(LAST_EXPORT_FILE(), 'utf8')); return typeof j.path === 'string' ? j.path : null; } catch { return null; } }
+function exportDir() { const p = lastExportPath(); const d = p && path.dirname(p); return d && fs.existsSync(d) ? d : app.getPath('documents'); }
+ipcMain.handle('reveal-last-export', async () => {
+  const p = lastExportPath();
+  if (p && fs.existsSync(p)) { shell.showItemInFolder(p); return { ok: true, path: p }; }
+  const err = await shell.openPath(exportDir());
+  return { ok: !err, path: exportDir(), err: err || null };
+});
+
 ipcMain.handle('export-json', async (e, { sites, scanLibrary, includeCreds }) => {
   try {
     const { dialog } = require('electron');
     if (!sites || typeof sites !== 'object') return { ok: false, err: 'Nothing to export' };
     const result = await dialog.showSaveDialog(win, {
       title: 'Export site data (JSON)',
-      defaultPath: path.join(app.getPath('documents'), `netether-sites-${new Date().toISOString().slice(0, 10)}.json`),
+      defaultPath: path.join(exportDir(), `netether-sites-${new Date().toISOString().slice(0, 10)}.json`),
       filters: [{ name: 'JSON', extensions: ['json'] }],
     });
     if (result.canceled || !result.filePath) return { ok: false, err: 'CANCELLED' };
@@ -3318,6 +3345,7 @@ ipcMain.handle('export-json', async (e, { sites, scanLibrary, includeCreds }) =>
     await fs.promises.writeFile(result.filePath, JSON.stringify(payload, null, 2), 'utf8');
     const siteCount = Object.keys(out).length;
     diagAdd({ kind: 'app', tag: 'export', ok: true, note: `${siteCount} site(s) → ${result.filePath}${includeCreds ? ' (WITH plaintext credentials)' : stripped ? ` (${stripped} credential(s) stripped)` : ''}` });
+    rememberExport(result.filePath);
     return { ok: true, path: result.filePath, sites: siteCount, stripped };
   } catch (err) {
     return { ok: false, err: err.message };
@@ -3431,7 +3459,7 @@ ipcMain.handle('export-excel', async (e, { intelDB, sitesDB }) => {
 
     const result = await dialog.showSaveDialog(win, {
       title: 'Export Site Data',
-      defaultPath: path.join(app.getPath('documents'), `netether-export-${new Date().toISOString().slice(0,10)}.xlsx`),
+      defaultPath: path.join(exportDir(), `netether-export-${new Date().toISOString().slice(0,10)}.xlsx`),
       filters: [{ name: 'Excel Workbook', extensions: ['xlsx'] }],
     });
     if (result.canceled || !result.filePath) return { ok: false, err: 'CANCELLED' };
@@ -3612,6 +3640,7 @@ ipcMain.handle('export-excel', async (e, { intelDB, sitesDB }) => {
     });
 
     await wb.xlsx.writeFile(result.filePath);
+    rememberExport(result.filePath);
     return { ok: true, path: result.filePath };
 
   } catch (err) {
@@ -3785,7 +3814,7 @@ function findAdapterBlock(blocks, adapterName) {
   }) || null;
 }
 
-async function applyNetworkConfig({ adapter, ip, subnet, gateway, dns, tag }) {
+async function applyNetworkConfig({ adapter, ip, subnet, gateway, dns, tag, keep }) {
   const opTag = ['revert', 'restore', 'leftover_restore'].includes(tag) ? tag : 'apply';   // v7.1.0: REVERT is logged as what it is
   const safeAdapter = sanitizeAdapter(adapter);
   if (!safeAdapter)           return { ok: false, err: 'Invalid adapter name' };
@@ -3798,9 +3827,15 @@ async function applyNetworkConfig({ adapter, ip, subnet, gateway, dns, tag }) {
     ? `netsh interface ip set address "${safeAdapter}" static ${ip} ${subnet} ${gateway}`
     : `netsh interface ip set address "${safeAdapter}" static ${ip} ${subnet}`;
 
+  // v7.3.1: `set address` replaces EVERY address on the card — so the 2nd/3rd network addresses
+  // the renderer lists are added straight back in the same elevated run. Validated here; one
+  // equal to the new main is dropped (it just became the main).
+  const keepList = (Array.isArray(keep) ? keep : []).slice(0, 8)
+    .filter(k => k && isValidIp(k.ip) && isValidSubnet(k.subnet) && k.ip !== ip);
   const cmdLines = [
     addrCmd,
     dns && dns.trim() ? `netsh interface ip set dns "${safeAdapter}" static ${dns.trim()} validate=no` : null,
+    ...keepList.map(k => `netsh interface ip add address "${safeAdapter}" ${k.ip} ${k.subnet}`),
   ].filter(Boolean).join('; ');
 
   return withAdapterLock(safeAdapter, async () => {
@@ -3809,10 +3844,30 @@ async function applyNetworkConfig({ adapter, ip, subnet, gateway, dns, tag }) {
   // v7.3.0: read the card back whatever netsh said. A timeout, or the address step working
   // and the DNS step failing, used to report ERROR for an address that was on the card — and
   // the renderer then never armed REVERT for it.
-  const seen = await verifyStaticIp(safeAdapter, ip);
+  // v7.3.1: Windows' duplicate verdict is read alongside the read-back, not after it
+  const dadP = opTag === 'apply' ? dadVerdict(ip, 3000).catch(() => null) : Promise.resolve(null);
+  const seen = await verifyStaticIp(safeAdapter, ip, 400);
+  // v7.3.1: Windows ARP-probes a new address the moment it lands on the card (duplicate
+  // address detection) — the only check that sees the NEW subnet. Read its verdict; a
+  // REVERT/RESTORE puts back what the card had, so it isn't second-guessed.
+  if (seen && seen !== 'saved' && opTag === 'apply') {
+    const st = await dadP;
+    if (st && /duplicate/i.test(st)) {
+      let mac = null, vendor = null;
+      try {
+        const r = await SPAWN.psRun(`(Get-NetNeighbor -IPAddress '${ip}' -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.LinkLayerAddress -and $_.LinkLayerAddress -ne '00-00-00-00-00-00' } | Select-Object -First 1).LinkLayerAddress`, { timeoutMs: 4000 });
+        const m = String((r && r.stdout) || '').trim();
+        if (/^[0-9a-f]{2}([-:][0-9a-f]{2}){5}$/i.test(m)) { mac = m.toLowerCase().replace(/:/g, '-'); vendor = lookupVendor(mac) || null; }
+      } catch {}
+      diagVerify(opTag, false, `${safeAdapter} ${ip} is already used on the wire${mac ? ' by ' + mac + (vendor ? ' (' + vendor + ')' : '') : ''} — Windows marked it Duplicate and won't use it`);
+      return { ...result, ok: true, verified: true, duplicate: true, dupMac: mac, dupVendor: vendor };
+    }
+  }
   if (seen) {
     diagVerify(opTag, true, `${safeAdapter} ${seen === 'saved' ? 'set to' : 'now'} ${ip}/${subnet}${gateway && gateway.trim() ? ' gw ' + gateway.trim() : ''} (${seen === 'saved' ? 'saved — no cable; used when there is link' : seen})${result.ok ? '' : ' — netsh reported: ' + (result.err || 'an error')}`);
-    return { ...result, ok: true, verified: true, saved: seen === 'saved', partial: !result.ok, partialErr: result.ok ? null : result.err };
+    const kept = keepList.length ? adapterIpv4s(safeAdapter) : [];
+    const lost = seen === 'live' ? keepList.filter(k => !kept.includes(k.ip)).map(k => k.ip) : [];
+    return { ...result, ok: true, verified: true, saved: seen === 'saved', partial: !result.ok, partialErr: result.ok ? null : result.err, kept: keepList.map(k => k.ip), lost };
   }
   if (!result.ok) { diagVerify(opTag, false, `${safeAdapter} expected ${ip} — ${result.err || 'netsh failed'}`); return { ...result, err: explainNetshError(result.err, ip) }; }
   diagVerify(opTag, false, `${safeAdapter} expected ${ip} — not on the card or in its saved settings after 4.5s`);
@@ -3822,9 +3877,11 @@ async function applyNetworkConfig({ adapter, ip, subnet, gateway, dns, tag }) {
 // Is `ip` configured on the card? os.networkInterfaces (free) → netsh → saved settings (cards
 // with no cable), polled 3× 1.5 s. Every read survives its own timeout. Returns where it was
 // seen, or null.
-async function verifyStaticIp(safeAdapter, ip) {
+async function verifyStaticIp(safeAdapter, ip, firstWaitMs = 1500) {
   for (let attempt = 0; attempt < 3; attempt++) {
-    await new Promise(r => setTimeout(r, 1500));
+    // v7.3.1 (APPLY): the first look comes sooner — os.networkInterfaces is free, and a
+    // miss just falls through to the next read as before
+    await new Promise(r => setTimeout(r, attempt === 0 ? firstWaitMs : 1500));
     if (adapterIpv4s(safeAdapter).includes(ip)) return 'live';
     const cfg = await execAsync('netsh interface ip show config', { timeout: 12000 }).catch(() => '');
     const block = findAdapterBlock(cfg.split(/\r?\n(?=Configuration for interface)/i), safeAdapter);
