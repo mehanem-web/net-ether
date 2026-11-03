@@ -138,6 +138,10 @@ jobs:
           # v7.3.0: any tag with a suffix (v7.3.0-rc.1, v7.0.0-rc2) is a pre-release — never
           # marked "Latest", so nobody grabs an rc thinking it's the release.
           prerelease: ${{ contains(steps.resolve.outputs.tag, '-') }}
+          # v7.3.1: rc builds are DRAFTS — only the repo owner (logged in) sees them and their
+          # downloads. The signed installer is there for the work-laptop test; nobody else
+          # sees a release. Publishing a draft by hand later is fine; the final tag has no '-'.
+          draft: ${{ contains(steps.resolve.outputs.tag, '-') }}
           # Only the shippable files - skips win-unpacked/, builder-debug.yml, etc.
           files: |
             dist/NET-ETHER-Installer-*.exe

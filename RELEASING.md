@@ -166,7 +166,8 @@ options are not in `package.json` on purpose. Only tagged CI builds are signed.
 **rcs for the work laptop must be tagged CI builds** (`v7.3.0-rc.1`), never `build.bat`.
 IT's rule trusts the publisher signature; an unsigned exe isn't elevated by EPM, so
 every write hits a UAC prompt a standard account can't approve. Tags with a suffix
-(`-rc.1`) are published as **pre-releases** automatically (7.3.0) — not "Latest".
+(`-rc.1`) are published as **draft pre-releases** (7.3.1; plain pre-releases in 7.3.0) —
+only you see them on the Releases page while logged in; nobody else does.
 Learned 2026-10-28: the first 7.3.0-rc.1 test was a home build and couldn't elevate.
 
 Certificates are short-lived (days) and rotated by Azure automatically; nothing
