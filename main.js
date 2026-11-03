@@ -2011,7 +2011,20 @@ async function addAliasCore(safeAdapter, ip, subnet, tag = 'alias_add') {
 async function addAliasCoreUnlocked(safeAdapter, ip, subnet, tag = 'alias_add') {
   // rc.3: already on the card (a repeat click, or it was there before) — nothing to do; don't
   // run netsh just to log a red "object already exists"
-  if (adapterIpv4s(safeAdapter).includes(ip)) return { ok: true, verified: true, converted: false, already: true, mode: 'none', steps: [] };
+  if (adapterIpv4s(safeAdapter).includes(ip)) {
+    // v7.3.1: "already on the card" can be a dead one — an earlier add Windows marked Duplicate
+    // stays listed. Ask; a duplicate is taken off and reported like a fresh add would be.
+    if (tag === 'alias_add') {
+      const st = await ipAddrState(ip).catch(() => null);
+      if (st && /duplicate/i.test(st)) {
+        const { mac, vendor } = await whoHasIp(ip);
+        const del = await runElevated(`netsh interface ip delete address "${safeAdapter}" ${ip}`, { tag: 'alias_del', timeoutMs: 20000 });
+        diagVerify(tag, false, `${ip} was already on ${safeAdapter} but Windows has it as Duplicate (used${mac ? ' by ' + mac + (vendor ? ' (' + vendor + ')' : '') : ' by another device'}) — ${del.ok ? 'taken off' : 'could NOT take it off'}`);
+        return { ok: false, duplicate: true, dupMac: mac, dupVendor: vendor, removed: del.ok, converted: false, err: `${ip} is already used by another device` };
+      }
+    }
+    return { ok: true, verified: true, converted: false, already: true, mode: 'none', steps: [] };
+  }
   // If the adapter is on DHCP, netsh "add address" silently replaces the DHCP lease instead of
   // adding a second IP. So: switch to static first (keeping the current IP/mask/gateway), then
   // add — one chain that stops if the conversion fails. v7.3.0: if we can't tell whether the

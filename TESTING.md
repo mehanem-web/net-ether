@@ -17,6 +17,12 @@ Run twice: once from `dev.bat` (unelevated — chip AMBER, UAC per operation) an
 once from the portable build (UAC once at launch — chip normal, no prompts).
 
 ### v7.3.1 — THE ONE TEST (work laptop, installed + elevated build)
+**Result 2026-11-02 (rc.1 / rc.2 portable, managed laptop, elevated High):** passed. APPLY on the
+same subnet duplicate-checked and verified (Windows took ~2.5 s to clear the address); → DHCP with no
+cable cleared the saved static; RENEW; a free 2nd address added and verified. rc.1 found a 2nd address
+already in use (the home desktop's) reported only as "not seen after 5 s" → rc.2 reads Windows' verdict
+and names the device; the final also catches a dead duplicate left on the card ("already on this
+card"). Camera / OPEN checks not run (no gear) — they fall back to 7.3.0 behaviour.
 Most of 7.3.1 was tried live at home while it was built. What home couldn't prove:
 - [ ] APPLY onto a camera's subnet from another subnet → ✓ ACTIVE, the verify lands about a second after netsh (DIAGNOSTICS: OP apply → VERIFY apply).
 - [ ] Same, onto an address a device already has → red "ALREADY TAKEN BY …", REVERT puts the laptop back.
