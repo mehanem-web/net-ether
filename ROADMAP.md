@@ -1,5 +1,19 @@
 # NET//ETHER — Roadmap
 
+## 7.3.1 — the feel pass + IP tab rebuild (released 2026-11-02)
+The fleet's first 7.3 (7.3.0 never left the bench). Built live in a dev copy on Johan's PC (`ETHER-dev`, outside git), one change at a time, folded into git as one commit; two private rcs (draft releases) for the work-laptop test.
+- IP tab in job order: card → address (STATIC | DHCP pill) → one button that says what it does (APPLY <ip> / SWITCH TO DHCP / ✓ ON DHCP). DHCP fields read-only. + ADD A 2ND NETWORK ADDRESS replaces MULTI-IP; APPLY keeps 2nd addresses. Duplicate check that sees the new subnet (Windows' DAD verdict, parallel with the read-back) — APPLY and 2nd address, including a dead leftover. Stale gateway → CLEAR IT; Wi-Fi route warning. Factory defaults USE / + ADD. LIVE → CURRENT.
+- SITES as a notebook: subnet, ● YOU'RE HERE, per-card SCAN, dated changes, autosave, OPEN/PING in a device, SHOW FILES for exports, housekeeping moved out of prime spots. SCAN NOW scans.
+- DHCP: keyed rows ordered by IP (sitting rows stopped jumping), window grows for new devices, two-line log.
+- Feel: shared motion tokens, gliding tab ink, rows patched in place, skeleton sweeps, status slide, theme crossfade, DEPTH (0.25), RGB theme (replaces SYNTH), motion frozen while the window is dragged, prefers-reduced-motion, corners matched to Windows 11, // labels, accent text selection.
+- Docs: help overlay, Guide 6.1, FUNCTIONS, TESTING ("the one test"). CI: rc tags publish as drafts.
+
+## Next
+- **Video guide** redone for 7.3.1 (new IP tab, overlays) — agreed for right after the release.
+- **RECON glow-up** — used all the time, due the same "fresh eyes" pass SITES got.
+- Bench, still: camera-side checks (APPLY onto a camera's subnet → Windows' duplicate verdict, FACTORY DEFAULTS + ADD → OPEN, DHCP serve/OPEN, window growing for a new device) — not run for 7.3.1 for lack of gear; they fall back to 7.3.0 behaviour.
+- Carried: SCAN's one ping.exe per address; DHCP listen hears every card; firewall-rule adds not read back.
+
 ## 7.3.0 — the stability release (released 2026-10-30, eight rcs)
 Goal: one fleet update that lasts. Everything 7.2 added gets its bench round inside 7.3 (TESTING.md § 7.3.0 "the one pass"); rcs stay on Johan's machines; the fleet gets 7.3.0 only, then 7.3.x for things that block work.
 - Quit/hide: ─ always hides, ✕ always quits, no prompts. One rule: what the tech set stays; what ETHER did on its own (REACH, SILENT, DHCP engine) is cleaned up. Leftover line on next launch replaces every quit prompt.
