@@ -1119,6 +1119,17 @@ async function ipAddrState(ip) {
   return st || null;
 }
 
+// v7.3.1: the device that answered for an address Windows found taken (neighbour table)
+async function whoHasIp(ip) {
+  let mac = null, vendor = null;
+  try {
+    const r = await SPAWN.psRun(`(Get-NetNeighbor -IPAddress '${ip}' -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.LinkLayerAddress -and $_.LinkLayerAddress -ne '00-00-00-00-00-00' } | Select-Object -First 1).LinkLayerAddress`, { timeoutMs: 4000 });
+    const m = String((r && r.stdout) || '').trim();
+    if (/^[0-9a-f]{2}([-:][0-9a-f]{2}){5}$/i.test(m)) { mac = m.toLowerCase().replace(/:/g, '-'); vendor = lookupVendor(mac) || null; }
+  } catch {}
+  return { mac, vendor };
+}
+
 // v7.3.1: wait for Windows' duplicate-address detection to settle on a just-applied address —
 // polled every 300 ms until it's on the card and no longer Tentative, at most maxMs.
 async function dadVerdict(ip, maxMs = 3000) {
@@ -2038,6 +2049,19 @@ async function addAliasCoreUnlocked(safeAdapter, ip, subnet, tag = 'alias_add') 
     // a timeout isn't proof: if the address is there, it worked
     if (!(await pollAliasState(safeAdapter, ip, true, 3000))) return { ...result, converted };
     diagAdd({ kind: 'app', tag, ok: true, note: `${ip}: netsh reported ${result.err || 'an error'} but the address is on ${safeAdapter}` });
+  }
+  // v7.3.1 (+ ADD A 2ND NETWORK ADDRESS): Windows probes the new address the moment it lands;
+  // a taken one is marked Duplicate and never shows up — so read that verdict alongside the
+  // poll, and if it's taken, take it straight back off and say who has it. (REACH does its own.)
+  if (tag === 'alias_add') {
+    const dadP = dadVerdict(ip, 3000).catch(() => null);
+    const st = await dadP;
+    if (st && /duplicate/i.test(st)) {
+      const { mac, vendor } = await whoHasIp(ip);
+      const del = await runElevated(`netsh interface ip delete address "${safeAdapter}" ${ip}`, { tag: 'alias_del', timeoutMs: 20000 });
+      diagVerify(tag, false, `${ip} is already used on the wire${mac ? ' by ' + mac + (vendor ? ' (' + vendor + ')' : '') : ''} — Windows marked it Duplicate; ${del.ok ? 'taken back off ' + safeAdapter : 'could NOT take it back off ' + safeAdapter}${converted ? ' (card stays static on its own address)' : ''}`);
+      return { ...result, ok: false, duplicate: true, dupMac: mac, dupVendor: vendor, removed: del.ok, converted, err: `${ip} is already used by another device` };
+    }
   }
   const verified = await pollAliasState(safeAdapter, ip, true, 5000);
   diagVerify(tag, verified, verified
@@ -3853,12 +3877,7 @@ async function applyNetworkConfig({ adapter, ip, subnet, gateway, dns, tag, keep
   if (seen && seen !== 'saved' && opTag === 'apply') {
     const st = await dadP;
     if (st && /duplicate/i.test(st)) {
-      let mac = null, vendor = null;
-      try {
-        const r = await SPAWN.psRun(`(Get-NetNeighbor -IPAddress '${ip}' -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.LinkLayerAddress -and $_.LinkLayerAddress -ne '00-00-00-00-00-00' } | Select-Object -First 1).LinkLayerAddress`, { timeoutMs: 4000 });
-        const m = String((r && r.stdout) || '').trim();
-        if (/^[0-9a-f]{2}([-:][0-9a-f]{2}){5}$/i.test(m)) { mac = m.toLowerCase().replace(/:/g, '-'); vendor = lookupVendor(mac) || null; }
-      } catch {}
+      const { mac, vendor } = await whoHasIp(ip);
       diagVerify(opTag, false, `${safeAdapter} ${ip} is already used on the wire${mac ? ' by ' + mac + (vendor ? ' (' + vendor + ')' : '') : ''} — Windows marked it Duplicate and won't use it`);
       return { ...result, ok: true, verified: true, duplicate: true, dupMac: mac, dupVendor: vendor };
     }

@@ -9288,6 +9288,12 @@ async function aliasAddRun() {
     }
   } else if (res.err === 'CANCELLED') {
     setAliasStatus('CANCELLED — UAC PROMPT DISMISSED', 'warn', 4000);
+  } else if (res.duplicate) {
+    // v7.3.1: Windows found the address taken — it's been taken back off; pick another
+    const who = res.dupMac ? ` BY ${res.dupMac.toUpperCase()}${res.dupVendor ? ' (' + res.dupVendor + ')' : ''}` : ' BY ANOTHER DEVICE';
+    setAliasStatus(`✕ ${ip} IS ALREADY TAKEN${who} — PICK ANOTHER ADDRESS` + (res.converted ? ' (THE CARD IS NOW STATIC ON ITS OWN ADDRESS)' : ''), 'err', 12000);
+    const el = document.getElementById('alias-new-ip'); if (el) { el.focus(); el.select(); }
+    loadAliasTab();
   } else {
     // Real failure with captured netsh output — show it, and offer the CMD fallback
     aliasCopyCmd('add');
