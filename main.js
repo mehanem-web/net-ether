@@ -88,6 +88,14 @@ function clampMtu(val) {
 }
 
 // Promisified exec — replaces repeated inline new Promise(exec(...)) wrappers
+// 7.4: the round trip as ping.exe measured it ("time=3ms" / "time<1ms"), not our stopwatch around the
+// whole launch — that read 25 ms for a <1 ms host on a fast PC and hundreds on a managed laptop.
+// "<1ms" reports as 1 (0 reads as "no figure" in the SCAN row). No match (other language) → the stopwatch.
+function pingRttMs(stdout, fallbackMs) {
+  const m = /time[=<]\s*(\d+)\s*ms/i.exec(stdout || '');
+  return m ? Math.max(1, parseInt(m[1], 10)) : fallbackMs;
+}
+
 function execAsync(cmd, opts = {}) {
   return new Promise((resolve, reject) => {
     exec(cmd, opts, (err, stdout) => {
@@ -1017,7 +1025,14 @@ ipcMain.on('tray-set-mode', (e, mode) => setTrayMode(mode));
 // ── IPC: open external URL in default browser ──────────────
 ipcMain.on('open-external', (e, url) => {
   if (typeof url !== 'string') return;
-  if (/^(https?|rdp):\/\//i.test(url)) shell.openExternal(url);
+  // 7.4: Windows has no handler for rdp:// ("Get an app to open this 'rdp' link") — start Remote Desktop itself
+  const rdp = /^rdp:\/\/([a-z0-9.\-]{1,253})$/i.exec(url);
+  if (rdp) {
+    try { execFile(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'mstsc.exe'), ['/v:' + rdp[1]], () => {}); }
+    catch (err) { diagAdd({ kind: 'error', tag: 'rdp', ok: false, note: err.message }); }
+    return;
+  }
+  if (/^https?:\/\//i.test(url)) shell.openExternal(url);
 });
 
 // ── IPC: open a device's web page, http or https (v7.2.2) ──
@@ -2648,7 +2663,7 @@ ipcMain.on('scan-start', async (e, { baseIp, concurrency, scanStart, scanEnd }) 
     return execAsync(`ping -n 1 -w ${PING_MS} ${host}`, { timeout: PING_MS + 6000 })
       .then(stdout => {
         const ok = /TTL=/i.test(stdout);
-        return { ok, ms: ok ? Date.now() - pingStart : 0 };
+        return { ok, ms: ok ? pingRttMs(stdout, Date.now() - pingStart) : 0 };
       })
       .catch(() => ({ ok: false, ms: 0 }));
   }
@@ -3815,7 +3830,7 @@ ipcMain.handle('ping-host', async (e, host) => {
   try {
     const stdout = await execAsync(`ping -n 1 -w 1500 ${safeHost}`, { timeout: 4000 });
     const ok = /TTL=/i.test(stdout);
-    if (ok) return { ok: true, ms: Date.now() - start };
+    if (ok) return { ok: true, ms: pingRttMs(stdout, Date.now() - start) };
   } catch { /* ICMP failed or timed out — try TCP fallback */ }
 
   // TCP fallback — ECONNREFUSED means host is up but port 80 is closed

@@ -4143,7 +4143,7 @@ function populateLivePreset(fromApply) {
     if (fromApply === true) {
       // Full reload only after an explicit apply — repaint everything
       const savedPrev = previousConfig;
-      loadPreset(0);
+      loadPreset(0, true);   // v7.4: silent — keep APPLY's own result on the status bar (was replaced by CURRENT SETTINGS 2 s later)
       previousConfig = savedPrev;
     } else {
       // Init or silent background refresh — patch fields quietly, no status flash
@@ -6021,6 +6021,9 @@ async function applyConfig() {
       }
       if (result.ok) {
         unlockApplyBtn();
+        // v7.4: the card is static on f.ip now — say so before clearDirtyState() → syncIpMode() reads the
+        // adapter list, which still says DHCP until the 2 s refresh (the button flashed ✓ ON DHCP)
+        { const ce = currentAdapterEntry(); if (ce) { ce.isDhcp = false; ce.ip = f.ip; } }
         // rc.2: REVERT = undo the last APPLY. It used to hold the state from before the
         // session's FIRST apply, so DHCP → 10.x → 192.x → REVERT jumped back to DHCP, not 10.x.
         // "Back to how it was at launch" is ↩ RESTORE LAUNCH STATE.

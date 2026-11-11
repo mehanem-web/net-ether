@@ -1,5 +1,13 @@
 # NET//ETHER — Roadmap
 
+## 7.4 — working copy (ETHER-dev, private; started 2026-11-02)
+7.3.1 is released but not yet deployed to the fleet (waiting on IT answers). 7.4 collects fixes and docs as we run into them; git stays untouched until we're satisfied.
+- **APPLY result stays on the status bar** — the post-APPLY refresh called `loadPreset(0)` without `silent`, replacing "✓ APPLIED — … IS ACTIVE" with CURRENT SETTINGS after 2 s. Fixed (`loadPreset(0, true)`). Found while filming.
+- **No "✓ ON DHCP" flash after DHCP → static** — `clearDirtyState()` → `syncIpMode()` read the adapter list before the 2 s refresh, so the button flipped to ✓ ON DHCP and the fields locked for 2 s. Fixed: the card entry is marked static the moment APPLY succeeds. Found while filming.
+- **Visual guide v7 (doc 7.0)** — rebuilt task-first: Start here (window, colours and badges) · nine Jobs with annotated screenshots side by side with numbered legends and "WHAT'S THIS?" boxes for newcomers · compact tab reference · glossary, "what's this message mean?", one-page quick card. 22 pages, 21 screenshots of the real UI from the film rig (`shots.js` + `annotate.py`, in the pipeline zip). `docs/build-guide.js`, `docs/img/`, `assets/NET-ETHER-Guide.{docx,pdf}`. Re-shoot screenshots when a screen changes.
+- package.json → 7.4.0. Snapshots: `_snapshots/index.23-7.3.1-final.html`, `_snapshots/guide-v6.1/`.
+- Video guide for 7.3.1: done (5:17, `_media/Tutorial Video/NET-ETHER-v7.3.1-Tutorial.mp4`).
+
 ## 7.3.1 — the feel pass + IP tab rebuild (released 2026-11-02)
 The fleet's first 7.3 (7.3.0 never left the bench). Built live in a dev copy on Johan's PC (`ETHER-dev`, outside git), one change at a time, folded into git as one commit; two private rcs (draft releases) for the work-laptop test.
 - IP tab in job order: card → address (STATIC | DHCP pill) → one button that says what it does (APPLY <ip> / SWITCH TO DHCP / ✓ ON DHCP). DHCP fields read-only. + ADD A 2ND NETWORK ADDRESS replaces MULTI-IP; APPLY keeps 2nd addresses. Duplicate check that sees the new subnet (Windows' DAD verdict, parallel with the read-back) — APPLY and 2nd address, including a dead leftover. Stale gateway → CLEAR IT; Wi-Fi route warning. Factory defaults USE / + ADD. LIVE → CURRENT.
@@ -9,7 +17,7 @@ The fleet's first 7.3 (7.3.0 never left the bench). Built live in a dev copy on 
 - Docs: help overlay, Guide 6.1, FUNCTIONS, TESTING ("the one test"). CI: rc tags publish as drafts.
 
 ## Next
-- **Video guide** redone for 7.3.1 (new IP tab, overlays) — agreed for right after the release.
+- ~~**Video guide** redone for 7.3.1~~ → done 2026-11-02.
 - **RECON glow-up** — used all the time, due the same "fresh eyes" pass SITES got.
 - Bench, still: camera-side checks (APPLY onto a camera's subnet → Windows' duplicate verdict, FACTORY DEFAULTS + ADD → OPEN, DHCP serve/OPEN, window growing for a new device) — not run for 7.3.1 for lack of gear; they fall back to 7.3.0 behaviour.
 - Carried: SCAN's one ping.exe per address; DHCP listen hears every card; firewall-rule adds not read back.

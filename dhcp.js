@@ -67,6 +67,7 @@ module.exports = function initDhcp(deps) {
   let scanDebug      = null;
   let foreignServers = {};
   let lastServeAction = 0;
+  const pendingPick = {};         // 7.4: mac → address being ping-probed for it right now (held so a second asker can't take it)
   const chosenIp = {};            // v7.2.0: mac → address the tech typed on the row (this session only)
   const lastIp = {};              // mac → { ip, ts } — a returning device gets its old address back if free
   const LAST_IP_TTL_MS = 3600000;
@@ -440,7 +441,16 @@ module.exports = function initDhcp(deps) {
   const isServing = () => mode === 'serve-all' || mode === 'serve-targeted';
   const allowedToServe = mac => mode === 'serve-all' || (mode === 'serve-targeted' && targets.has(mac));
 
+  // 7.4: one mode change at a time. Two overlapping starts (tab opened twice while the firewall
+  // check was still running) each bound their own UDP 67 socket; every packet was then handled twice
+  // and STOP closed only one of them.
+  let modeChain = Promise.resolve();
   function setMode(newMode) {
+    const p = modeChain.then(() => setModeNow(newMode));
+    modeChain = p.catch(() => {});
+    return p;
+  }
+  function setModeNow(newMode) {
     return new Promise((resolve, reject) => {
       if (newMode === mode) { resolve(); return; }
       if (newMode === 'off') {
@@ -664,6 +674,8 @@ module.exports = function initDhcp(deps) {
       let chosen = null, tried = 0;
       for (const ip of candidates) {
         if (tried >= 6) break;
+        if (Object.entries(pendingPick).some(([m2, ip2]) => m2 !== mac && ip2 === ip)) continue;   // another asker got there first
+        pendingPick[mac] = ip;
         const cached = probeCache[ip];
         if (cached && (Date.now() - cached.ts) < PROBE_CACHE_MS) { if (cached.free) { chosen = ip; break; } continue; }
         tried++;
@@ -674,6 +686,7 @@ module.exports = function initDhcp(deps) {
       }
       const d = devices[mac];
       if (!d) return;
+      if (!isServing() || !allowedToServe(mac)) return;      // 7.4: STOP pressed while the probe was out — say nothing
       if (!chosen) { log('Pool exhausted — cannot offer', 'err'); return; }
       d.state = 'offered'; d.ip = chosen; d.offerExpires = Date.now() + OFFER_HOLD_MS;
       const dest = replyDest();
@@ -681,14 +694,16 @@ module.exports = function initDhcp(deps) {
       const offer = buildDhcpPacket(2, probing[mac].xid, macToChaddr(mac), chosen, serveCfg);
       sock && sock.send(offer, 0, offer.length, 68, dest);
       lastServeAction = Date.now();
-    } finally { delete probing[mac]; }
+    } finally { delete probing[mac]; delete pendingPick[mac]; }
   }
 
   async function ackRequest(mac, chaddr, requestedIp) {
     const d = devices[mac];
     if (!d) return;
     let ip = null;
-    const renewal = (d.state === 'leased' || d.state === 'offered') && d.ip && (!requestedIp || requestedIp === d.ip);
+    // 7.4: never ACK an address another row holds (two devices offered the same one in the same half-second)
+    const heldByOther = x => Object.entries(devices).some(([m2, d2]) => m2 !== mac && d2.ip === x && ['offered', 'leased', 'static', 'releasing'].includes(d2.state));
+    const renewal = (d.state === 'leased' || d.state === 'offered') && d.ip && (!requestedIp || requestedIp === d.ip) && !heldByOther(d.ip);
     if (renewal) ip = d.ip;
     else {
       const candidates = candidateList(mac, requestedIp);
@@ -744,6 +759,7 @@ module.exports = function initDhcp(deps) {
     for (const [m2, d2] of Object.entries(devices)) if (m2 !== mac && d2.ip && (d2.state === 'offered' || d2.state === 'leased' || d2.state === 'static' || d2.state === 'releasing')) used.add(d2.ip);
     for (const [m2, ip2] of Object.entries(store.reservations)) if (m2 !== mac) used.add(ip2);
     for (const [m2, ip2] of Object.entries(chosenIp)) if (m2 !== mac) used.add(ip2);
+    for (const [m2, ip2] of Object.entries(pendingPick)) if (m2 !== mac) used.add(ip2);
     // Keep another device's remembered address out of this one's pool walk while that device is still around
     for (const m2 of Object.keys(devices)) if (m2 !== mac) { const r = recallIp(m2); if (r) used.add(r); }
     const onSubnet = ip => isValidIp(ip) && ((ipToNum(ip) & maskNum) === (ipToNum(cfg.adapterIp) & maskNum));
@@ -1286,7 +1302,7 @@ module.exports = function initDhcp(deps) {
   ipcMain.handle('dhcp-export-csv', async () => {
     const list = Object.entries(devices).filter(([, d]) => d.state === 'leased').map(([mac, d]) => ({ mac, ...d }));
     if (!list.length) return '';
-    const rows = list.map(l => `${l.ip},${l.mac},"${csvEscape(csvSafe(l.vendor))}","${csvEscape(csvSafe(l.hostname || ''))}",${new Date(l.expires).toLocaleString()},${store.reservations[l.mac] ? 'yes' : ''}`);
+    const rows = list.map(l => `${l.ip},${l.mac},"${csvEscape(csvSafe(l.vendor))}","${csvEscape(csvSafe(l.hostname || ''))}","${csvEscape(new Date(l.expires).toLocaleString())}",${store.reservations[l.mac] ? 'yes' : ''}`);
     return 'IP,MAC,Vendor,Hostname,Expires,Reserved\n' + rows.join('\n');
   });
   ipcMain.handle('dhcp-export-log', async () => LOG_HISTORY.join('\n'));

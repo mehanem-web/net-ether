@@ -171,7 +171,10 @@ function next() {
   // one-shot), but only crashes count toward switching the worker off; timeouts get a
   // separate, higher allowance so a box that is merely slow keeps its worker.
   cur.timer = setTimeout(() => { S.worker.timeouts = (S.worker.timeouts || 0) + 1; if (S.worker.timeouts >= 8) countDeath(); workerKill('worker timeout'); }, budget);
-  const line = `$__r = & { ${cur.script} } 2>$null; $__ok = $?; ($__r | Out-String -Width 4096); '${END}${cur.id}-' + $__ok + '>>>'\n`;
+  // 7.4: try/catch — a script that throws (-ErrorAction Stop) used to abort the rest of this line, so the
+  // end marker never came: the job sat out its whole timeout, the worker was killed, and the script was
+  // run a second time one-shot. Now a throw is just ok=false, straight away.
+  const line = `try { $__r = & { ${cur.script} } 2>$null; $__ok = $? } catch { $__r = $null; $__ok = $false }; ($__r | Out-String -Width 4096); '${END}${cur.id}-' + $__ok + '>>>'\n`;
   try { ps.stdin.write(line); } catch { workerKill('worker write failed'); }
 }
 

@@ -394,7 +394,7 @@ module.exports = function initDiscover(deps) {
       vlanTags: new Set(),
       arpSeen: {}, arpAsked: new Set(),
       ipCount: {}, macs: new Set(),
-      dhcp: { servers: new Set(), offers: 0, acks: 0, discovers: 0, routers: new Set(), masks: new Set(), dns: new Set() },
+      dhcp: { servers: new Set(), offers: 0, acks: 0, discovers: 0, requests: 0, routers: new Set(), masks: new Set(), dns: new Set() },
       names: new Set(), ntp: new Set(),
     };
   }
@@ -406,7 +406,7 @@ module.exports = function initDiscover(deps) {
       stp: { count: ev.stp.count, root: ev.stp.root, bridge: ev.stp.bridge, vlans: arr(ev.stp.vlans), proto: ev.stp.proto },
       vlanTags: arr(ev.vlanTags), arpSeen: ev.arpSeen, arpAsked: arr(ev.arpAsked),
       ipCount: ev.ipCount, macs: arr(ev.macs),
-      dhcp: { servers: arr(ev.dhcp.servers), offers: ev.dhcp.offers, acks: ev.dhcp.acks, discovers: ev.dhcp.discovers, routers: arr(ev.dhcp.routers), masks: arr(ev.dhcp.masks), dns: arr(ev.dhcp.dns) },
+      dhcp: { servers: arr(ev.dhcp.servers), offers: ev.dhcp.offers, acks: ev.dhcp.acks, discovers: ev.dhcp.discovers, requests: ev.dhcp.requests, routers: arr(ev.dhcp.routers), masks: arr(ev.dhcp.masks), dns: arr(ev.dhcp.dns) },
       names: arr(ev.names), ntp: arr(ev.ntp),
     };
   }
@@ -422,8 +422,11 @@ module.exports = function initDiscover(deps) {
       // Capture filter (BPF, in npcap) keeps everything else away from the dissectors:
       // LLDP, CDP (SNAP to the Cisco multicast), EAPOL, STP (LLC to the bridge group),
       // ARP, 802.1Q, IGMP, and the UDP ports we actually read.
+      // 7.4: `vlan` MUST stay last — in pcap filter language it shifts every test after it by the
+      // 4-byte tag, so anything listed after it matches tagged frames only. In the middle of the
+      // chain it made RECON drop every untagged DHCP / mDNS / NetBIOS / NTP / SSDP / IGMP frame.
       const RECON_BPF = 'ether proto 0x88cc or ether dst 01:00:0c:cc:cc:cc or ether proto 0x888e or ether dst 01:80:c2:00:00:00 ' +
-        'or arp or vlan or igmp or (udp and (port 67 or port 68 or port 137 or port 5353 or port 5355 or port 1900 or port 123))';
+        'or arp or igmp or (udp and (port 67 or port 68 or port 137 or port 5353 or port 5355 or port 1900 or port 123)) or vlan';
       const args = ['-i', npf, '-l', '-n', '-a', `duration:${durationS}`, '-f', RECON_BPF, '-Y', RECON_FILTER, '-T', 'json'];
       let out = '', errTxt = '', cur = null, depth = 0, lastPush = 0;
       const KEY_RX = /^\s*"([a-z0-9_.]+)":\s*"((?:[^"\\]|\\.)*)"/i;
@@ -454,6 +457,10 @@ module.exports = function initDiscover(deps) {
           const t = o.dhcpType;
           if (t === '1') ev.dhcp.discovers++;
           if (t === '2') ev.dhcp.offers++;
+          // 7.4: a client's REQUEST is the one DHCP frame an access port always hears — the server's
+          // OFFER/ACK normally go straight to the client and never reach us. A REQUEST that names the
+          // server it picked (option 54) is proof that server exists.
+          if (t === '3') { ev.dhcp.requests++; if (ipOk(o.dhcpServer || '')) ev.dhcp.servers.add(o.dhcpServer); }
           if (t === '5') ev.dhcp.acks++;
           if ((t === '2' || t === '5') && ipOk(o.dhcpServer || '')) ev.dhcp.servers.add(o.dhcpServer);
           if ((t === '2' || t === '5') && ipOk(o.dhcpRouter || '')) ev.dhcp.routers.add(o.dhcpRouter);
@@ -602,10 +609,12 @@ module.exports = function initDiscover(deps) {
     const srv = ev.dhcp.servers || [];
     if (srv.length) {
       const traffic = ev.dhcp.offers ? `${ev.dhcp.offers} offer${ev.dhcp.offers !== 1 ? 's' : ''}${ev.dhcp.acks ? ', ' + ev.dhcp.acks + ' ack' + (ev.dhcp.acks !== 1 ? 's' : '') : ''}`
-                    : `${ev.dhcp.acks} lease${ev.dhcp.acks !== 1 ? 's' : ''} renewed`;
+                    : ev.dhcp.acks ? `${ev.dhcp.acks} lease${ev.dhcp.acks !== 1 ? 's' : ''} renewed`
+                    : `named by a client asking it for a lease — its own replies go straight to the client`;
       V.push({ kind: 'ok', tag: 'DHCP', title: `DHCP server${srv.length !== 1 ? 's' : ''} ${srv.join(', ')}`, detail: `${traffic}${ev.dhcp.routers.length ? ' · gateway ' + ev.dhcp.routers.join(', ') : ''}${ev.dhcp.masks.length ? ' · mask ' + ev.dhcp.masks[0] : ''}${ev.dhcp.dns.length ? ' · DNS ' + ev.dhcp.dns.join(', ') : ''}` });
     }
-    else if (ev.dhcp.discovers) V.push({ kind: 'warn', tag: 'DHCP', title: 'Clients asking, nobody answering', detail: `${ev.dhcp.discovers} DISCOVER${ev.dhcp.discovers !== 1 ? 's' : ''} heard, no OFFER — static site or the server is down` });
+    else if (ev.dhcp.requests) { const n = ev.dhcp.requests; V.push({ kind: 'ok', tag: 'DHCP', title: 'DHCP in use — server not heard', detail: `${n} lease request${n !== 1 ? 's' : ''} from clients; the server answers them directly, so its address doesn't reach this port` }); }
+    else if (ev.dhcp.discovers) V.push({ kind: 'warn', tag: 'DHCP', title: 'Clients asking — no answer heard', detail: `${ev.dhcp.discovers} DISCOVER${ev.dhcp.discovers !== 1 ? 's' : ''} heard and no client went on to take a lease — static site, or the server is down` });
     else if (silent) V.push({ kind: 'quiet', tag: 'DHCP', title: 'No DHCP heard — SILENT', detail: `nothing asked, so nothing answered; another client's renewal would show here. A STANDARD listen asks for a lease and finds the server` });
     else V.push({ kind: 'quiet', tag: 'DHCP', title: 'No DHCP traffic', detail: `${secs} s — static site, or quiet` });
 
