@@ -314,6 +314,33 @@ const VISIT = [
     await app.evaluate(() => loadPreset(0, true)); await tick(300);
   });
 
+  await step('IP: APPLY never carries one card\'s 2nd address onto another card', async () => {
+    await app.evaluate(() => {
+      const W = window.__world;
+      Object.assign(W.adapters[0], { ip: '10.20.30.57', subnet: '255.255.255.0', gateway: '10.20.30.1', dns: '', isDhcp: false, connected: true, state: 'Connected' });
+      Object.assign(W.adapters[1], { ip: '192.168.50.20', subnet: '255.255.255.0', gateway: '', dns: '', isDhcp: false, connected: true, state: 'Connected' });
+      loadAdapters();
+    });
+    await tick(3000);
+    await app.evaluate(() => loadPreset(0, true));
+    await app.evaluate(() => selectAdapter(adapterList.find(a => a.name === 'Ethernet'))); await tick(1500);
+    // the first card has a 2nd address on screen; then the read for the next card fails
+    await app.evaluate(() => {
+      cardExtras = [{ ip: '172.16.5.5', subnet: '255.255.255.0' }]; cardExtrasFor = 'Ethernet';
+      window.__keep = null;
+      const g = hud.getAliases; hud.getAliases = async () => ({ ok: false, aliases: [] });
+      const f = hud.applyConfig; hud.applyConfig = async cfg => { window.__keep = { card: cfg.adapter, keep: (cfg.keep || []).map(k => k.ip) }; hud.applyConfig = f; hud.getAliases = g; return f(cfg); };
+    });
+    await app.evaluate(() => selectAdapter(adapterList.find(a => a.name === 'Ethernet 2'))); await tick(1200);
+    await app.evaluate(() => { const e = document.getElementById('ip'); e.focus(); e.value = '192.168.50.88'; e.dispatchEvent(new Event('input', { bubbles: true })); e.blur(); });
+    await tick(400);
+    await click('#apply-btn'); await tick(5000);
+    const k = await app.evaluate(() => window.__keep);
+    expect(k && k.card === 'Ethernet 2', 'APPLY did not run on the second card: ' + JSON.stringify(k) + ' — status: ' + await text('#net-status'));
+    expect(k.keep.length === 0, 'APPLY on Ethernet 2 was told to keep ' + k.keep.join(', ') + ', which belongs to the other card');
+    await app.evaluate(() => loadPreset(0, true));
+  });
+
   await browser.close(); srv.close();
   const failed = results.filter(r => !r.ok);
   console.log(`\n${results.length - failed.length} of ${results.length} steps passed` + (failed.length ? ` — ${failed.length} FAILED` : ''));

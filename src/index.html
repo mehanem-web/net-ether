@@ -4268,6 +4268,8 @@ function selectAdapter(a) {
   if (display) display.textContent = a.name;
   _adapterPicked = a.name;
   clearIpApplied();   // the ✓ ACTIVE / ✕ FAILED tag belongs to the last APPLY, which was on another card
+  // …and so do the 2nd addresses on screen: clear them now, loadAliasTab() below reads this card's
+  { cardExtras = []; cardExtrasFor = a.name; const box = document.getElementById('card-addr-chips'); if (box) { box.innerHTML = ''; delete box.dataset.sig; box.dataset.ips = ''; } }
 
   // 7.4.0-dev.4: picking a card SHOWS that card — it is not an edit. It used to mark every field
   // changed with the card's values, which (1) put a DHCP card in STATIC with "APPLY <its lease>"
@@ -6080,7 +6082,7 @@ async function applyConfig() {
         adapter: f.adapter || '',
         ip: f.ip, subnet: f.subnet, gateway: f.gateway, dns: f.dns,
         tag: revertInProgress ? 'revert' : undefined,
-        keep: cardExtras.filter(x => x.ip !== f.ip),   // v7.3.1: changing the main never drops a 2nd network
+        keep: (cardExtrasFor.toLowerCase() === (f.adapter || '').toLowerCase() ? cardExtras : []).filter(x => x.ip !== f.ip),   // v7.3.1: changing the main never drops a 2nd network (7.4: this card's only)
       });
       if (result.ok && result.duplicate) {
         // v7.3.1: Windows found the address already used on the wire and won't use it.
@@ -9270,6 +9272,8 @@ async function aliasRemoveFromTab(ip) {
 // v7.3.1 — "ON THIS CARD": the main address and every extra one as chips (click = copy,
 // × = remove), refreshed with the adapter list. Only touches the DOM when something changed.
 var cardExtras = [];   // v7.3.1: the 2nd/3rd addresses shown — APPLY puts them back
+var cardExtrasFor = '';   // 7.4.0-dev.4: the card they were read from. APPLY only puts them back on THAT card —
+                          // after picking another card (or a failed read) the list still held the last card's.
 const ordinal = n => n + (n % 10 === 2 && n % 100 !== 12 ? 'ND' : n % 10 === 3 && n % 100 !== 13 ? 'RD' : n % 10 === 1 && n % 100 !== 11 ? 'ST' : 'TH');
 const maskBits = m => (m || '').split('.').reduce((n, o) => n + ((+o >>> 0).toString(2).match(/1/g) || []).length, 0);
 async function loadAliasTab() {
@@ -9285,7 +9289,7 @@ async function loadAliasTab() {
     box.dataset.sig = sig; box.dataset.ips = items.map(x => x.ip).join(',');
     // the main address is the field above (and the top bar) — only the extras get a line
     const extras = items.filter(x => !x.main);
-    cardExtras = extras.map(x => ({ ip: x.ip, subnet: x.subnet }));
+    cardExtras = extras.map(x => ({ ip: x.ip, subnet: x.subnet })); cardExtrasFor = adapter || '';
     box.innerHTML = extras.map((x, i) => `<div class="field-row ca-extra${before.size && !before.has(x.ip) ? ' row-enter' : ''}">
         <div class="field-label">${ordinal(i + 2)} NETWORK ADDRESS</div>
         <div class="ip-field-wrap"><div class="field-input ca-ro">${escHtml(x.ip)}<span class="m">/${maskBits(x.subnet) || '?'} · ${escHtml(x.subnet || '')}</span></div>
@@ -9368,7 +9372,8 @@ async function aliasAddRun() {
   const isDhcp = adapterEntry?.isDhcp === true;
 
   setAliasStatus(isDhcp ? 'SETTING THE CARD STATIC, THEN ADDING ' + ip + '...' : 'ADDING ' + ip + '...', '');
-  const res = await hud.aliasAdd({ adapter, ip, subnet });
+  let res;
+  try { res = await hud.aliasAdd({ adapter, ip, subnet }); } catch (err) { res = { ok: false, err: err.message }; }   // 7.4: a thrown call left "ADDING…" up for good
   if (res.ok) {
     document.getElementById('alias-new-ip').value = '';
     document.getElementById('alias-cmd-box').style.display = 'none';
