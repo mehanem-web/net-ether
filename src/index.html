@@ -8795,7 +8795,11 @@ function updateScanRowPortsInner(host, ports) {
     portEl.innerHTML = '<span class="port-badge probing" title="No answer on the first try — looking once more">…</span>';
     setTimeout(() => {
       if (!scanSecondLook.has(host) || !document.getElementById('ports-' + host.replace(/\./g, '_'))) return;   // STOP pressed, a new scan started, or the list was cleared
-      if (hud.ping) hud.ping(host).then(r => {
+      if (hud.ping) hud.ping(host).then(async r => {
+        // 7.4.0-dev.13 (bench): two Bosch rows read exactly 1014 ms — the first ping had to wait a
+        // second for the camera to answer the address lookup. That is not the link's speed, so a
+        // slow first answer is pinged once more and the better time is the one shown.
+        if (r && r.ok && r.ms > 150 && !r.note) { try { const r2 = await hud.ping(host); if (r2 && r2.ok && r2.ms > 0 && !r2.note && r2.ms < r.ms) r = r2; } catch {} }
         const msEl = document.getElementById('sr-' + host.replace(/\./g, '_'))?.querySelector('.scan-result-ms');
         if (r && r.ok && r.ms > 0 && !r.note && msEl && !/\dms$/.test(msEl.textContent.trim())) { msEl.textContent = r.ms + 'ms'; msEl.title = 'answered on the second try'; }
       }).catch(() => {});
