@@ -82,6 +82,8 @@ module.exports = function initDhcp(deps) {
   let pollTimer   = null;
   let lastAdapterState = {};
   let knownAdapters    = [];      // last full list from ETHER's get-adapters
+  let knownLoaded      = false;   // 7.4.0-dev.4: a full read has answered (an empty answer is still an answer)
+  let lastOsNames      = '';      // 7.4.0-dev.4: Windows' own interface names at the last poll — a change means a card came or went
   let lastSquatter     = null;
   let shuttingDown     = false;
 
@@ -210,7 +212,9 @@ module.exports = function initDhcp(deps) {
     const ifaces = os.networkInterfaces();
     // 7.4.0-dev.4: with no wired card at all the fallback listed everything Windows has, including
     // "Loopback Pseudo-Interface 1". The loopback is never a card a cable goes into.
-    const names = knownAdapters.length ? knownAdapters.map(a => a.name)
+    // …and once ETHER's own list has answered, "no wired card" means an empty list — the fallback
+    // used to bring Wi-Fi and the loopback back in, and a card plugged in later showed up next to them.
+    const names = (knownLoaded || knownAdapters.length) ? knownAdapters.map(a => a.name)
       : Object.keys(ifaces).filter(n => !/loopback/i.test(n) && (ifaces[n] || []).some(x => !x.internal));
     return names.map(name => {
       const addrs = ifaces[name] || [];
@@ -236,13 +240,18 @@ module.exports = function initDhcp(deps) {
   async function refreshAdapters() {
     try {
       const full = await getAdapters();
-      if (Array.isArray(full)) knownAdapters = full;
+      if (Array.isArray(full)) { knownAdapters = full; knownLoaded = true; }
     } catch {}
     const list = lightAdapters();
     send('dhcp-adapters', { adapters: list, event: 'refresh' });
     return list;
   }
   function pollAdapters() {
+    // 7.4.0-dev.4: a card plugged in (or pulled) after the tab opened — Windows' interface names
+    // changed, so ask ETHER for the full list again instead of waiting for the refresh button
+    const osNames = Object.keys(os.networkInterfaces()).sort().join('|');
+    if (lastOsNames && osNames !== lastOsNames) { lastOsNames = osNames; refreshAdapters().catch(() => {}); return; }
+    lastOsNames = osNames;
     const adapters = lightAdapters();
     const current = {};
     for (const a of adapters) current[a.name] = a.connected;
