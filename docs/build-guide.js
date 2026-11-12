@@ -1,4 +1,4 @@
-// NET//ETHER User Guide — v7.3.1 (document version 7.0, the visual guide)
+// NET//ETHER User Guide — v7.4.0 (document version 7.1, the visual guide)
 // node build-guide.js → NET-ETHER-Guide.docx ; then soffice → PDF
 // Screenshots in docs/img come from the tutorial film rig (shots.js + annotate.py in the pipeline zip).
 const fs = require('fs');
@@ -104,7 +104,7 @@ const children = [
   new Paragraph({ spacing: { after: 80 }, children: [T('Field Network Management Tool', { size: 32, color: GREY })] }),
   new Paragraph({ spacing: { after: 400 }, children: [T('The visual guide', { size: 28, color: GREY })] }),
   new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 400 }, children: [img('cover', 3.0)] }),
-  P('Application version 7.3.1 · Document version 7.0', { run: { color: GREY } }),
+  P('Application version 7.4.0 · Document version 7.1', { run: { color: GREY } }),
   P('Broman Enterprises, SSP Division', { run: { color: GREY } }),
   P('© 2026 Broman Enterprises. All rights reserved.', { run: { color: GREY, size: 18 } }),
 
@@ -459,7 +459,7 @@ const children = [
     ['SWITCH', 'Switch name, port and VLAN (LLDP every 30 s, CDP every 60 s). "No announcement" is an answer, not an error: not a managed switch, or it\'s turned off.'],
     ['802.1X', 'Whether the switch asked for a login.'],
     ['STP / TRUNK', 'Spanning tree running (don\'t hang an unmanaged switch off it); several VLANs means a trunk port.'],
-    ['DHCP', 'Who answered, with gateway, mask and DNS. "Clients asking, nobody answering" = dead DHCP server.'],
+    ['DHCP', 'Who answered, with gateway, mask and DNS. "DHCP in use — server not heard" = devices are renewing leases, so there is a server, it just did not speak while you listened. "Clients asking — no answer heard" = dead DHCP server.'],
     ['HOSTS', 'How many addresses were heard, on which network.'],
     ['ADDRESS', 'A free-looking address. TAKE fills the IP tab; APPLY still checks it.'],
     ['NAMES / NTP', 'Names devices announced; time servers they asked for.'],

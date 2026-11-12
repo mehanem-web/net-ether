@@ -223,6 +223,10 @@ NET-ETHER/
 ├── build.bat        — One-click production build
 ├── RELEASING.md     — Tag → CI → release procedure
 ├── TESTING.md       — Pre-release test checklist (home vs managed laptop)
+├── tools/
+│   ├── fake-cameras.js      — Test rig: fake devices asking the DHCP engine for addresses
+│   ├── fake-switch.py       — Test rig: a fake managed switch port for RECON (Python + scapy)
+│   └── NET-ETHER-*.ps1      — Triage and timeline scripts for slow-laptop reports
 ├── assets/
 │   ├── icon.ico
 │   ├── oui.csv              — IEEE OUI vendor database (57K+ entries)
@@ -237,6 +241,26 @@ NET-ETHER/
 ---
 
 ## CHANGELOG
+
+### v7.4.0 (unreleased — in test as 7.4.0-dev.3)
+A full read of the code looking for bugs, then fixes tested on real hardware — including two fake test rigs (below) so DHCP and RECON can be proven at home without cameras or a managed switch. Nothing about how you use the app changes; things that were quietly wrong are now right.
+- **DHCP: two devices asking at once got the same address.** The ping-before-offer check takes a moment, and a second device asking inside that moment was offered the same address. Each address is now held for the device it is being checked for. Four fake devices 20 ms apart: four different addresses.
+- **DHCP: the pool has to be on the card's own network.** A wider MASK typed in the form let a pool through that the laptop could not reach, and the answers went to a broadcast address that is not on the cable (rows sat on OFFERED). Now refused, naming the card's real mask; answers always use the card's own mask. Masks with no room for devices and pools with no usable address are refused; the gateway's address is never handed out.
+- **DHCP: opening the tab twice quickly could start the engine twice** (two firewall rules, two sockets). Starts now queue. An offer already on its way no longer goes out after STOP SERVING. SCAN WIRE on a card with no cable says so instead of scanning out the Wi-Fi. The lease CSV quotes the Expires column.
+- **RECON hears what it was filtering out.** The capture filter dropped DHCP, names (NetBIOS/mDNS), NTP, SSDP and IGMP on ordinary untagged ports — the DHCP, NAMES and NTP cards could not fill in. Fixed.
+- **RECON DHCP card** counts clients renewing a lease: **DHCP in use — server not heard** instead of "No DHCP traffic", and names the server when a client's request does.
+- **RECON** says RSTP or MSTP when that is what the port runs (it always said STP), and the free-address suggestion skips addresses clients are being sent to (DHCP server, gateway, DNS, time server).
+- **PING and SCAN show the real reply time.** They were timing the launch of `ping.exe` — 25 ms on a home PC for a 1 ms reply, far more on a managed laptop. The time now comes from ping's own answer. The toner's pitch follows.
+- **RDP button opens Remote Desktop.** It tried an `rdp://` link, which Windows has no handler for.
+- **Zero-padded addresses are cleaned up.** DMP panels show `192.168.010.005`; Windows reads a leading zero as octal and would go to `192.168.8.5`. The padding comes off when you leave the field or press Enter, and again before any command runs.
+- **→ DHCP with no cable clears the mask too.** The old static's mask stayed in the field and went into the next APPLY (a /23 from the office applied at home).
+- **Discovery firewall rule from another build is replaced.** The rule is tied to one exe path and the portable unpacks to a different folder per build, so an old rule let nothing in.
+- **Windows tools run by full path.** `netsh`, `ping`, `arp` and the rest were launched by bare name, which Windows looks up in the current folder first — and ETHER runs elevated, often as a portable from a folder anyone can write to.
+- **PowerShell worker:** a query that throws now still reports back instead of waiting for its timeout.
+- **APPLY result stays on the status bar**, and no "✓ ON DHCP" flash after DHCP → static (both found while filming the 7.3.1 video).
+- **Guide 7.0** — the visual guide, rebuilt task-first with annotated screenshots.
+- **Test rigs** in `tools/`: `fake-cameras.js` (several devices asking for an address at once) and `fake-switch.py` (a managed switch port: LLDP, CDP, RSTP, 802.1X, DHCP, tagged VLANs, names, NTP). See TESTING.md § 7.4.0.
+- Known, unchanged: the DHCP engine still hears DHCP traffic from every connected card (it only answers on the cable); it warns when another card is up.
 
 ### v7.3.1 (2026-11-02)
 The first 7.3 the fleet gets (7.3.0 never left the bench). Three things: the IP tab is rebuilt around the job a tech is actually doing, SITES becomes a proper notebook, and the whole HUD stops snapping and blinking. Built and tried live on the real app, one change at a time.

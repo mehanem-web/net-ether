@@ -16,6 +16,44 @@ into the bug report. That is the only observable on a managed laptop.
 Run twice: once from `dev.bat` (unelevated — chip AMBER, UAC per operation) and
 once from the portable build (UAC once at launch — chip normal, no prompts).
 
+### v7.4.0 — audit fixes (dev builds `7.4.0-dev.1` … `dev.3`, signed drafts)
+**Result 2026-11-11 (home PC `dev.bat` + work laptop signed portable, cabled straight to each other):**
+every fix below was seen working except the three marked *work*. Details and evidence per fix:
+`claude/AUDIT-7.4-status.md` in the project.
+
+Home, no gear needed (two PCs and one cable for the rigs):
+- [x] Smoke run after the full-path launch change: IP tab lists the card, PING answers, DHCP tab starts (firewall rule added), APPLY + REVERT verify. COPY DIAGNOSTICS shows no failed launch.
+- [x] PING a LAN host: LAST reads about what `ping -t` reads (1 ms at home; was ~25 ms).
+- [x] Type `010.099.099.001` in a PING target, press Enter → becomes `10.99.99.1`.
+- [x] SCAN a host with 3389 open → RDP opens Remote Desktop.
+- [x] IP tab, card with no cable: → DHCP → all four fields blank; type an address → mask fills 255.255.255.0.
+- [x] DHCP tab, card with no cable: SCAN WIRE → "No link on <card>", no scan.
+- [x] RECON on the home LAN, a phone rejoining Wi-Fi during the listen → DHCP card "DHCP in use — server not heard"; NAMES card present.
+- [x] Stale discovery rule: run one build, open DHCP, kill it from Task Manager (or plant a rule with another program path), run another build, open DHCP → DIAGNOSTICS shows `disc-fw-stale` then `disc-fw-add`.
+- [x] `dev-slow.bat`, click DHCP the moment the window appears, leave and come back → one `dhcp-fw-add`, and on quit "Deleted 1 rule(s)" (7.3.1 showed two adds and "Deleted 2").
+
+**Fake cameras** (`tools/fake-cameras.js`) — laptop serving, second PC asking:
+1. Cable the PCs together. Laptop `10.99.99.1 / 255.255.255.0`, PC `10.99.99.10 / 255.255.255.0`, no gateway.
+2. PC, admin PowerShell: `netsh advfirewall firewall add rule name=FAKE-CAM-68 dir=in action=allow protocol=UDP localport=68`. Close ETHER on the PC.
+3. Laptop DHCP tab: FIRST `10.99.99.100`, LAST `10.99.99.120`, MASK `255.255.255.0`, SERVE EVERYONE.
+4. PC: `node fake-cameras.js 10.99.99.1`
+- [x] Ends `PASS — 4 devices, 4 different addresses`; laptop shows four SERVED rows.
+- [x] Same with MASK `255.255.0.0` (pool unchanged): log notes the mask difference, answers go "via 10.99.99.255", still PASS.
+- [x] FIRST `10.99.0.100`, LAST `10.99.0.200`, MASK `255.255.0.0` → refused, message names mask 255.255.255.0, the three boxes go red.
+5. Afterwards: delete the `FAKE-CAM-68` rule, RELEASE ALL, put both cards back.
+
+**Fake switch** (`tools/fake-switch.py`, needs Python + `pip install scapy` + Npcap) — same cable:
+1. Laptop: STOP SERVING, RECON → LISTEN.
+2. PC, admin PowerShell: `python fake-switch.py "Ethernet"` (no arguments lists the cards).
+- [x] RECON shows what the script prints at the end: SWITCH `FAKE-SW-01 · port Gi1/0/12 · VLAN 110`, Port wants 802.1X, **RSTP** running, Trunk VLANs 20, 30, DHCP server 10.99.99.254, hosts on 10.99.99.x, **10.99.99.249** looks free, NAMES FAKE-NVR, fake-cam, NTP 10.99.99.250.
+- TRUNK may be empty on a card that strips VLAN tags (the laptop's USB Realtek 2.5GbE does not).
+
+Work (confirmation on real gear):
+- [ ] Three or more real cameras on one PoE switch, powered together, SERVE EVERYONE → every camera a different address, each opens.
+- [ ] A camera asking, press STOP SERVING while its row says checking/offering → no offer goes out after the stop (engine log).
+- [ ] RECON on a managed port → SWITCH card from the real switch; DHCP / NAMES / NTP cards fill in where the VLAN has them.
+- [ ] COPY DIAGNOSTICS at the end.
+
 ### v7.3.1 — THE ONE TEST (work laptop, installed + elevated build)
 **Result 2026-11-02 (rc.1 / rc.2 portable, managed laptop, elevated High):** passed. APPLY on the
 same subnet duplicate-checked and verified (Windows took ~2.5 s to clear the address); → DHCP with no
