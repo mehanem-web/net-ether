@@ -10696,6 +10696,11 @@ function updateLiveBarDhcp() {
   }
   if (dhcpIsServing()) { pill.style.display = ''; pill.textContent = D.mode === 'serve-all' ? 'DHCP: SERVING EVERYONE' : `DHCP: SERVING ${D.targets.length}`; }
   else pill.style.display = 'none';
+  // 7.4.0-dev.10: the badge's margin-left:auto took all the free space, so the address line
+  // jumped to the left edge whenever ETHER was serving. An equal auto margin in front of the
+  // line shares the space: it stays in the middle of what is left and can never run under the badge.
+  const first = dEl('live-bar')?.firstElementChild;
+  if (first && first !== pill) first.style.marginLeft = dhcpIsServing() ? 'auto' : '';
 }
 
 // ── adapters ──────────────────────────────────────────────

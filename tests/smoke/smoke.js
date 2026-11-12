@@ -450,13 +450,18 @@ const VISIT = [
       const back = sel.value;
       const mode = D.mode, targets = D.targets;
       dhcpApplyMode({ mode: 'serve-all', targets: [] }); const locked = sel.disabled;
+      updateLiveBarDhcp();
+      const bar = document.getElementById('live-bar').getBoundingClientRect(), dot = document.getElementById('live-bar-dot').getBoundingClientRect(), pill = document.getElementById('live-bar-dhcp').getBoundingClientRect(), last = document.getElementById('live-bar').children;
+      const lineEnd = Math.max(...[...last].filter(e => e.id !== 'live-bar-dhcp' && e.offsetParent).map(e => e.getBoundingClientRect().right));
+      window.__barGeom = { leftGap: Math.round(dot.left - bar.left), rightGap: Math.round(pill.left - lineEnd), pillShown: pill.width > 0 };
       dhcpApplyMode({ mode, targets }); const unlocked = !sel.disabled;
-      return { picked, gone, back, locked, unlocked };
+      return { picked, gone, back, locked, unlocked, geom: window.__barGeom };
     });
     expect(!r.err, r.err);
     expect(r.gone === '', 'setup: with the card gone the pick reads ' + JSON.stringify(r.gone));
     expect(r.back === r.picked, 'after the card came back the pick reads ' + JSON.stringify(r.back) + ', not ' + r.picked);
     expect(r.locked && r.unlocked, 'card pick while serving: locked=' + r.locked + ', free again after=' + r.unlocked);
+    expect(r.geom.pillShown && r.geom.leftGap > 40 && r.geom.rightGap > 8, 'top bar while serving: the address line sits ' + r.geom.leftGap + ' px from the left edge and ' + r.geom.rightGap + ' px before the badge');
   });
 
   await step('SCAN: a discovery row from another network with no MAC is not saved as a site device', async () => {
