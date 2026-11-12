@@ -4900,7 +4900,14 @@ function updateLiveBar() {
   ipEl.className   = 'live-bar-ip';
 
   // Gateway — read from the IP tab field (more reliable than adapterList)
-  const gw = document.getElementById('gateway')?.value.trim() || '';
+  // 7.4.0-dev.9: …but only while the form shows the card's CURRENT settings. With a shortcut
+  // loaded or a field edited, the bar showed that gateway as if the card had it (LAB loaded on
+  // a card with no gateway read "GW 172.16.0.1" on every tab). The last gateway seen under
+  // CURRENT is kept per card and shown instead.
+  const formGw = document.getElementById('gateway')?.value.trim() || '';
+  window._liveGwByCard = window._liveGwByCard || {};
+  if (activePreset === 0 && !isDirty) window._liveGwByCard[a.name] = formGw;
+  const gw = (a.name in window._liveGwByCard) ? window._liveGwByCard[a.name] : (activePreset === 0 ? formGw : '');
   if (gw) {
     gwEl.textContent    = 'GW ' + gw;
     gwEl.style.display  = '';
@@ -7727,7 +7734,11 @@ function scanRowsAsDevices() {
     });
   });
   const onMacs = new Set(out.filter(d => !d.off && d.mac).map(d => norm(d.mac)));
-  return out.filter(d => !(d.off && d.mac && onMacs.has(norm(d.mac))));
+  // 7.4.0-dev.9 (bench, three Bosch cameras): each camera also announces a 169.254.x.x address.
+  // Those rows have no MAC, so they could not be matched to the camera and were saved as three
+  // more devices — a site of 3 read "6 DEVICES". A row from another network with no MAC is not
+  // a device of this site; it stays on the SCAN list under ELSEWHERE ON THE WIRE.
+  return out.filter(d => !(d.off && (!d.mac || onMacs.has(norm(d.mac)))));
 }
 function startScan() {
   let base       = document.getElementById('scan-base').value.trim();
@@ -8900,6 +8911,7 @@ function applyDiscovery(d) {
     appendScanResult(d.ip, 0, false, d.mac || '', d.vendor || '');
     row = document.getElementById('sr-' + safeId);
     if (!row) return;
+    if ((adapterList || []).some(a => a.ip === d.ip || (a.ips || []).some(x => x.ip === d.ip))) markScanRowSelf(d.ip);   // 7.4.0-dev.9: the laptop answering its own discovery
     scanFound++;
     if (d.offSubnet) {
       // off-subnet: no port probe possible without a route — clear the "..." and label the source

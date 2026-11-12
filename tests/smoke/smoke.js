@@ -310,6 +310,9 @@ const VISIT = [
     await app.evaluate(() => loadPreset(0, true)); await tick(300);
     await app.evaluate(() => selectAdapter(adapterList.find(a => a.name === 'Ethernet 2'))); await tick(1200);
     await app.evaluate(() => loadPreset(1)); await tick(400);                       // OFFICE
+    // the top bar keeps showing the CARD's gateway (none on Ethernet 2), not the shortcut's
+    const bar = await app.evaluate(() => { updateLiveBar && updateLiveBar(); const g = document.getElementById('live-bar-gw'); return { shown: g && g.style.display !== 'none', text: g ? g.textContent.trim() : '', form: document.getElementById('gateway').value }; });
+    expect(!bar.form || !bar.shown || bar.text !== 'GW ' + bar.form, 'the top bar shows the shortcut gateway as if the card had it: ' + JSON.stringify(bar));
     let v = await app.evaluate(() => ({ card: document.getElementById('adapter').value, shown: document.getElementById('adapter-name-display').textContent.trim(), ip: document.getElementById('ip').value }));
     expect(v.card === 'Ethernet 2' && v.shown === 'Ethernet 2' && v.ip === '10.0.0.50', 'after the shortcut: ' + JSON.stringify(v));
     await app.evaluate(() => selectAdapter(adapterList.find(a => a.name === 'Ethernet'))); await tick(1200);
@@ -454,6 +457,16 @@ const VISIT = [
     expect(r.gone === '', 'setup: with the card gone the pick reads ' + JSON.stringify(r.gone));
     expect(r.back === r.picked, 'after the card came back the pick reads ' + JSON.stringify(r.back) + ', not ' + r.picked);
     expect(r.locked && r.unlocked, 'card pick while serving: locked=' + r.locked + ', free again after=' + r.unlocked);
+  });
+
+  await step('SCAN: a discovery row from another network with no MAC is not saved as a site device', async () => {
+    await tab('scan');
+    await type('#scan-base', '10.20.30'); await type('#scan-range', '1-254'); await tick(200);
+    await click('#scan-start-btn'); await tick(12000);
+    await app.evaluate(() => { appendScanResult('169.254.9.9', 0, false, '', ''); const r = document.getElementById('sr-169_254_9_9'); r.classList.add('off-subnet', 'only-disc'); });
+    await click('#scan-save-site-btn'); await tick(1500);
+    const has = await app.evaluate(() => { const st = Object.values(intelDB).find(x => x.subnet === '10.20.30'); const r = document.getElementById('sr-169_254_9_9'); if (r) r.remove(); return (st.devices || []).some(d => d.ip === '169.254.9.9'); });
+    expect(!has, '169.254.9.9 was saved into the 10.20.30 site');
   });
 
   await step('PING: a target added while it runs gets a row and is pinged; removing one drops its row', async () => {

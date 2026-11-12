@@ -747,7 +747,7 @@ module.exports = function initDhcp(deps) {
 
     if (msgType === 1) {                                       // DISCOVER
       if (d.state === 'leased') d.state = 'asking';
-      if (isServing() && allowedToServe(mac)) await offerWithProbe(mac, requestedIp);
+      if (isServing() && allowedToServe(mac)) await offerWithProbe(mac, requestedIp, rinfo && rinfo.address);
       emitDevices();
     } else if (msgType === 3) {                                // REQUEST
       if (serverIdent && serveCfg && serverIdent !== serveCfg.adapterIp) {
@@ -778,15 +778,23 @@ module.exports = function initDhcp(deps) {
     }
   }
 
-  async function offerWithProbe(mac, requestedIp) {
+  async function offerWithProbe(mac, requestedIp, srcIp) {
     if (probing[mac]) { probing[mac].xid = devices[mac].lastXid; return; }
     probing[mac] = { xid: devices[mac].lastXid };
     try {
+      // 7.4.0-dev.9 (bench, Bosch): a camera whose lease ran out kept using the address and asked
+      // again FROM it. The probe found the address answering — the camera itself — quarantined
+      // it and offered another. An address the request comes from is the asker's own: lift a
+      // quarantine it earned that way and offer it without a probe.
+      const own = srcIp && srcIp !== '0.0.0.0' && isValidIp(srcIp) ? srcIp : null;
+      if (own && quarantinedIps.has(own) && serveCfg && serveCfg.pool.includes(own)) { quarantinedIps.delete(own); delete probeCache[own]; }
       const candidates = candidateList(mac, requestedIp);
+      if (own && candidates.includes(own) && candidates[0] !== own && !chosenIp[mac] && !store.reservations[mac]) { candidates.splice(candidates.indexOf(own), 1); candidates.unshift(own); }
       let chosen = null, tried = 0;
       for (const ip of candidates) {
         if (tried >= 6) break;
         if (Object.entries(pendingPick).some(([m2, ip2]) => m2 !== mac && ip2 === ip)) continue;   // another asker got there first
+        if (ip === own) { pendingPick[mac] = ip; chosen = ip; log(`${mac} already uses ${ip} — offering it the same address`); break; }
         pendingPick[mac] = ip;
         const cached = probeCache[ip];
         if (cached && (Date.now() - cached.ts) < PROBE_CACHE_MS) { if (cached.free) { chosen = ip; break; } continue; }
