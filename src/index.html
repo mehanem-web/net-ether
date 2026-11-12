@@ -4018,13 +4018,18 @@ let _applyBackstop = null;
 // ── INIT ───────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
   if (window.hud) {
-    const saved = await hud.loadPresets();
+    // 7.4.0-dev.4: a failed read of the shortcuts must not stop the rest of start-up (card list,
+    // theme, DHCP listeners all come after this line) — fall back to the built-in shortcuts
+    let saved = null;
+    try { saved = await hud.loadPresets(); } catch {}
     if (saved && Array.isArray(saved)) {
       // saved contains only slots 1-3 (OFFICE, LAB, CUSTOM) — never slot 0
       // Rebuild full array: fresh LIVE at 0, then up to 3 saved slots
       // Use defaults for any slot that's missing, null, or not a valid object
       const isValid = x => x && typeof x === 'object' && typeof x.name === 'string';
-      const slots = saved.slice(0, 3);
+      // 7.4.0-dev.4: every field a string — a hand-edited file with a number or null in one
+      // made the first click on that shortcut throw
+      const slots = saved.slice(0, 3).map(x => isValid(x) ? { ...x, ...Object.fromEntries(['name', 'adapter', 'ip', 'subnet', 'gateway', 'dns'].map(k => [k, x[k] == null ? '' : String(x[k])])) } : x);
       presets = [
         JSON.parse(JSON.stringify(DEFAULT_PRESETS[0])),
         isValid(slots[0]) ? slots[0] : JSON.parse(JSON.stringify(DEFAULT_PRESETS[1])),
@@ -5692,8 +5697,11 @@ function renderDiagLog() {
     list.innerHTML = '<div class="diag-empty">NO ENTRIES YET — PRIVILEGED OPERATIONS WILL APPEAR HERE</div>';
     return;
   }
+  // 7.4.0-dev.4: a new entry redraws the list — rows you had opened used to snap shut
+  const wasOpen = new Set([...list.querySelectorAll('.diag-row.open')].map(el => el.dataset.k));
   const rows = _diagLog.slice().reverse().map((e, i) => {
     const r = diagResult(e);
+    const dk = String(e.ts) + '|' + String(e.tag || '') + '|' + String(e.kind || '');
     const kind = e.kind === 'op' ? 'OP' : e.kind === 'verify' ? 'VERIFY' : e.kind === 'error' ? 'ERROR' : 'APP';
     const meta = e.kind === 'op' ? ` ${e.mode || ''} ${e.ms != null ? e.ms + 'ms' : ''}`.replace(/\s+$/, '') : '';
     const note = e.note || '';
@@ -5705,7 +5713,7 @@ function renderDiagLog() {
       </div>`).join('');
     const openable = e.kind === 'op' && (e.steps || []).length;
     return `
-      <div class="diag-row ${e.kind}${e.ok === false ? ' fail' : ''}" ${openable ? `onclick="this.classList.toggle('open')"` : ''}>
+      <div class="diag-row ${escHtml(e.kind)}${e.ok === false ? ' fail' : ''}${openable && wasOpen.has(dk) ? ' open' : ''}" data-k="${escHtml(dk)}" ${openable ? `onclick="this.classList.toggle('open')"` : ''}>
         <div class="diag-row-head">
           <span class="diag-ts">${diagFmtTime(e.ts)}</span>
           <span class="diag-tag">${escHtml(kind)} ${escHtml(e.tag || '')}</span>
@@ -11390,12 +11398,12 @@ async function dhcpReleaseAll() { const n = await hud.dhcp.releaseAll(); if (n >
 async function dhcpExportCsv() {
   const csv = await hud.dhcp.exportCsv();
   if (!csv) { setDhcpStatus('NO LEASES TO EXPORT', 'warn', 3000); return; }
-  await hudCopy(csv); setDhcpStatus('LEASE CSV COPIED TO CLIPBOARD', 'ok', 3000);
+  try { await hudCopy(csv); setDhcpStatus('LEASE CSV COPIED TO CLIPBOARD', 'ok', 3000); } catch { setDhcpStatus('COPY FAILED', 'err', 3000); }
 }
 async function dhcpCopyLog() {
   const text = await hud.dhcp.exportLog();
   if (!text) { setDhcpStatus('LOG IS EMPTY', 'warn', 3000); return; }
-  await hudCopy(text); setDhcpStatus('LOG COPIED TO CLIPBOARD', 'ok', 3000);
+  try { await hudCopy(text); setDhcpStatus('LOG COPIED TO CLIPBOARD', 'ok', 3000); } catch { setDhcpStatus('COPY FAILED', 'err', 3000); }
 }
 
 // ── Tab icons ── inline SVG, built in initTabIcons() below (v7.0.0; the PNG set is gone)
