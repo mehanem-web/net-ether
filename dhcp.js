@@ -1244,7 +1244,17 @@ module.exports = function initDhcp(deps) {
 
   ipcMain.handle('dhcp-static-assist-apply',  async (_e, adapter, ip, mask) => staticAssistApply(adapter, ip, mask));
 
-  ipcMain.handle('dhcp-probe',      async () => activeRogueProbeShared());
+  // 7.4.0-dev.2: SCAN WIRE on a card with no link used to go out whichever card had the default route
+  // (Wi-Fi) and report that network's DHCP server as if it were on the unplugged cable.
+  ipcMain.handle('dhcp-probe',      async () => {
+    const cfg = serveCfg || previewCfg;
+    const card = cfg && cfg.adapterName;
+    if (card && !(os.networkInterfaces()[card] || []).some(a => a.family === 'IPv4' && !a.internal)) {
+      log(`SCAN — no link on ${card}; nothing to scan until the cable is in`, 'warn');
+      return { ok: false, noLink: true, msg: `No link on ${card} — plug the cable in first`, servers: [] };
+    }
+    return activeRogueProbeShared();
+  });
   ipcMain.handle('dhcp-serve-gate', async () => serveGateProbe());
   ipcMain.handle('dhcp-self-test',  async (_e, adapter) => selfTest(adapter));
 

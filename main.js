@@ -1687,12 +1687,22 @@ function fwDiscRuleExists() {
   return new Promise(resolve => execFile('netsh', ['advfirewall', 'firewall', 'show', 'rule', `name=${FW_DISC_RULE}`], { timeout: 8000, windowsHide: true },
     (err, stdout) => resolve(!err && /Enabled/i.test(stdout || ''))));
 }
+// 7.4.0-dev.2: the rule is tied to one exe path, and the portable unpacks to a different Temp folder
+// for every build. A rule left by another build (unclean exit) "existed" but matched nothing, so mDNS
+// never arrived. Does the rule that is there point at THIS exe?
+function fwDiscRuleIsOurs() {
+  return new Promise(resolve => execFile('netsh', ['advfirewall', 'firewall', 'show', 'rule', `name=${FW_DISC_RULE}`, 'verbose'], { timeout: 8000, windowsHide: true },
+    (err, stdout) => resolve(!err && String(stdout || '').toLowerCase().includes(process.execPath.toLowerCase()))));
+}
 function ensureDiscoveryRule() {
   if (discRuleState) return discRuleState;
   discRuleState = (async () => {
     await detectElevation();
     if (!PRIV.elevated || process.platform !== 'win32') return false;
-    if (await fwDiscRuleExists()) return true;
+    if (await fwDiscRuleExists()) {
+      if (await fwDiscRuleIsOurs()) return true;
+      await runElevated(`netsh advfirewall firewall delete rule name=${FW_DISC_RULE}`, { tag: 'disc-fw-stale', timeoutMs: 15000 });
+    }
     const exe = process.execPath;
     if (/["]/.test(exe)) return false;
     // whole token quoted — runDirect's tokenizer splits on spaces outside quotes

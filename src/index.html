@@ -4127,8 +4127,10 @@ function populateLivePreset(fromApply) {
     // nothing to show, so empty the address instead of keeping the static that was just removed
     const sel = adapterList.find(a => a.name.toLowerCase() === selName);
     if (sel && !sel.ip && !sel.savedIp && sel.isDhcp === true && activePreset === 0 && !isDirty) {
-      live.ip = ''; live.gateway = ''; live.dns = ''; live.adapter = sel.name;
-      for (const id of ['ip', 'gateway', 'dns']) { const el = document.getElementById(id); if (el) el.value = ''; }
+      // 7.4.0-dev.2: the mask goes too — it stayed behind from the static that was just removed and rode
+      // into the next APPLY (a /23 from the office applied to a /24 at home). Blank, it gets the /24 default.
+      live.ip = ''; live.subnet = ''; live.gateway = ''; live.dns = ''; live.adapter = sel.name;
+      for (const id of ['ip', 'subnet', 'gateway', 'dns']) { const el = document.getElementById(id); if (el) el.value = ''; }
     }
     return;
   }
