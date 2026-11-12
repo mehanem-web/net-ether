@@ -10571,7 +10571,7 @@ function dhcpInitListeners() {
   });
   DCFG_KEYS.forEach(k => dEl('dcfg-' + k)?.addEventListener('input', () => { dhcpClearErrors(); dhcpSchedulePreview(); }));
   dEl('dcfg-idle')?.addEventListener('change', async e => { const r = await hud.dhcp.setIdleMinutes(e.target.value.trim()); if (r.ok) e.target.value = r.value; });
-  dEl('dhcp-adapter')?.addEventListener('change', dhcpAdapterChanged);
+  dEl('dhcp-adapter')?.addEventListener('change', e => { D.lastCard = e.target.value; dhcpAdapterChanged(); });   // 7.4.0-dev.4: a deliberate "— pick the card —" is remembered as that
   dEl('dhcp-profile')?.addEventListener('change', dhcpProfileChanged);
 }
 
@@ -10655,6 +10655,9 @@ function dhcpApplyMode(st) {
       el.title = lock ? why : el.dataset.t0;
     });
     const prof = dEl('dhcp-profile'); if (prof) { prof.disabled = lock; prof.classList.toggle('dcfg-locked', lock); }
+    // the card too: picking another one while serving changed the card line and the ◇ SITTING
+    // list to that card while the answers kept going out on the first
+    const cardSel = dEl('dhcp-adapter'); if (cardSel) { cardSel.disabled = lock; cardSel.classList.toggle('dcfg-locked', lock); cardSel.title = lock ? 'Serving on this card — stop serving to pick another' : ''; }
   }
   updateLiveBarDhcp();
   dhcpRenderDevices();
@@ -10695,7 +10698,12 @@ function dhcpFullCard(name) { try { return (typeof adapterList !== 'undefined' &
 function dhcpFillAdapterSelect(adapters) {
   D.adapters = adapters;
   const sel = dEl('dhcp-adapter'); if (!sel) return;
-  const cur = sel.value;
+  // 7.4.0-dev.4: a USB card pulled and put back leaves the list and returns. The pick used to
+  // fall back to "— pick the card —" and stay there (while still serving, even); the card you
+  // had picked is now picked again when it comes back.
+  const had = sel.value;
+  if (had) D.lastCard = had;
+  const cur = had || (D.lastCard && adapters.some(a => a.name === D.lastCard) ? D.lastCard : '');
   sel.innerHTML = '<option value="">— pick the card —</option>';
   for (const a of adapters) {
     const o = document.createElement('option');
@@ -10708,6 +10716,7 @@ function dhcpFillAdapterSelect(adapters) {
   }
   dhcpUpdateLink();
   dhcpRenderCard();
+  if (!had && sel.value && D.started) { setDhcpStatus(sel.value.toUpperCase() + ' IS BACK — PICKED AGAIN', 'ok', 4000); if (!dhcpIsServing()) dhcpAdapterChanged(true); else dhcpWireWatch(true); }
 }
 // The card's sub-line, step ② chips and the cable strip
 function dhcpRenderCard() {
@@ -10905,7 +10914,7 @@ async function dhcpProfileChanged() {
   if (cfg) {
     dhcpFill(cfg);
     if (cfg.adapterName && dEl('dhcp-adapter') && [...dEl('dhcp-adapter').options].some(o => o.value === cfg.adapterName)) dEl('dhcp-adapter').value = cfg.adapterName;
-    dhcpUpdateLink(); dhcpRenderCard();
+    dhcpUpdateLink(); dhcpRenderCard(); dhcpWireWatch(false);   // 7.4.0-dev.4: a profile that moves the card moves the ◇ SITTING list with it
     // v7.2.0: a profile is someone's settings from some job — check it against this card
     if (dhcpGuardCheck('profile')) setDhcpStatus('PROFILE LOADED: ' + sel.value.toUpperCase(), 'ok', 3000);
     else setDhcpStatus('PROFILE LOADED — ITS LAPTOP IP IS NOT ON THIS CARD (SEE ABOVE)', 'warn', 6000);
@@ -11343,7 +11352,9 @@ async function dhcpReserveSelected() {
   });
   if (!start) return;
   if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(start)) { setDhcpStatus('START ADDRESS IS NOT AN IP', 'err', 4000); return; }
-  const taken = new Set([v('adapterIp'), v('gateway'), ...D.devices.map(d => d.reserved).filter(Boolean)]);
+  // 7.4.0-dev.4: addresses other devices hold right now are skipped too, not just reservations
+  const taken = new Set([v('adapterIp'), v('gateway'), ...D.devices.map(d => d.reserved).filter(Boolean),
+    ...D.devices.filter(d => !macs.includes(d.mac) && d.ip && ['offered', 'leased', 'static', 'releasing'].includes(d.state)).map(d => d.ip)]);
   const order = D.devices.filter(d => macs.includes(d.mac)).sort((a, b) => (a.firstSeen || 0) - (b.firstSeen || 0));   // same order as the list (v7.2.0: first plugged in first)
   let next = dhcpIpNum(start), done = 0, fail = null;
   for (const d of order) {

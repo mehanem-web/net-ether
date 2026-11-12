@@ -1377,7 +1377,13 @@ module.exports = function initDhcp(deps) {
       if ((ipToNum(ip) & mk) !== (ipToNum(cfg.adapterIp) & mk)) return { ok: false, msg: 'Reserved IP is not on the server subnet' };
       if (ip === cfg.adapterIp) return { ok: false, msg: 'That is the server IP' };
       if (cfg.gateway && ip === cfg.gateway) return { ok: false, msg: 'That is the gateway IP' };
+      // 7.4.0-dev.4: the same two refusals a typed SERVE address gets. A reservation on .0 / .255
+      // was accepted (RESERVE SELECTED starting near the top of a /24 walked onto .255), and one
+      // on an address another device holds right now was accepted and then quietly not honoured.
+      const net = (ipToNum(cfg.adapterIp) & mk) >>> 0, bcast = (net | (~mk >>> 0)) >>> 0;
+      if ((ipToNum(ip) >>> 0) === net || (ipToNum(ip) >>> 0) === bcast) return { ok: false, msg: `${ip} is the network/broadcast address` };
     }
+    for (const [m2, d2] of Object.entries(devices)) if (m2 !== m && d2.ip === ip && ['offered', 'leased', 'static', 'releasing'].includes(d2.state)) return { ok: false, msg: `${ip} is in use by ${m2} right now - take it back from that device first` };
     for (const [m2, ip2] of Object.entries(store.reservations)) if (ip2 === ip && m2 !== m) return { ok: false, msg: `Already reserved for ${m2}` };
     store.reservations[m] = ip; persist();
     log(`RESERVED ${ip} for ${m}`, 'ok');

@@ -433,6 +433,29 @@ const VISIT = [
     expect(asked === 1, 'the maker was asked for ' + asked + ' times (once is enough)');
   });
 
+  await step('DHCP: a card that leaves the list and comes back is picked again; the card is locked while serving', async () => {
+    await tab('dhcp'); await tick(1500);
+    const r = await app.evaluate(() => {
+      const sel = document.getElementById('dhcp-adapter');
+      const list = D.adapters.slice();
+      const picked = sel.value || (list[0] && list[0].name);
+      if (!picked) return { err: 'no card in the list' };
+      sel.value = picked; dhcpFillAdapterSelect(list);
+      dhcpFillAdapterSelect(list.filter(a => a.name !== picked));      // the USB card is pulled
+      const gone = sel.value;
+      dhcpFillAdapterSelect(list);                                     // …and put back
+      const back = sel.value;
+      const mode = D.mode, targets = D.targets;
+      dhcpApplyMode({ mode: 'serve-all', targets: [] }); const locked = sel.disabled;
+      dhcpApplyMode({ mode, targets }); const unlocked = !sel.disabled;
+      return { picked, gone, back, locked, unlocked };
+    });
+    expect(!r.err, r.err);
+    expect(r.gone === '', 'setup: with the card gone the pick reads ' + JSON.stringify(r.gone));
+    expect(r.back === r.picked, 'after the card came back the pick reads ' + JSON.stringify(r.back) + ', not ' + r.picked);
+    expect(r.locked && r.unlocked, 'card pick while serving: locked=' + r.locked + ', free again after=' + r.unlocked);
+  });
+
   await step('PING: a target added while it runs gets a row and is pinged; removing one drops its row', async () => {
     await tab('tools');
     await app.evaluate(() => { try { monStop(); } catch {} monHosts = ['10.20.30.1']; monRenderHostEditor(); monSetInterval(1000); monStart(); });
