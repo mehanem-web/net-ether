@@ -491,6 +491,29 @@ const VISIT = [
     expect(r.asked === 2 && r.buttons > 0, target + ': port check ran ' + r.asked + ' time(s), ' + r.buttons + ' button(s) on the row');
   });
 
+  await step('SCAN: an address Windows only remembers is marked GONE and left out of the site; a port answer fills the time', async () => {
+    await tab('scan');
+    await type('#scan-base', '10.20.30'); await type('#scan-range', '1-254'); await tick(200);
+    await click('#scan-start-btn'); await tick(16000);
+    const r = await app.evaluate(async () => {
+      appendScanResult('10.20.30.240', 0, true, 'aa-bb-cc-00-00-01', '');                // from the address cache, answers nothing
+      appendScanResult('10.20.30.241', 0, true, 'aa-bb-cc-00-00-02', '');                // answers a port, not the ping
+      updateScanRowPorts('10.20.30.241', [{ port: 443, open: true, ms: 7 }, { port: 80, open: false, ms: 0 }]);
+      document.getElementById('ports-10_20_30_240').innerHTML = '';
+      const was = hud.arpVerify; hud.arpVerify = async ({ ips }) => Object.fromEntries(ips.map(i => [i, false]));
+      let err = ''; try { await scanGhostCheck(); } catch (e) { err = String(e); }
+      hud.arpVerify = was;
+      const g = document.getElementById('sr-10_20_30_240'), p = document.getElementById('sr-10_20_30_241');
+      const out = { err, ghost: g.classList.contains('ghost'), ghostMs: g.querySelector('.scan-result-ms').textContent.trim(), portRowGhost: p.classList.contains('ghost'), portMs: p.querySelector('.scan-result-ms').textContent.trim(),
+        saved: scanRowsAsDevices().map(d => d.ip).filter(ip => /\.24[01]$/.test(ip)) };
+      g.remove(); p.remove(); return out;
+    });
+    expect(!r.err, r.err);
+    expect(r.ghost && r.ghostMs === 'GONE', 'the silent remembered address: ghost=' + r.ghost + ', time column "' + r.ghostMs + '"');
+    expect(!r.portRowGhost && r.portMs === '7ms', 'the device that answered a port: ghost=' + r.portRowGhost + ', time column "' + r.portMs + '"');
+    expect(r.saved.join() === '10.20.30.241', 'rows that would go to the site: ' + r.saved.join(', '));
+  });
+
   await step('PING: a target added while it runs gets a row and is pinged; removing one drops its row', async () => {
     await tab('tools');
     await app.evaluate(() => { try { monStop(); } catch {} monHosts = ['10.20.30.1']; monRenderHostEditor(); monSetInterval(1000); monStart(); });

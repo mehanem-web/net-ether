@@ -2908,6 +2908,29 @@ ipcMain.handle('arp-sweep', async (e, { baseIp }) => {
   } catch { return {}; }
 });
 
+// ── IPC: is a silent address really there? (7.4.0-dev.12) ─────────
+// SCAN lists what Windows' address cache holds before it pings anything, and the cache keeps a
+// device for minutes after it has gone (bench: a Hanwha that gave its lease up still showed as
+// found, and the site comparison said NO CHANGES). For addresses that answered nothing else,
+// forget the cached entry, make Windows ask again, and see whether an answer comes back.
+// A firewalled PC still answers that question; a device that has left does not.
+ipcMain.handle('arp-verify', async (e, { ips } = {}) => {
+  const list = (Array.isArray(ips) ? ips : []).filter(ip => typeof ip === 'string' && isValidIp(ip)).slice(0, 24);
+  const out = {};
+  if (!list.length) return out;
+  await Promise.all(list.map(async ip => {
+    await execAsync(`arp -d ${ip}`, { timeout: 3000 }).catch(() => {});
+    await execAsync(`ping -n 1 -w 600 ${ip}`, { timeout: 6000 }).catch(() => {});
+  }));
+  const arpOut = await execAsync('arp -a', { timeout: 5000 }).catch(() => null);
+  if (arpOut === null) return out;                       // could not read the table — say nothing, keep every row
+  for (const ip of list) {
+    const base = ip.split('.').slice(0, 3).join('.');
+    out[ip] = !!parseArpOutput(String(arpOut), base)[ip];
+  }
+  return out;
+});
+
 // ── IPC: hostname resolution ───────────────────────────────
 // Runs after a scan on the hosts it found. Two sources, in this order:
 //   1. Reverse DNS (PTR) via the system resolver — 1.5s cap per host.

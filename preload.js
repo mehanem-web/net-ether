@@ -66,6 +66,7 @@ contextBridge.exposeInMainWorld('hud', {
   scanStart:    (opts)    => ipcRenderer.send('scan-start', opts),
   scanStop:     ()        => ipcRenderer.send('scan-stop'),
   arpSweep:     (opts)    => ipcRenderer.invoke('arp-sweep', opts),
+  arpVerify:    (opts)    => ipcRenderer.invoke('arp-verify', opts),
   resolveHosts: (ips)     => ipcRenderer.invoke('resolve-hosts', ips),
   onScanResult:   (cb)    => ipcRenderer.on('scan-result',   (_, d) => cb(d)),
   onScanDone:     (cb)    => ipcRenderer.on('scan-done',     (_, d) => cb(d)),

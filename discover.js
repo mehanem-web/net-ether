@@ -385,10 +385,24 @@ module.exports = function initDiscover(deps) {
   // lines; reconVerdicts() turns it into field-language verdicts. Nothing is
   // transmitted — the display filter is read-only and the capture is passive.
   const RECON_FILTER = 'lldp || cdp || eapol || stp || arp || dhcp || nbns || mdns || llmnr || ssdp || ntp || vlan || igmp';
+  // 7.4.0-dev.12 (real port, 2026-11-12): a CDP announcement is not always the switch. On an
+  // Allied Telesis switch (which does not speak CDP and so floods it) RECON showed
+  // "C455HD-… · port eth0" as the switch — an IP phone somewhere on the VLAN, capabilities
+  // 0x00000490 (host + phone + two-port relay). A sender is the switch only if it says it is a
+  // router (0x01), bridge (0x02 / 0x04) or switch (0x08). No capabilities field → believed, as before.
+  function cdpIsSwitch(c) {
+    if (!c || !c.caps) return true;
+    const n = parseInt(String(c.caps).replace(/^0x/i, ''), 16);
+    return !Number.isFinite(n) || (n & 0x0F) !== 0;
+  }
+  function cdpKind(c) {
+    const n = parseInt(String((c && c.caps) || '').replace(/^0x/i, ''), 16) || 0;
+    return (n & 0x80) ? 'IP phone' : (n & 0x10) ? 'device' : 'device';
+  }
   function emptyEvidence() {
     return {
       packets: 0, ms: 0, err: null,
-      lldp: null, cdp: null,
+      lldp: null, cdp: null, cdpNb: null,
       eapol: { count: 0, from: new Set() },
       stp:   { count: 0, root: null, bridge: null, vlans: new Set(), proto: null },
       vlanTags: new Set(),
@@ -401,7 +415,7 @@ module.exports = function initDiscover(deps) {
   function serializeEvidence(ev) {
     const arr = x => (x instanceof Set ? [...x] : x);
     return {
-      packets: ev.packets, ms: ev.ms, err: ev.err, lldp: ev.lldp, cdp: ev.cdp,
+      packets: ev.packets, ms: ev.ms, err: ev.err, lldp: ev.lldp, cdp: ev.cdp, cdpNb: ev.cdpNb || null,
       eapol: { count: ev.eapol.count, from: arr(ev.eapol.from) },
       stp: { count: ev.stp.count, root: ev.stp.root, bridge: ev.stp.bridge, vlans: arr(ev.stp.vlans), proto: ev.stp.proto },
       vlanTags: arr(ev.vlanTags), arpSeen: ev.arpSeen, arpAsked: arr(ev.arpAsked),
@@ -438,7 +452,13 @@ module.exports = function initDiscover(deps) {
         ev.packets++;
         const o = p.obj, proto = p.protos || '';
         if (/\blldp\b/.test(proto)) { ev.lldp = ev.lldp || {}; Object.assign(ev.lldp, Object.fromEntries(Object.entries(p.lldp).filter(([, v]) => v))); }
-        if (/\bcdp\b/.test(proto))  { ev.cdp  = ev.cdp  || {}; Object.assign(ev.cdp,  Object.fromEntries(Object.entries(p.cdp).filter(([, v]) => v))); }
+        if (/\bcdp\b/.test(proto))  {
+          // one sender at a time (two senders used to be blended into one card); the switch goes in
+          // ev.cdp, a phone or other end device announcing itself in ev.cdpNb
+          const c = Object.fromEntries(Object.entries(p.cdp).filter(([, v]) => v));
+          const slot = cdpIsSwitch(c) ? 'cdp' : 'cdpNb';
+          if (!ev[slot] || (ev[slot].sysName || '') === (c.sysName || '')) ev[slot] = Object.assign(ev[slot] || {}, c);
+        }
         if (/\beapol\b/.test(proto)) { ev.eapol.count++; if (o.ethSrc) ev.eapol.from.add(o.ethSrc); }
         if (/\bstp\b/.test(proto)) {
           ev.stp.count++;
@@ -528,6 +548,7 @@ module.exports = function initDiscover(deps) {
             case 'cdp.native_vlan':      cur.cdp.vlan = val; break;
             case 'cdp.platform':         cur.cdp.platform = val; break;
             case 'cdp.software_version': cur.cdp.sysDesc = cur.cdp.sysDesc || val; break;
+            case 'cdp.capabilities':     cur.cdp.caps = val; break;
             default:
               if (/^lldp\.port\.id(?:\.[a-z0-9_]+)?$/.test(key)) cur.lldp.port = cur.lldp.port || val;
               else if (/^lldp\.ieee\.802_1\..*vlan.*id$/.test(key)) cur.lldp.vlan = cur.lldp.vlan || val;
@@ -567,6 +588,9 @@ module.exports = function initDiscover(deps) {
 
   // Evidence → verdicts. Pure, so it can be tested without a wire.
   // Each verdict: { kind: 'ok'|'warn'|'info'|'quiet', tag, title, detail, action? }
+  function localIps() {
+    try { return Object.values(require('os').networkInterfaces()).flat().filter(x => x && x.family === 'IPv4' && !x.internal).map(x => x.address); } catch { return []; }
+  }
   function reconVerdicts(ev, opts = {}) {
     const silent = !!opts.silent;
     const V = [];
@@ -583,8 +607,16 @@ module.exports = function initDiscover(deps) {
       const vlan = sw.vlan || (ev.cdp && ev.cdp.vlan) || (ev.lldp && ev.lldp.vlan) || '';
       V.push({ kind: 'ok', tag: 'SWITCH', title: `${name} · port ${port}${vlan ? ' · VLAN ' + vlan : ''}`,
         detail: [proto, sw.portDesc && sw.portDesc !== port ? sw.portDesc : '', (ev.cdp && ev.cdp.platform) || '', sw.mgmtIp ? 'mgmt ' + sw.mgmtIp : ''].filter(Boolean).join(' · ') });
+    } else if (ev.cdpNb) {
+      V.push({ kind: 'quiet', tag: 'SWITCH', title: 'The switch is not announcing itself', detail: 'LLDP/CDP is off on this port, or the switch does not speak it — the announcement heard is from another device (below)' });
     } else {
       V.push({ kind: 'quiet', tag: 'SWITCH', title: 'No LLDP/CDP announcement', detail: secs < 60 ? `${secs} s so far — CDP needs up to 60 s` : 'LLDP/CDP is off on this port, or it is not a managed switch' });
+    }
+
+    if (ev.cdpNb) {
+      const nb = ev.cdpNb, what = cdpKind(nb);
+      V.push({ kind: 'info', tag: 'NEIGHBOUR', title: `${what === 'IP phone' ? 'IP phone' : 'A device'} ${nb.sysName || '?'} is announcing on this VLAN`,
+        detail: ['CDP', nb.platform || '', `its own port ${nb.port || '?'}`, 'not your switch — a switch that does not speak CDP passes these along'].filter(Boolean).join(' · ') });
     }
 
     // 802.1X
@@ -619,7 +651,11 @@ module.exports = function initDiscover(deps) {
     else V.push({ kind: 'quiet', tag: 'DHCP', title: 'No DHCP traffic', detail: `${secs} s — static site, or quiet` });
 
     // subnets + hosts
-    const ips = Object.keys(ev.ipCount || {});
+    // 7.4.0-dev.12: this laptop is not one of the hosts heard (on a wall port with a bench address
+    // still on the card it showed up as "also: 10.99.99.x (1)"). Its address still counts as taken
+    // for the free-address pick below.
+    const selfIps = new Set(opts.selfIps || localIps());
+    const ips = Object.keys(ev.ipCount || {}).filter(ip => !selfIps.has(ip));
     const by24 = {};
     ips.forEach(ip => { const k = ip.split('.').slice(0, 3).join('.'); (by24[k] ||= []).push(ip); });
     const nets = Object.entries(by24).sort((a, b) => b[1].length - a[1].length);
@@ -628,7 +664,7 @@ module.exports = function initDiscover(deps) {
       V.push({ kind: 'ok', tag: 'HOSTS', title: `${hosts.length} host${hosts.length !== 1 ? 's' : ''} talking on ${top}.x`,
         detail: nets.slice(1).length ? 'also: ' + nets.slice(1).map(([k, h]) => `${k}.x (${h.length})`).join(', ') : 'one subnet heard' });
       // free-address suggestion in the dominant subnet
-      const seen = new Set([...hosts, ...(ev.arpAsked || []).filter(ip => ip.startsWith(top + '.'))]);
+      const seen = new Set([...hosts, ...selfIps, ...(ev.arpAsked || []).filter(ip => ip.startsWith(top + '.'))]);
       // 7.4.0-dev.3: an address clients are sent to (DHCP server, gateway, DNS, time server) is in use even if it never spoke
       for (const ip of [...(ev.dhcp.servers || []), ...(ev.dhcp.routers || []), ...(ev.dhcp.dns || []), ...(ev.ntp || [])]) seen.add(ip);
       const mask = ev.dhcp.masks && ev.dhcp.masks[0] && /^255\.255\.255\./.test(ev.dhcp.masks[0]) ? ev.dhcp.masks[0] : '255.255.255.0';
@@ -643,7 +679,8 @@ module.exports = function initDiscover(deps) {
     }
 
     // names
-    const names = ev.names || [];
+    // 7.4.0-dev.12: a random ID a device advertises as its name (e6d35e13-a907-ea7a-44d0-734d6af04c7c) tells a tech nothing
+    const names = (ev.names || []).filter(n => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(n) && !/^[0-9a-f]{24,}$/i.test(n));
     if (names.length) V.push({ kind: 'info', tag: 'NAMES', title: names.slice(0, 8).join(', ') + (names.length > 8 ? ` +${names.length - 8}` : ''), detail: 'NetBIOS / mDNS names heard' });
     // ntp
     if ((ev.ntp || []).length) V.push({ kind: 'info', tag: 'NTP', title: ev.ntp.join(', '), detail: 'time server(s) clients are asking' });

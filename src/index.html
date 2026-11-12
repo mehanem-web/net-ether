@@ -5477,6 +5477,7 @@ const HELP_CONTENT = {
       ['LISTEN',     'Up to 65 s of passive capture on the IP tab adapter. Verdicts appear as evidence arrives; LLDP comes at ~30 s, CDP at ~60. Click again to stop early.'],
       ['STANDARD / SILENT', 'STANDARD leaves the adapter alone — Windows itself still chatters (DHCP, NetBIOS, LLMNR). SILENT unbinds IPv4/IPv6 for the listen so nothing leaves the port, then restores them. If the app died mid-listen, the next elevated launch restores them too.'],
       ['SWITCH',     'Switch name, port and VLAN from LLDP/CDP. "No announcement" means it\'s off on that port or it isn\'t a managed switch — that\'s an answer, not an error.'],
+      ['NEIGHBOUR',  'Another device announcing itself on this VLAN (an IP phone, usually) — not your switch. Seen where the switch does not speak CDP and passes the announcements along.'],
       ['802.1X',     'EAPOL from the switch means the port wants authentication. A camera without a cert gets MAB or the guest VLAN, if anything.'],
       ['STP / TRUNK', 'Spanning-tree BPDUs mean don\'t hang an unmanaged switch off this port. Tagged frames or per-VLAN BPDUs for several VLANs mean it\'s a trunk — an untagged device lands on the native VLAN.'],
       ['DHCP',       'Which server answered, with the gateway, mask and DNS it handed out. "Clients asking, nobody answering" is the dead-server signature.'],
@@ -7722,6 +7723,7 @@ function scanRowsAsDevices() {
     const ip = (row.querySelector('.scan-result-ip')?.textContent || '').trim();
     if (!ip) return;
     const macTxt = (row.querySelector('.scan-result-mac')?.textContent || '').trim();
+    if (row.classList.contains('ghost')) return;   // 7.4.0-dev.12: remembered by Windows, not answering now
     if (row.classList.contains('self') || selfIps.has(ip) || (macTxt && selfMacs.has(norm(macTxt)))) return;
     const vEl = row.querySelector('.scan-result-vendor');
     const tc = (row.className.match(/\btype-(\S+)/) || [])[1];
@@ -7771,6 +7773,7 @@ function startScan() {
   scanRangeNow = { start: scanStart, end: scanEnd };
   scanRowsBase = base;
   scanSecondLook = new Set();
+  scanSettleFired = false; scanSettled = new Promise(r => { scanSettleResolve = r; });
 
   // RFC1918 sanity check
   const octets = base.split('.').map(Number);
@@ -7897,7 +7900,13 @@ function onScanDone({ aborted }) {
   if (!aborted) {
     const doneBase = document.getElementById('scan-base').value.trim();   // v7.3.0: the base this scan ran on
     const doneRange = scanRangeNow ? { ...scanRangeNow } : null;
-    setTimeout(() => {
+    // 7.4.0-dev.12: wait until the port checks, second looks and the ghost check are done (15 s at
+    // most; 2.5 s at least, as before) so SITES is told what is really there
+    const settled = scanSettled, myGen = (window._scanDoneGen = (window._scanDoneGen || 0) + 1);
+    if (!document.querySelector('#scan-results .port-badge.probing')) scanProbesSettled();
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    Promise.all([sleep(2500), Promise.race([settled, sleep(15000)])]).then(() => {
+      if (myGen !== window._scanDoneGen) return;
       // a new scan started inside the delay → these rows aren't this scan's; don't diff them
       if (typeof scanRunning !== 'undefined' && scanRunning) return;
       const base = doneBase;
@@ -7905,7 +7914,7 @@ function onScanDone({ aborted }) {
       // 7.4.0-dev.4: one shared reading of the rows (see scanRowsAsDevices)
       const results = scanRowsAsDevices();
       if (results.length) intelProcessScanResults(base, results, doneRange);
-    }, 2500);
+    });
   }
 }
 
@@ -7976,7 +7985,7 @@ function markScanRowSelf(ip) {
 
 // rc.2: rows on the scanned subnet vs. discovery answers from elsewhere on the wire
 function scanCounts() {
-  const rows = [...document.querySelectorAll('#scan-results .scan-result-row')];
+  const rows = [...document.querySelectorAll('#scan-results .scan-result-row:not(.ghost)')];   // 7.4.0-dev.12: a GONE row is not a host found
   const off = rows.filter(r => r.classList.contains('off-subnet')).length;
   return { on: rows.length - off, off, all: rows.length };
 }
@@ -8713,7 +8722,61 @@ const PORT_SERVICES = {
 // COPY export see every port — including the ones shown as action buttons.
 let scanPortMap = {};
 
+// 7.4.0-dev.12: every way out of a port result checks whether the whole scan has settled.
+// (Only the "has open ports" path used to, so a scan whose last answer was "nothing open"
+// never said PORTS MAPPED and never ran its closing ARP pass.)
 function updateScanRowPorts(host, ports) {
+  // what answered: a port that was open or refused means something is there
+  const r0 = document.getElementById('sr-' + String(host).replace(/\./g, '_'));
+  if (r0 && Array.isArray(ports) && ports.some(p => p.open || p.refused)) r0.dataset.answered = '1';
+  updateScanRowPortsInner(host, ports);
+  // a device that answered a port but not the ping: show the time it took to connect
+  if (r0 && Array.isArray(ports)) {
+    const msEl = r0.querySelector('.scan-result-ms'), best = ports.filter(p => p.open && p.ms > 0).sort((a, b) => a.ms - b.ms)[0];
+    if (msEl && best && /^ARP$/i.test(msEl.textContent.trim())) { msEl.textContent = best.ms + 'ms'; msEl.title = 'Time to connect on port ' + best.port + ' — it did not answer the ping'; }
+  }
+  if (!document.querySelector('#scan-results .port-badge.probing')) scanProbesSettled();
+}
+var scanSettleFired = false, scanSettleResolve = null, scanSettled = Promise.resolve();
+function scanProbesSettled() {
+  { const f = scanCounts().on; setScanStatus(`SCAN COMPLETE — ${f} HOST${f !== 1 ? 'S' : ''} FOUND — PORTS MAPPED`, 'ok'); }
+  // Second ARP pass — TCP connections from port probes warm the cache
+  const base = scanRowsBase || document.getElementById('scan-base').value.trim();   // 7.4.0-dev.4: the subnet on screen, not what the box says now
+  if (window.hud && base) {
+    hud.arpSweep({ baseIp: base }).then(results => {
+      Object.entries(results).forEach(([ip, { mac, vendor }]) => {
+        const row = document.getElementById('sr-' + ip.replace(/\./g, '_'));
+        if (row && !row.querySelector('.scan-result-mac')) enrichScanResult(ip, mac, vendor);
+      });
+    }).catch(() => {});
+  }
+  if (scanSettleFired) return;            // once per scan: the ghost check and the hand-over to SITES
+  scanSettleFired = true;
+  scanGhostCheck().catch(() => {}).then(() => { if (scanSettleResolve) scanSettleResolve(); });
+}
+// 7.4.0-dev.12: a row that came from Windows' address cache and answered nothing — no ping, no
+// port, no discovery — is checked once more at the address level. Not there → marked GONE,
+// left out of the count, SAVE SITE and the site comparison (which then says MISSING).
+async function scanGhostCheck() {
+  if (!(window.hud && hud.arpVerify)) return;
+  const suspects = [...document.querySelectorAll('#scan-results .scan-result-row')].filter(row =>
+    !row.classList.contains('self') && !row.classList.contains('off-subnet') && !row.classList.contains('ghost') &&
+    row.dataset.answered !== '1' && !row.querySelector('.scan-disc-badge') &&
+    !/\dms$/.test((row.querySelector('.scan-result-ms')?.textContent || '').trim()));
+  const ips = suspects.map(r => (r.querySelector('.scan-result-ip')?.textContent || '').trim()).filter(Boolean);
+  if (!ips.length) return;
+  const there = await hud.arpVerify({ ips });
+  let gone = 0;
+  suspects.forEach(row => {
+    const ip = (row.querySelector('.scan-result-ip')?.textContent || '').trim();
+    if (!there || there[ip] !== false) return;         // only a definite "no answer" marks a row
+    row.classList.add('ghost'); row.style.opacity = '0.45'; gone++;
+    const msEl = row.querySelector('.scan-result-ms');
+    if (msEl) { msEl.textContent = 'GONE'; msEl.title = "Windows remembered this address from earlier, but nothing answers there now"; }
+  });
+  if (gone) { scanFound = Math.max(0, scanFound - gone); updateScanFoundCount(); const f = scanCounts().on; setScanStatus(`SCAN COMPLETE — ${f} HOST${f !== 1 ? 'S' : ''} FOUND — ${gone} REMEMBERED ADDRESS${gone !== 1 ? 'ES' : ''} NOT ANSWERING`, 'ok'); }
+}
+function updateScanRowPortsInner(host, ports) {
   const portEl = document.getElementById('ports-' + host.replace(/\./g, '_'));
   if (!portEl) return;
 
@@ -8805,23 +8868,6 @@ function updateScanRowPorts(host, ports) {
     if (metaEl) metaEl.appendChild(btn);
     else row.appendChild(btn);
   });
-
-  // Update status bar once all probing settles
-  if (document.querySelectorAll('.port-badge.probing').length === 0) {
-    { const f = scanCounts().on; setScanStatus(`SCAN COMPLETE — ${f} HOST${f !== 1 ? 'S' : ''} FOUND — PORTS MAPPED`, 'ok'); }
-    // Second ARP pass — TCP connections from port probes warm the cache
-    const base = scanRowsBase || document.getElementById('scan-base').value.trim();   // 7.4.0-dev.4: the subnet on screen, not what the box says now
-    if (window.hud && base) {
-      hud.arpSweep({ baseIp: base }).then(results => {
-        Object.entries(results).forEach(([ip, { mac, vendor }]) => {
-          const row = document.getElementById('sr-' + ip.replace(/\./g, '_'));
-          if (row && !row.querySelector('.scan-result-mac')) {
-            enrichScanResult(ip, mac, vendor);
-          }
-        });
-      }).catch(() => {});
-    }
-  }
 
   autoResize();
 }
@@ -9024,7 +9070,7 @@ function updateScanFoundCount() {
   // apart, so a sweep of an empty subnet no longer reads "7 HOSTS FOUND"
   const el = document.getElementById('scan-found-count');
   if (!el) return;
-  const rows = [...document.querySelectorAll('#scan-results .scan-result-row')];
+  const rows = [...document.querySelectorAll('#scan-results .scan-result-row:not(.ghost)')];
   const off  = rows.filter(r => r.classList.contains('off-subnet')).length;
   const disc = rows.filter(r => r.classList.contains('disc-hit')).length;
   const n = rows.length - off;
