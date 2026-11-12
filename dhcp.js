@@ -252,6 +252,7 @@ module.exports = function initDhcp(deps) {
       }
     }
     lastAdapterState = current;
+    rebind();   // the laptop's address on the cable came or went
     send('dhcp-adapters', { adapters, event: 'poll' });
   }
   function startPoller() { if (!pollTimer) { pollAdapters(); pollTimer = setInterval(pollAdapters, ADAPTER_POLL_MS); } }
@@ -483,7 +484,7 @@ module.exports = function initDhcp(deps) {
       if (newMode === mode) { resolve(); return; }
       if (newMode === 'off') {
         stopSweeper(); stopPoller();
-        if (sock) { try { sock.close(); } catch {} sock = null; }
+        if (sock) { try { sock.close(); } catch {} sock = null; sockAddr = null; }
         const old = mode;
         mode = 'off';
         if (old !== 'off') log('Engine offline — UDP 67 released');
@@ -510,23 +511,59 @@ module.exports = function initDhcp(deps) {
         resolve();
       };
       if (sock) { activate(); return; }
+      addFirewallRule().then(() => openSock(wantBindAddr())).then(s => { sock = s; activate(); }, reject);
+    });
+  }
 
+  // ── 7.4.0-dev.4: the engine listens on the cable, not on every card ───────
+  // The socket was bound to 0.0.0.0, and Node can't say which card a broadcast came in on —
+  // so a phone or a TV asking for DHCP over the Wi-Fi showed under "devices on this cable"
+  // (and under SERVE EVERYONE was "offered" an address it could never receive). Bound to the
+  // laptop's address on the chosen card, Windows hands the socket only what arrives on that
+  // card. With no address on the cable yet there is nothing to bind to, so it listens on
+  // everything as before (that is how a device is heard before SET LAPTOP IP).
+  let sockAddr = null;
+  function wantBindAddr() {
+    const cfg = serveCfg || previewCfg;
+    const ip = cfg && cfg.adapterIp;
+    if (!ip || !isValidIp(ip) || isApipa(ip)) return '0.0.0.0';
+    const live = lightAdapters().some(a => (a.ips || []).some(x => x.ip === ip));
+    return live ? ip : '0.0.0.0';
+  }
+  function openSock(addr) {
+    return new Promise((resolve, reject) => {
       const s = dgram.createSocket({ type: 'udp4', reuseAddr: true });
       let bound = false;
       s.on('error', err => {
-        log('DHCP socket error: ' + err.message, 'err');
-        if (!bound) { try { s.close(); } catch {} reject(err); }
+        if (bound) { log('DHCP socket error: ' + err.message, 'err'); return; }
+        try { s.close(); } catch {}
+        if (addr !== '0.0.0.0') { log(`Could not listen on ${addr} alone (${err.code || err.message}) — listening on every card instead`, 'warn'); openSock('0.0.0.0').then(resolve, reject); }
+        else { log('DHCP socket error: ' + err.message, 'err'); reject(err); }
       });
       s.on('message', (msg, rinfo) => { handleDhcpMessage(msg, rinfo).catch(e => log('DHCP parse error: ' + e.message, 'err')); });
-      addFirewallRule().then(() => {
-        s.bind(67, '0.0.0.0', () => {
-          bound = true;
-          try { s.setBroadcast(true); } catch {}
-          sock = s;
-          activate();
-        });
+      s.bind(67, addr, () => {
+        bound = true;
+        try { s.setBroadcast(true); } catch {}
+        if (sockAddr !== addr) log(addr === '0.0.0.0' ? 'Hearing DHCP on every connected card — no laptop address on the cable yet' : `Hearing DHCP on ${addr} only — this cable`);
+        sockAddr = addr;
+        resolve(s);
       });
     });
+  }
+  // Re-open on the right address when the laptop's address on the cable changes. Queued behind
+  // mode changes, so it can't cross a start or a stop.
+  function rebind() {
+    const p = modeChain.then(async () => {
+      if (!sock || mode === 'off' || mode === 'suspended') return;
+      const want = wantBindAddr();
+      if (want === sockAddr) return;
+      const old = sock; sock = null;
+      try { old.close(); } catch {}
+      try { sock = await openSock(want); }
+      catch (e) { log('Could not re-open the DHCP socket: ' + e.message, 'err'); mode = 'off'; announceMode(); }
+    });
+    modeChain = p.catch(() => {});
+    return p;
   }
 
   // v7.1.0: RECON SILENT unbinds IP from the adapter the engine listens on. A socket
@@ -539,7 +576,7 @@ module.exports = function initDhcp(deps) {
     if (mode === 'off' || mode === 'suspended') return false;
     suspendedFrom = mode;
     stopSweeper(); stopPoller();
-    if (sock) { try { sock.close(); } catch {} sock = null; }
+    if (sock) { try { sock.close(); } catch {} sock = null; sockAddr = null; }
     mode = 'suspended';
     log(`Suspended — ${reason || 'adapter unavailable'}; resumes automatically`, 'warn');
     diagAdd({ kind: 'app', tag: 'dhcp', ok: true, note: `DHCP engine suspended (${reason || 'adapter unavailable'}) — was ${suspendedFrom}` });
@@ -1211,6 +1248,7 @@ module.exports = function initDhcp(deps) {
   ipcMain.handle('dhcp-set-preview', async (_e, opts) => {
     const v = validateCfg(opts);
     previewCfg = v.ok ? buildEngineCfg(opts) : null;
+    rebind();
     emitDevices();
     return v;
   });
@@ -1223,8 +1261,10 @@ module.exports = function initDhcp(deps) {
     store.current = storableCfg(opts); persist();
     serveCfg = buildEngineCfg(opts);
     try {
+      await rebind();
       await setMode('serve-all');
-      const others = otherSubnetAdapters(serveCfg.adapterIp, serveCfg.subnet);
+      // only when the engine could not be tied to this card (no live laptop address to bind to)
+      const others = sockAddr === '0.0.0.0' ? otherSubnetAdapters(serveCfg.adapterIp, serveCfg.subnet) : [];
       const warning = others.length ? `Heads up: ${others.join(', ')} ${others.length > 1 ? 'are' : 'is'} also connected on another subnet. This server answers DHCP on all connected networks.` : null;
       if (warning) log('WARNING — ' + warning, 'warn');
       return { ok: true, warning };
@@ -1261,6 +1301,7 @@ module.exports = function initDhcp(deps) {
     }
     targets.add(m);
     try {
+      await rebind();
       await setMode('serve-targeted');
       log(`TARGET — answering ${m} only (${targets.size} target${targets.size !== 1 ? 's' : ''})`, 'ok');
       announceMode();   // mode may not have changed — the target count did
