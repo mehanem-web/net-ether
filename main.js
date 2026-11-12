@@ -2847,14 +2847,19 @@ ipcMain.on('tracert-start', async (e, { host }) => {
   if (!safeHost || safeHost.startsWith('-')) return;
 
   // Kill any previous tracert still running
-  if (tracertProc) { try { tracertProc.kill(); } catch {} tracertProc = null; }
+  // 7.4.0-dev.4: a tracert that was stopped or replaced says nothing more. Its 'close' used to
+  // send "done" and clear tracertProc — after TRCRT was clicked on another host that "done"
+  // reached the NEW host's panel (it stopped listening, so no hops showed) and the cleared
+  // reference meant the new tracert could not be stopped.
+  if (tracertProc) { tracertProc._quiet = true; try { tracertProc.kill(); } catch {} tracertProc = null; }
 
   try {
     // v7.3.0: execFile, not exec — killing the cmd.exe wrapper left tracert itself running
     const proc = execFile('tracert', ['-d', '-h', '20', '-w', '800', safeHost], { timeout: 60000, windowsHide: true });
     tracertProc = proc;
     proc.stdout.on('data', chunk => {
-      if (e.sender.isDestroyed()) { proc.kill(); tracertProc = null; return; }
+      if (proc._quiet) return;
+      if (e.sender.isDestroyed()) { proc.kill(); if (tracertProc === proc) tracertProc = null; return; }
       const lines = chunk.toString().split('\n');
       lines.forEach(line => {
         const m = line.match(/^\s*(\d+)\s+([\s\S]+?)\s*$/);
@@ -2862,14 +2867,14 @@ ipcMain.on('tracert-start', async (e, { host }) => {
         e.sender.send('tracert-hop', { raw: m[0].trim() });
       });
     });
-    proc.on('close', () => {
-      tracertProc = null;
+    const finished = () => {
+      if (tracertProc === proc) tracertProc = null;
+      if (proc._quiet || proc._ended) return;
+      proc._ended = true;
       if (!e.sender.isDestroyed()) e.sender.send('tracert-done');
-    });
-    proc.on('error', () => {
-      tracertProc = null;
-      if (!e.sender.isDestroyed()) e.sender.send('tracert-done');
-    });
+    };
+    proc.on('close', finished);
+    proc.on('error', finished);
   } catch {
     tracertProc = null;
     if (!e.sender.isDestroyed()) e.sender.send('tracert-done');
@@ -2877,8 +2882,8 @@ ipcMain.on('tracert-start', async (e, { host }) => {
 });
 
 ipcMain.on('tracert-stop', (e) => {
-  if (tracertProc) { try { tracertProc.kill(); } catch {} tracertProc = null; }
-  if (!e.sender.isDestroyed()) e.sender.send('tracert-done');
+  // The window resets its own panel on STOP — no "done" needed, and a late one hits the next host.
+  if (tracertProc) { tracertProc._quiet = true; try { tracertProc.kill(); } catch {} tracertProc = null; }
 });
 
 // ── IPC: second ARP pass — called after port probes settle ─
