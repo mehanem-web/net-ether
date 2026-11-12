@@ -412,6 +412,28 @@ const VISIT = [
     await app.evaluate(() => monStop()); await tick(500);
   });
 
+  await step('SITES: removing a device and deleting a site use ETHER\'s own prompt; a deleted site stays deleted', async () => {
+    await tab('intel');
+    await app.evaluate(() => intelShowList()); await tick(500);
+    const before = await app.evaluate(() => ({ sites: Object.keys(intelDB).length, lib: Object.keys(allSites || {}).length }));
+    expect(before.sites >= 1, 'setup: no site to delete');
+    await click('.intel-site-card .intel-site-meta, .intel-site-card'); await tick(1000);
+    const devs = await count('.intel-device-row');
+    await click('.intel-device-row'); await tick(500);
+    await click('[onclick^="intelDeleteDevice"]'); await tick(400);
+    expect(await bodyHas('REMOVE THIS DEVICE'), 'no ETHER prompt for removing a device');
+    await click('#hud-modal .modal-btn', 'REMOVE'); await tick(800);
+    expect(await count('.intel-device-row') === devs - 1, 'device rows: ' + devs + ' → ' + await count('.intel-device-row'));
+    await click('[onclick="intelDeleteSite()"]'); await tick(400);
+    expect(await bodyHas('DELETE THIS SITE'), 'no ETHER prompt for deleting the site');
+    await click('#hud-modal .modal-btn', 'DELETE SITE'); await tick(1500);
+    expect(await app.evaluate(() => Object.keys(intelDB).length) === before.sites - 1, 'the site is still in the database');
+    // leave the tab and come back, the way a tech would — the site must not be re-imported
+    await tab('net'); await tab('intel'); await tick(1500);
+    const after = await app.evaluate(() => ({ sites: Object.keys(intelDB).length, names: Object.values(intelDB).map(s => s.name) }));
+    expect(after.sites === before.sites - 1, 'after reopening SITES there are ' + after.sites + ' sites (' + after.names.join(', ') + ') — the deleted one came back');
+  });
+
   await browser.close(); srv.close();
   const failed = results.filter(r => !r.ok);
   console.log(`\n${results.length - failed.length} of ${results.length} steps passed` + (failed.length ? ` — ${failed.length} FAILED` : ''));

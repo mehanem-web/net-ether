@@ -9758,12 +9758,24 @@ function intelShowList() {
 async function intelDeleteSite() {
   const site = intelDB[intelActiveSite];
   if (!site) return;
-  if (!confirm(`Delete site "${site.name}"? This removes all ${(site.devices||[]).length} device records.`)) return;
+  // 7.4.0-dev.4: ETHER's own prompt, not the browser's confirm() box (the only two left in the app)
+  const n = (site.devices || []).length;
+  const go = await hudModal({
+    title: 'DELETE THIS SITE?', tone: 'warn',
+    bodyHtml: `<span class="hl">${escHtml(site.name || 'This site')}</span> and its ${n} device record${n !== 1 ? 's' : ''}, notes and logins are removed. A backup of the site database is written first.`,
+    buttons: [{ label: 'DELETE SITE', style: 'danger', value: true }, { label: 'CANCEL', style: 'cancel', value: null }],
+  });
+  if (!go) return;
   if (window.hud && hud.intelBackup) { try { await hud.intelBackup('pre-delete'); } catch {} }   // v7.1.0: a backup before anything irreversible
-  delete intelDB[intelActiveSite];
-  delete intelPendingChanges[intelActiveSite];
+  const gone = intelActiveSite, subnet = site.subnet;
+  delete intelDB[gone];
+  delete intelPendingChanges[gone];
+  // …and from the scan library. It was left there, and with no sites left the "one-time" import
+  // from that library ran again on the next visit to this tab: the deleted sites came back, empty.
+  if (subnet && allSites && allSites[subnet]) { delete allSites[subnet]; try { await persistSites(); } catch {} }
   intelPersist();
   intelShowList();
+  scanPopulateSitePicker();
 }
 
 // ── LINK TO SCAN TAB ───────────────────────────────────────
@@ -10297,10 +10309,16 @@ function intelSaveDevice(deviceKey, siteId) {
   intelSetDetailStatus('DEVICE SAVED', 'ok', 2000);
 }
 
-function intelDeleteDevice(deviceKey, siteId) {
+async function intelDeleteDevice(deviceKey, siteId) {
   const site = intelDB[siteId];
   if (!site) return;
-  if (!confirm('Remove this device from the site record?')) return;
+  const dev = intelFindDevice(site, deviceKey);
+  const go = await hudModal({
+    title: 'REMOVE THIS DEVICE?', tone: 'warn',
+    bodyHtml: `<span class="hl">${escHtml((dev && (dev.hostname || dev.ip || dev.mac)) || deviceKey)}</span> is taken out of this site's record, with its notes and logins. The next scan that sees it adds it back as new.`,
+    buttons: [{ label: 'REMOVE', style: 'danger', value: true }, { label: 'CANCEL', style: 'cancel', value: null }],
+  });
+  if (!go) return;
   site.devices = (site.devices||[]).filter(d => (d.mac||d.ip) !== deviceKey);
   intelPersist();
   intelRenderDeviceList(site);
