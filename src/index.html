@@ -4285,7 +4285,11 @@ function selectAdapter(a) {
     previousConfig = savedPrev;
     if (previousConfig) showRevertBtn(previousConfig);
   };
-  if (live && live.name === 'LIVE') {
+  // A shortcut, a factory default or a typed address is in the form: that is what the tech means
+  // to put on the card, so only the card changes. (Resetting the form here, with shortcuts
+  // blanking the card, made a loop: shortcut wipes the card, card wipes the shortcut.)
+  const showCard = live && live.name === 'LIVE' && activePreset === 0 && !isDirty;
+  if (showCard) {
     fill({ ip: a.ip || a.savedIp, subnet: a.subnet || a.savedSubnet, gateway: a.gateway, dns: a.dns });
     setNetStatus(`${a.name.toUpperCase()} — CURRENT SETTINGS`, 'ok', 3000);
     // The full config from netsh — covers a card with no cable (Windows keeps its static settings)
@@ -4298,6 +4302,8 @@ function selectAdapter(a) {
     }
   } else {
     markChanged(field);
+    const ipNow = (document.getElementById('ip')?.value || '').trim();
+    setNetStatus(`${a.name.toUpperCase()} PICKED` + (ipNow ? ` — PRESS APPLY TO PUT ${ipNow} ON IT` : ''), 'warn', 6000);
   }
 
   closeAdapterDropdown();
@@ -4661,15 +4667,19 @@ function loadPreset(idx, silent) {
   isDirty = false;
   renderPresetBar();
   const p = presets[idx];
+  // 7.4.0-dev.4: a shortcut is an ADDRESS — it never changes which card you're on. OFFICE / LAB /
+  // CUSTOM carry no card, so loading one used to blank the card selector ("Select adapter").
+  const keepCard = idx !== 0 ? (document.getElementById('adapter')?.value || '').trim() : '';
+  const cardName = keepCard || p.adapter || '';
   ['adapter', 'ip', 'subnet', 'gateway', 'dns'].forEach(k => {
     const el = document.getElementById(k);
     if (!el) return;
-    el.value = p[k] || '';
+    el.value = k === 'adapter' ? cardName : (p[k] || '');
     if (el.classList) el.classList.remove('changed');
   });
   // Sync read-only adapter display span
   const display = document.getElementById('adapter-name-display');
-  if (display) display.textContent = p.adapter || '';
+  if (display) display.textContent = cardName;
   updateAdapterLabel();
   hideCmdBox();
   // v7.3.1: CURRENT follows the card; a saved shortcut is always a static address

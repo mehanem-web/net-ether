@@ -292,6 +292,25 @@ const VISIT = [
     expect(await app.evaluate(() => window.__mtuWrites === 0), 'REVERT wrote the MTU ' + await app.evaluate(() => window.__mtuWrites) + ' time(s) although it had not changed');
   });
 
+  await step('IP: a shortcut keeps the card, and picking a card keeps the shortcut', async () => {
+    await app.evaluate(() => {
+      const W = window.__world;
+      Object.assign(W.adapters[0], { ip: '10.20.30.57', subnet: '255.255.255.0', gateway: '10.20.30.1', dns: '10.20.30.1', isDhcp: false, connected: true, state: 'Connected' });
+      Object.assign(W.adapters[1], { ip: '192.168.50.20', subnet: '255.255.255.0', gateway: '', dns: '', isDhcp: false, connected: true, state: 'Connected' });
+      loadAdapters();
+    });
+    await tick(3000);
+    await app.evaluate(() => loadPreset(0, true)); await tick(300);
+    await app.evaluate(() => selectAdapter(adapterList.find(a => a.name === 'Ethernet 2'))); await tick(1200);
+    await app.evaluate(() => loadPreset(1)); await tick(400);                       // OFFICE
+    let v = await app.evaluate(() => ({ card: document.getElementById('adapter').value, shown: document.getElementById('adapter-name-display').textContent.trim(), ip: document.getElementById('ip').value }));
+    expect(v.card === 'Ethernet 2' && v.shown === 'Ethernet 2' && v.ip === '10.0.0.50', 'after the shortcut: ' + JSON.stringify(v));
+    await app.evaluate(() => selectAdapter(adapterList.find(a => a.name === 'Ethernet'))); await tick(1200);
+    v = await app.evaluate(() => ({ card: document.getElementById('adapter').value, ip: document.getElementById('ip').value, gw: document.getElementById('gateway').value, btn: document.getElementById('apply-btn').textContent.trim() }));
+    expect(v.card === 'Ethernet' && v.ip === '10.0.0.50' && v.gw === '10.0.0.1' && /APPLY 10\.0\.0\.50/.test(v.btn), 'after picking the other card: ' + JSON.stringify(v));
+    await app.evaluate(() => loadPreset(0, true)); await tick(300);
+  });
+
   await browser.close(); srv.close();
   const failed = results.filter(r => !r.ok);
   console.log(`\n${results.length - failed.length} of ${results.length} steps passed` + (failed.length ? ` — ${failed.length} FAILED` : ''));
