@@ -7704,6 +7704,7 @@ function toggleScan() {
 }
 
 var scanRangeNow = null;   // 7.4.0-dev.4: the host range of the running / last sweep
+var scanSecondLook = new Set();   // 7.4.0-dev.11: hosts already given their one second look in this scan
 var scanRowsBase = null;   // 7.4.0-dev.4: the subnet the rows on screen came from — SAVE SITE files them under this,
                            // not under whatever the base box or the site picker says by the time SAVE is pressed
 
@@ -7769,6 +7770,7 @@ function startScan() {
   const total = scanEnd - scanStart + 1;
   scanRangeNow = { start: scanStart, end: scanEnd };
   scanRowsBase = base;
+  scanSecondLook = new Set();
 
   // RFC1918 sanity check
   const octets = base.split('.').map(Number);
@@ -7855,6 +7857,7 @@ function stopScan() {
     scanProbeListening = false;
   }
   portProbeQueue = [];
+  scanSecondLook = new Set();   // STOP means stop: no second look after it
   finishScan(true);
 }
 
@@ -8716,6 +8719,27 @@ function updateScanRowPorts(host, ports) {
 
   const open = ports.filter(p => p.open);
   scanPortMap[host] = open.map(p => ({ port: p.port, open: true }));
+
+  // 7.4.0-dev.11 (bench, three Bosch cameras): on a sweep's first contact they answered neither
+  // the 300 ms ping nor a single port — the rows read "ARP" with no OPEN button — yet a ping from
+  // PowerShell a moment later took 1 ms. A device that was total silence on every port (nothing
+  // open, nothing refused) and is not this laptop gets ONE second look a few seconds later:
+  // a patient ping for the time column and the port check again.
+  const answered = ports.some(p => p.open || p.refused);
+  const rowEl = document.getElementById('sr-' + host.replace(/\./g, '_'));
+  if (!answered && rowEl && !rowEl.classList.contains('self') && !rowEl.classList.contains('off-subnet') && !scanSecondLook.has(host) && window.hud && hud.portProbeStart) {
+    scanSecondLook.add(host);
+    portEl.innerHTML = '<span class="port-badge probing" title="No answer on the first try — looking once more">…</span>';
+    setTimeout(() => {
+      if (!scanSecondLook.has(host) || !document.getElementById('ports-' + host.replace(/\./g, '_'))) return;   // STOP pressed, a new scan started, or the list was cleared
+      if (hud.ping) hud.ping(host).then(r => {
+        const msEl = document.getElementById('sr-' + host.replace(/\./g, '_'))?.querySelector('.scan-result-ms');
+        if (r && r.ok && r.ms > 0 && !r.note && msEl && !/\dms$/.test(msEl.textContent.trim())) { msEl.textContent = r.ms + 'ms'; msEl.title = 'answered on the second try'; }
+      }).catch(() => {});
+      hud.portProbeStart(host);
+    }, 2500);
+    return;
+  }
 
   // No open ports — just clear the probing indicator, show nothing
   if (!open.length) {

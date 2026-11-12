@@ -474,6 +474,23 @@ const VISIT = [
     expect(!has, '169.254.9.9 was saved into the 10.20.30 site');
   });
 
+  await step('SCAN: a device silent on the first port check gets one second look and its buttons', async () => {
+    await tab('scan');
+    await type('#scan-base', '10.20.30'); await type('#scan-range', '1-254'); await tick(200);
+    await click('#scan-start-btn'); await tick(14000);
+    const target = await app.evaluate(() => { const r = [...document.querySelectorAll('#scan-results .scan-result-row:not(.self)')].find(x => x.querySelector('.smart-action')); return r ? r.querySelector('.scan-result-ip').textContent.trim() : null; });
+    expect(!!target, 'setup: no row with an action button to test with — ' + await app.evaluate(() => [...document.querySelectorAll('#scan-results .scan-result-row')].slice(0, 3).map(r => r.className + ' :: ' + (r.querySelector('.scan-ports-row') || {}).innerHTML).join(' || ')));
+    await app.evaluate(t => {
+      const origOn = hud.onPortProbeResult, origStart = hud.portProbeStart; let cb = null; const seen = {};
+      hud.onPortProbeResult = f => { cb = f; return origOn.call(hud, f); };
+      hud.portProbeStart = (host, ports) => { seen[host] = (seen[host] || 0) + 1; if (host === t && seen[host] === 1) { setTimeout(() => cb && cb({ host, ports: [{ port: 80, open: false, ms: 0 }, { port: 443, open: false, ms: 0 }] }), 50); return; } return origStart.call(hud, host, ports); };
+      window.__sl = { seen, undo: () => { hud.onPortProbeResult = origOn; hud.portProbeStart = origStart; } };
+    }, target);
+    await click('#scan-start-btn'); await tick(20000);
+    const r = await app.evaluate(t => { const row = document.getElementById('sr-' + t.replace(/\./g, '_')); const n = window.__sl.seen[t] || 0; window.__sl.undo(); return { asked: n, buttons: row ? row.querySelectorAll('.smart-action').length : -1 }; }, target);
+    expect(r.asked === 2 && r.buttons > 0, target + ': port check ran ' + r.asked + ' time(s), ' + r.buttons + ' button(s) on the row');
+  });
+
   await step('PING: a target added while it runs gets a row and is pinged; removing one drops its row', async () => {
     await tab('tools');
     await app.evaluate(() => { try { monStop(); } catch {} monHosts = ['10.20.30.1']; monRenderHostEditor(); monSetInterval(1000); monStart(); });
