@@ -254,6 +254,9 @@ const VISIT = [
     await tick(20000);                                   // through the 2 s refresh and a 15 s poll
     const v = await app.evaluate(() => ({ card: document.getElementById('adapter').value, ip: document.getElementById('ip').value }));
     expect(v.card === 'Ethernet 2' && v.ip === '192.168.50.77', 'form shows ' + JSON.stringify(v));
+    expect(await app.evaluate(() => document.querySelector('.ip-field-wrap').classList.contains('applied')), 'no ACTIVE tag after APPLY');
+    await app.evaluate(() => selectAdapter(adapterList.find(a => a.name === 'Ethernet'))); await tick(800);
+    expect(await app.evaluate(() => !document.querySelector('.ip-field-wrap').classList.contains('applied')), 'the ACTIVE tag from the other card\'s APPLY is still showing after picking a different card');
   });
 
   await step('IP: a static card switched to DHCP keeps REVERT, and REVERT puts the static back', async () => {

@@ -4267,6 +4267,7 @@ function selectAdapter(a) {
   const display = document.getElementById('adapter-name-display');
   if (display) display.textContent = a.name;
   _adapterPicked = a.name;
+  clearIpApplied();   // the ✓ ACTIVE / ✕ FAILED tag belongs to the last APPLY, which was on another card
 
   // 7.4.0-dev.4: picking a card SHOWS that card — it is not an edit. It used to mark every field
   // changed with the card's values, which (1) put a DHCP card in STATIC with "APPLY <its lease>"
