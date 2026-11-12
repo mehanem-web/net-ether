@@ -16,6 +16,17 @@ into the bug report. That is the only observable on a managed laptop.
 Run twice: once from `dev.bat` (unelevated — chip AMBER, UAC per operation) and
 once from the portable build (UAC once at launch — chip normal, no prompts).
 
+### UI smoke test (7.4.0) — run on every tag, or by hand
+`tests/smoke/smoke.js` opens the real window in a headless browser against a pretend backend
+(`tests/smoke/sim/`, the fake network the tutorial film uses) and clicks through 16 steps:
+boot, IP (zero-padded address, broadcast refusal), help, PING (start, TRCRT, toner), SCAN (sweep,
+row buttons, SAVE SITE), SITES (card, device drawer, note, login add/remove, type chip), DHCP
+(listen, SET LAPTOP IP, a device asking, SERVE), RECON (listen, stop, cards). Any error on the
+page fails the step; a failed step leaves a screenshot in `tests/smoke/shots/`.
+By hand: `npm i --no-save playwright`, `npx playwright install chromium`, `npm run smoke`.
+It proves the screen works — not that Windows applied anything. When the app's window↔main
+calls change, the sim in `tests/smoke/sim/` has to learn the new call.
+
 ### v7.4.0 — audit fixes (dev builds `7.4.0-dev.1` … `dev.3`, signed drafts)
 **Result 2026-11-11 (home PC `dev.bat` + work laptop signed portable, cabled straight to each other):**
 every fix below was seen working except the three marked *work*. Details and evidence per fix:

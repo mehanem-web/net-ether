@@ -73,6 +73,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # UI smoke test (7.4.0): the real window (src/index.html) in a headless browser against a
+      # pretend backend — every tab and the main flows. A broken tab or a dead button shows up
+      # here before anything is built or signed. Non-blocking until it has run green on this
+      # runner once; then set continue-on-error to false.
+      - name: UI smoke test
+        shell: bash
+        continue-on-error: true
+        run: |
+          npm install --no-save playwright
+          npx playwright install chromium
+          node tests/smoke/smoke.js
+
       # ── Code signing (Azure Artifact Signing, formerly Trusted Signing) ──
       # electron-builder's Azure signing path authenticates with the three
       # AZURE_* environment variables below (Azure.Identity EnvironmentCredential)

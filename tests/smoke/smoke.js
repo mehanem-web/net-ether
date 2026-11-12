@@ -1,0 +1,210 @@
+#!/usr/bin/env node
+// NET//ETHER — UI smoke test.
+//
+// Opens the real window (src/index.html) in a headless browser against a pretend backend
+// (tests/smoke/sim — the same fake network the tutorial film is made with), clicks through
+// every tab and the main flows, and fails if anything throws, logs an error, or a screen
+// doesn't show what it should. It runs on a virtual clock, so a 65-second RECON listen
+// takes a moment.
+//
+// It proves the SCREEN works. It cannot prove Windows applied an address or a camera got
+// one — that is what tools/fake-cameras.js, tools/fake-switch.py and real gear are for.
+//
+//   npm i --no-save playwright && npx playwright install chromium     (once)
+//   node tests/smoke/smoke.js            add --shots to keep a picture of every step
+//
+// PW_CHROME=<path to chrome> uses an existing browser instead of Playwright's download.
+
+const path = require('path'), fs = require('fs'), http = require('http');
+const { chromium } = require(process.env.PW_MODULE || 'playwright');
+
+const ROOT = path.resolve(__dirname, '../..');
+const SHOTS = process.argv.includes('--shots');
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.woff': 'font/woff', '.woff2': 'font/woff2', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
+
+const VISIT = [
+  { ip: '10.20.30.1',   mac: '74:83:c2:1e:05:a0', vendor: 'Ubiquiti', hostname: 'udm-gw',        ports: [80, 443, 22],  ms: 1 },
+  { ip: '10.20.30.10',  mac: 'b0:7b:25:33:9e:41', vendor: 'Dell',     hostname: 'SC-ARCHIVER01', ports: [80, 443, 3389], ms: 1, nbt: true },
+  { ip: '10.20.30.20',  mac: '70:0f:6a:c4:12:88', vendor: 'Cisco',    hostname: 'core-sw01',     ports: [22, 443],      ms: 1 },
+  { ip: '10.20.30.24',  mac: 'ac:cc:8e:41:0b:c3', vendor: 'Axis',     hostname: 'axis-accc8e410bc3', ports: [80, 443, 554], ms: 3 },
+  { ip: '10.20.30.57',  mac: '9c:eb:e8:41:7a:02', vendor: 'Realtek',  hostname: 'FIELD-LT07',    ports: [],             ms: 0 },
+  { ip: '10.20.30.100', mac: '00:07:5f:b2:41:0c', vendor: 'Bosch',    hostname: '',              ports: [80, 443, 554], ms: 4 },
+  { ip: '10.20.30.101', mac: '00:07:5f:b2:41:17', vendor: 'Bosch',    hostname: '',              ports: [80, 443, 554], ms: 4 },
+];
+
+(async () => {
+  // a tiny static server — file:// frames can't see each other
+  const srv = http.createServer((q, r) => {
+    const p = path.join(ROOT, decodeURIComponent(q.url.split('?')[0]));
+    if (!p.startsWith(ROOT) || !fs.existsSync(p) || fs.statSync(p).isDirectory()) { r.writeHead(404); return r.end(); }
+    r.writeHead(200, { 'content-type': MIME[path.extname(p)] || 'application/octet-stream' });
+    fs.createReadStream(p).pipe(r);
+  });
+  await new Promise(r => srv.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${srv.address().port}`;
+
+  const browser = await chromium.launch(process.env.PW_CHROME ? { executablePath: process.env.PW_CHROME } : {});
+  const page = await browser.newPage({ viewport: { width: 1000, height: 1200 } });
+  const errors = [];
+  page.on('pageerror', e => errors.push('page error: ' + e.message));
+  page.on('console', m => { if (m.type() === 'error') errors.push('console error: ' + m.text()); });
+  for (const f of ['sim.js', 'sim_ext.js', 'sim_731.js']) await page.addInitScript({ path: path.join(__dirname, 'sim', f) });
+  await page.goto(base + '/tests/smoke/host.html');
+  const app = page.frame({ url: /src\/index\.html/ });
+  if (!app) throw new Error('the app frame did not load');
+
+  // ── helpers ──
+  const tick = async (ms, step = 100) => { for (let t = 0; t < ms; t += step) await app.evaluate(s => window.__vclock.tick(s), step); };
+  const visible = sel => app.evaluate(s => { const e = document.querySelector(s); return !!(e && e.getClientRects().length); }, sel);
+  const text = sel => app.evaluate(s => { const e = document.querySelector(s); return e ? (e.value !== undefined && e.tagName === 'INPUT' ? e.value : e.textContent).trim() : null; }, sel);
+  const count = sel => app.evaluate(s => [...document.querySelectorAll(s)].filter(e => e.getClientRects().length).length, sel);
+  const bodyHas = t => app.evaluate(t => document.body.innerText.toUpperCase().includes(t.toUpperCase()), t);
+  const click = async (sel, t) => { const l = t ? app.locator(sel, { hasText: t }).first() : app.locator(sel).first(); await l.click({ timeout: 5000 }); };
+  const type = async (sel, v) => { const l = app.locator(sel).first(); await l.click({ timeout: 5000 }); await l.fill(v); };
+  const tab = async name => { await click('#tab-' + name); await tick(1200); };
+
+  const results = []; let shotN = 0;
+  const step = async (name, fn) => {
+    const before = errors.length; let fail = null;
+    try { await fn(); } catch (e) { fail = (e && e.message || String(e)).split('\n')[0]; }
+    const newErrs = errors.slice(before);
+    if (!fail && newErrs.length) fail = newErrs[0];
+    results.push({ name, ok: !fail, why: fail, errs: newErrs });
+    console.log((fail ? 'FAIL  ' : 'ok    ') + name + (fail ? '\n        ' + fail : ''));
+    if (SHOTS || fail) { fs.mkdirSync(path.join(__dirname, 'shots'), { recursive: true }); await page.screenshot({ path: path.join(__dirname, 'shots', String(++shotN).padStart(2, '0') + '-' + name.replace(/[^a-z0-9]+/gi, '-').toLowerCase().slice(0, 50) + '.png') }).catch(() => {}); }
+  };
+  const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
+
+  await app.evaluate(v => { window.__world.scanSets.visit = v; window.__world.scanDur = 1500; window.__world.discHold = 600; }, VISIT);
+  await tick(4000);
+
+  // ── the flows ──
+  await step('boot: window drawn, version chip and all six tabs present', async () => {
+    for (const t of ['net', 'tools', 'scan', 'intel', 'dhcp', 'recon']) expect(await visible('#tab-' + t), 'tab missing: ' + t);
+    expect(await bodyHas('NETWORK CARD'), 'IP tab did not draw');
+  });
+
+  await step('IP: the card and its address are shown', async () => {
+    expect(await bodyHas('10.20.30.57'), 'address of the pretend card not shown');
+    expect((await text('#apply-btn') || '').length > 0, 'apply button has no label');
+  });
+
+  await step('IP: a zero-padded address is cleaned when the field is left', async () => {
+    await app.evaluate(() => { const e = document.getElementById('ip'); e.removeAttribute('readonly'); e.focus(); e.value = '010.020.030.255'; e.dispatchEvent(new Event('input', { bubbles: true })); e.blur(); });
+    await tick(300);
+    expect(await text('#ip') === '10.20.30.255', 'ip field reads "' + await text('#ip') + '", wanted 10.20.30.255');
+  });
+
+  await step('IP: the broadcast address is refused in plain words', async () => {
+    expect(await app.evaluate(() => typeof ipHostProblem === 'function' && /BROADCAST/.test(ipHostProblem('10.20.30.255', '255.255.255.0'))), 'ipHostProblem did not flag the broadcast address');
+    expect(await app.evaluate(() => ipHostProblem('10.20.30.50', '255.255.255.0') === ''), 'ipHostProblem flagged a good address');
+    await app.evaluate(() => { const e = document.getElementById('ip'); e.value = '10.20.30.57'; e.dispatchEvent(new Event('input', { bubbles: true })); });
+    await tick(300);
+  });
+
+  await step('help overlay opens and closes', async () => {
+    await app.evaluate(() => openHelp()); await tick(600);
+    expect(await bodyHas('FULL MANUAL'), 'help overlay did not open');
+    await app.evaluate(() => closeHelp()); await tick(400);
+  });
+
+  await step('PING: add the gateway, start, a reply shows in ms', async () => {
+    await tab('tools');
+    await click('.cmd-btn, .mon-quick, span, div', '+ GATEWAY'); await tick(300);
+    await click('#mon-btn-start'); await tick(3500);
+    expect(await count('.monitor-row') >= 1, 'no PING row');
+    expect(await app.evaluate(() => /\d+ms/.test(document.querySelector('.monitor-row').textContent)), 'PING row shows no time');
+  });
+
+  await step('PING: TRCRT and toner buttons on the row respond (inline handlers)', async () => {
+    await click('.monitor-row .trcrt-btn, .monitor-row [onclick^="tracertToggle"]'); await tick(2500);
+    await click('.monitor-row .tone-btn, .monitor-row [onclick^="monToneToggle"]'); await tick(1200);
+    await click('.monitor-row .tone-btn, .monitor-row [onclick^="monToneToggle"]'); await tick(400);
+    await click('#mon-btn-stop, .mon-btn-stop, [onclick^="monStop"]'); await tick(500);
+  });
+
+  await step('SCAN: sweep finds the pretend hosts', async () => {
+    await tab('scan');
+    await type('#scan-base', '10.20.30'); await tick(200);
+    await click('#scan-start-btn'); await tick(9000);
+    const n = await count('[id^="sr-"]');
+    expect(n >= 6, 'scan shows ' + n + ' rows, wanted at least 6');
+    expect(await bodyHas('SC-ARCHIVER01') || await bodyHas('udm-gw'), 'no hostnames on scan rows');
+  });
+
+  await step('SCAN: row buttons (copy IP / MAC) respond', async () => {
+    await click('#sr-10_20_30_24 [onclick^="scanCopy"]'); await tick(300);
+    await click('#sr-10_20_30_24 [data-mac="1"]'); await tick(1500);
+  });
+
+  await step('SCAN → SAVE SITE creates a site', async () => {
+    await click('#scan-save-site-btn'); await tick(600);
+    const inp = await app.evaluate(() => { const e = document.querySelector('#scan-site-name-input, .scan-name-input, input[placeholder*="ite name" i]'); return e && e.getClientRects().length ? (e.id || e.className) : null; });
+    if (inp) { await app.locator('#scan-site-name-input, .scan-name-input, input[placeholder*="ite name" i]').first().fill('SMOKE SITE'); await page.keyboard.press('Enter'); }
+    await tick(1500);
+    expect(await app.evaluate(() => Object.keys(intelDB).length >= 1), 'no site in the site database after SAVE SITE');
+  });
+
+  await step('SITES: the site card opens, devices list', async () => {
+    await tab('intel');
+    expect(await count('.intel-site-card') >= 1, 'no site card');
+    await click('.intel-site-card .intel-site-meta, .intel-site-card'); await tick(1200);
+    expect(await count('.intel-device-row') >= 5, 'device list shows ' + await count('.intel-device-row') + ' rows');
+  });
+
+  await step('SITES: device drawer — note, login add/remove, type chip (inline handlers)', async () => {
+    await click('.intel-device-row'); await tick(600);
+    const ta = app.locator('.intel-device-row + * textarea, .intel-drawer textarea, textarea[oninput^="intelUpdateNote"]').first();
+    await ta.fill('smoke note'); await tick(400);
+    expect(await app.evaluate(() => Object.values(intelDB).some(s => (s.devices || []).some(d => d.notes === 'smoke note' || d.note === 'smoke note'))), 'the note did not reach the site data');
+    await click('[onclick^="intelAddCred"]'); await tick(400);
+    expect(await count('.intel-cred-key') >= 1, 'no login row after + ADD CREDENTIAL');
+    await app.locator('.intel-cred-key').first().fill('admin'); await tick(200);
+    await click('[onclick^="intelRemoveCred"]'); await tick(400);
+    await click('[onclick*="intelCycleType"]'); await tick(400);
+  });
+
+  await step('DHCP: tab starts the engine listening', async () => {
+    await tab('dhcp'); await tick(1500);
+    expect(await bodyHas('LISTENING'), 'DHCP tab does not say LISTENING');
+  });
+
+  await step('DHCP: a device asks, shows as a row, SERVE gives it an address', async () => {
+    await app.evaluate(() => window.__world.dhcpAsk('00:07:5f:b2:41:22', 'Bosch', '')); await tick(1500);
+    expect(await count('.dhcp-row') >= 1, 'no DHCP row for the asking device');
+    // step 2 of the tab: the pretend card is on DHCP with no lease, so give the laptop an address
+    if (await count('.dhcp-chip.set')) {
+      await click('.dhcp-chip.set'); await tick(600);
+      expect(await bodyHas('SET LAPTOP IP'), 'SET LAPTOP IP prompt did not open');
+      await click('#hud-modal .modal-btn', 'SET'); await tick(6000);
+      expect(await count('.dhcp-chip.on') >= 1, 'no laptop address chip after SET LAPTOP IP');
+    }
+    await click('.dhcp-row [data-serve]'); await tick(700);
+    const st = await text('#dhcp-status') || '';
+    await tick(5000);
+    const dbg = await app.evaluate(() => 'card=' + document.getElementById('dhcp-adapter').value + ' chips=' + [...document.querySelectorAll('.dhcp-chip')].map(c => c.textContent.trim()).join(',') + ' first=' + document.getElementById('dcfg-rangeStart').value);
+    const rowTxt = await app.evaluate(() => [...document.querySelectorAll('.dhcp-row')].map(r => r.textContent.replace(/\s+/g, ' ').trim()).join(' || '));
+    expect(/SERVED|OFFERED/i.test(rowTxt), 'row did not become SERVED / OFFERED — rows read: ' + rowTxt.slice(0, 200) + ' · status after click: ' + st + ' · ' + dbg);
+    await app.evaluate(() => hud.dhcp.stopServing()); await tick(800);
+  });
+
+  await step('RECON: listen runs, stops, and draws its result', async () => {
+    await tab('recon');
+    await click('#recon-btn'); await tick(3000);
+    expect((await text('#recon-btn') || '').includes('STOP'), 'RECON button did not switch to STOP');
+    await app.evaluate(() => window.__world.reconPush(ev => { ev.packets = 40; ev.lldp = [{ sysName: 'core-sw01', portId: 'Gi1/0/12', vlan: '30', mgmt: '10.20.30.20' }]; }));
+    await tick(2000);
+    await click('#recon-btn'); await tick(2000);
+    expect((await text('#recon-btn') || '').includes('LISTEN'), 'RECON button did not return to LISTEN');
+    expect(await count('.recon-card') + await count('.recon-empty') >= 1, 'RECON drew nothing');
+  });
+
+  await step('every tab once more — nothing left broken behind', async () => {
+    for (const t of ['net', 'tools', 'scan', 'intel', 'dhcp', 'recon', 'net']) await tab(t);
+  });
+
+  await browser.close(); srv.close();
+  const failed = results.filter(r => !r.ok);
+  console.log(`\n${results.length - failed.length} of ${results.length} steps passed` + (failed.length ? ` — ${failed.length} FAILED` : ''));
+  process.exit(failed.length ? 1 : 0);
+})().catch(e => { console.error('SMOKE TEST CRASHED: ' + (e && e.stack || e)); process.exit(2); });

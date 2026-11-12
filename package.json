@@ -9,6 +9,7 @@
   },
   "scripts": {
     "start": "electron .",
+    "smoke": "node tests/smoke/smoke.js",
     "build": "electron-builder --win nsis portable",
     "build-portable": "electron-builder --win portable"
   },

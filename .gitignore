@@ -7,3 +7,4 @@ dist/
 .env
 CLAUDE.md
 git-update.bat
+tests/smoke/shots/
