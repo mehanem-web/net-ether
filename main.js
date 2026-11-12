@@ -1,4 +1,31 @@
 const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, shell, clipboard, dialog, powerMonitor } = require('electron');
+
+// ── 7.4.0-dev.3: zero-padded addresses ─────────────────────────────────────
+// Some panels (DMP) show addresses as 192.168.010.005. ETHER read that as .10.5; Windows tools
+// read a leading zero as OCTAL — `ping 192.168.010.1` goes to 192.168.8.1 (confirmed 2026-11-11).
+// Every argument coming from the window is cleaned once, here, before any handler sees it:
+// a string that is wholly an address (or address-address, address/prefix, address-N) has the
+// padding removed. Free text that merely contains an address is left alone.
+const PADDED_IP_RE = /^\s*\d{1,3}(\.\d{1,3}){3}(\s*[-\/]\s*(\d{1,3}(\.\d{1,3}){3}|\d{1,3}))?\s*$/;
+function unpadIp(v) {
+  if (typeof v !== 'string' || v.length > 40 || !/(^|[.\-\/\s])0\d/.test(v) || !PADDED_IP_RE.test(v)) return v;
+  return v.replace(/\d+/g, n => n.replace(/^0+(?=\d)/, ''));
+}
+function unpadDeep(v, depth = 0) {
+  if (typeof v === 'string') return unpadIp(v);
+  if (!v || typeof v !== 'object' || depth > 6) return v;
+  if (Array.isArray(v)) return v.map(x => unpadDeep(x, depth + 1));
+  if (Object.getPrototypeOf(v) !== Object.prototype) return v;           // Buffers, Dates, etc. pass through
+  const out = {};
+  for (const k of Object.keys(v)) out[k] = unpadDeep(v[k], depth + 1);
+  return out;
+}
+{
+  const handle = ipcMain.handle.bind(ipcMain), on = ipcMain.on.bind(ipcMain);
+  ipcMain.handle = (ch, fn) => handle(ch, (e, ...a) => fn(e, ...a.map(x => unpadDeep(x))));
+  ipcMain.on     = (ch, fn) => on(ch, (e, ...a) => fn(e, ...a.map(x => unpadDeep(x))));
+}
+
 const path = require('path');
 const fs = require('fs');
 const os = require('os');

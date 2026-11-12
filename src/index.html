@@ -3848,6 +3848,21 @@ html:has(body.resizing) { animation-play-state: paused !important; transition: n
 
 
 <script>
+// ── 7.4.0-dev.3: zero-padded addresses (192.168.010.005, the way DMP panels show them) ──
+// Windows reads a leading zero as octal, so the padding comes off as soon as the field is left
+// or Enter is pressed — what is on screen is what gets used. main.js cleans the same way.
+(function () {
+  const RE = /^\s*\d{1,3}(\.\d{1,3}){3}(\s*[-\/]\s*(\d{1,3}(\.\d{1,3}){3}|\d{1,3}))?\s*$/;
+  const unpad = v => (typeof v !== 'string' || v.length > 40 || !/(^|[.\-\/\s])0\d/.test(v) || !RE.test(v)) ? v : v.replace(/\d+/g, n => n.replace(/^0+(?=\d)/, ''));
+  const fix = el => {
+    if (!el || el.tagName !== 'INPUT' || (el.type && el.type !== 'text' && el.type !== 'search')) return;
+    const nv = unpad(el.value);
+    if (nv !== el.value) { el.value = nv; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }
+  };
+  document.addEventListener('focusout', e => fix(e.target), true);
+  document.addEventListener('keydown', e => { if (e.key === 'Enter') fix(e.target); }, true);
+  window.unpadIp = unpad;
+})();
 // ── CLIPBOARD HELPER ───────────────────────────────────────
 // navigator.clipboard.writeText is unreliable in Electron builds
 // (requires secure context). Route through IPC when available.
