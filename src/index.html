@@ -10315,10 +10315,17 @@ async function intelDeleteDevice(deviceKey, siteId) {
   const dev = intelFindDevice(site, deviceKey);
   const go = await hudModal({
     title: 'REMOVE THIS DEVICE?', tone: 'warn',
-    bodyHtml: `<span class="hl">${escHtml((dev && (dev.hostname || dev.ip || dev.mac)) || deviceKey)}</span> is taken out of this site's record, with its notes and logins. The next scan that sees it adds it back as new.`,
+    bodyHtml: (() => {
+      const nc = dev && Array.isArray(dev.creds) ? dev.creds.filter(c => c && (c.key || c.val)).length : 0, hasNote = !!(dev && dev.notes);
+      const what = [nc ? `<b>${nc} saved login${nc !== 1 ? 's' : ''}</b>` : '', hasNote ? '<b>its notes</b>' : ''].filter(Boolean).join(' and ');
+      return `<span class="hl">${escHtml((dev && (dev.hostname || dev.ip || dev.mac)) || deviceKey)}</span> is taken out of this site's record` +
+        (what ? ` — ${what} go with it (a backup of the site database is written first).` : '.') + ` The next scan that sees it adds it back as new.`;
+    })(),
     buttons: [{ label: 'REMOVE', style: 'danger', value: true }, { label: 'CANCEL', style: 'cancel', value: null }],
   });
   if (!go) return;
+  // a device carrying logins or notes gets the same backup a site delete does
+  if (dev && ((Array.isArray(dev.creds) && dev.creds.length) || dev.notes) && window.hud && hud.intelBackup) { try { await hud.intelBackup('pre-delete'); } catch {} }
   site.devices = (site.devices||[]).filter(d => (d.mac||d.ip) !== deviceKey);
   intelPersist();
   intelRenderDeviceList(site);
