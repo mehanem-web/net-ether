@@ -394,6 +394,21 @@ const VISIT = [
     expect(await text('#scan-base') === '10.20.30', 'the field still reads ' + await text('#scan-base'));
   });
 
+  await step('SCAN: SAVE SITE files the rows under the subnet they were scanned on, and never stores "UNKNOWN" as a vendor', async () => {
+    await tab('scan');
+    await type('#scan-base', '10.20.30'); await type('#scan-range', '1-254'); await tick(200);
+    await click('#scan-start-btn'); await tick(12000);
+    expect(await count('#scan-results .scan-result-row') >= 5, 'setup: ' + await count('#scan-results .scan-result-row') + ' rows');
+    const unk = await app.evaluate(() => { const st = Object.values(intelDB).find(x => x.subnet === '10.20.30'); return (st.devices || []).filter(d => /^unknown$/i.test(d.vendor || '')).map(d => d.ip); });
+    expect(unk.length === 0, 'the word UNKNOWN was stored as the vendor of ' + unk.join(', '));
+    // the base box now says something else — SAVE must still mean the network on screen
+    await type('#scan-base', '10.99.88'); await tick(200);
+    await click('#scan-save-site-btn'); await tick(1500);
+    const stray = await app.evaluate(() => ({ legacy: !!allSites['10.99.88'], intel: Object.values(intelDB).some(x => x.subnet === '10.99.88') }));
+    expect(!stray.legacy && !stray.intel, 'the 10.20.30 rows were saved under 10.99.88 ' + JSON.stringify(stray));
+    await type('#scan-base', '10.20.30');
+  });
+
   await step('PING: a target added while it runs gets a row and is pinged; removing one drops its row', async () => {
     await tab('tools');
     await app.evaluate(() => { try { monStop(); } catch {} monHosts = ['10.20.30.1']; monRenderHostEditor(); monSetInterval(1000); monStart(); });

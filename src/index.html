@@ -7681,6 +7681,38 @@ function toggleScan() {
 }
 
 var scanRangeNow = null;   // 7.4.0-dev.4: the host range of the running / last sweep
+var scanRowsBase = null;   // 7.4.0-dev.4: the subnet the rows on screen came from — SAVE SITE files them under this,
+                           // not under whatever the base box or the site picker says by the time SAVE is pressed
+
+// 7.4.0-dev.4: one reading of the rows for SAVE SITE and for the after-scan comparison.
+// Leaves out this laptop (by the SELF badge, or by its own addresses / MACs when the badge
+// has not landed yet), takes a vendor only when one is known (the word UNKNOWN used to be
+// stored as the vendor and could overwrite a real one), and when a device shows twice —
+// once on the scanned subnet, once by discovery on another address — keeps the on-subnet row.
+function scanRowsAsDevices() {
+  const norm = m => String(m || '').toUpperCase().replace(/[^0-9A-F]/g, '');
+  const selfMacs = new Set((adapterList || []).map(a => norm(a.mac)).filter(Boolean));
+  const selfIps  = new Set((adapterList || []).flatMap(a => (a.ips || []).map(x => x.ip).concat(a.ip ? [a.ip] : [])));
+  const out = [];
+  document.querySelectorAll('#scan-results .scan-result-row').forEach(row => {
+    const ip = (row.querySelector('.scan-result-ip')?.textContent || '').trim();
+    if (!ip) return;
+    const macTxt = (row.querySelector('.scan-result-mac')?.textContent || '').trim();
+    if (row.classList.contains('self') || selfIps.has(ip) || (macTxt && selfMacs.has(norm(macTxt)))) return;
+    const vEl = row.querySelector('.scan-result-vendor');
+    const tc = (row.className.match(/\btype-(\S+)/) || [])[1];
+    out.push({
+      ip, mac: macTxt,
+      vendor: vEl && vEl.classList.contains('known') ? vEl.textContent.trim() : '',
+      hostname: (row.querySelector('.scan-result-host')?.textContent || '').trim(),
+      ports: scanPortMap[ip] ? scanPortMap[ip].slice() : [],
+      type: row.dataset.typeSrc === 'disc' && tc ? (SITE_TYPES.find(t => intelTypeClass(t) === tc) || '') : '',
+      off: row.classList.contains('off-subnet'),
+    });
+  });
+  const onMacs = new Set(out.filter(d => !d.off && d.mac).map(d => norm(d.mac)));
+  return out.filter(d => !(d.off && d.mac && onMacs.has(norm(d.mac))));
+}
 function startScan() {
   let base       = document.getElementById('scan-base').value.trim();
   const rangeRaw = document.getElementById('scan-range').value.trim() || '1-254';
@@ -7709,6 +7741,7 @@ function startScan() {
 
   const total = scanEnd - scanStart + 1;
   scanRangeNow = { start: scanStart, end: scanEnd };
+  scanRowsBase = base;
 
   // RFC1918 sanity check
   const octets = base.split('.').map(Number);
@@ -7839,25 +7872,8 @@ function onScanDone({ aborted }) {
       if (typeof scanRunning !== 'undefined' && scanRunning) return;
       const base = doneBase;
       if (!base || document.getElementById('scan-base').value.trim() !== base) return;
-      // Collect all scan result rows currently in the DOM
-      const rows = [...document.querySelectorAll('#scan-results .scan-result-row')];
-      const results = rows.map(row => {
-        const ipEl     = row.querySelector('.scan-result-ip');
-        const vendorEl = row.querySelector('.scan-result-vendor');
-        const macEl    = row.querySelector('.scan-result-mac');
-        const hostEl   = row.querySelector('.scan-result-host');
-        const ip       = ipEl     ? ipEl.textContent.trim()     : null;
-        const vendor   = vendorEl ? vendorEl.textContent.trim() : '';
-        const mac      = macEl    ? macEl.textContent.trim()    : '';
-        const hostname = hostEl   ? hostEl.textContent.trim()   : '';
-        // v7.1.0: from scanPortMap — badges miss every port that became an action button
-        const ports  = ip && scanPortMap[ip] ? scanPortMap[ip].slice() : [];
-        if (row.classList.contains('self')) return null;   // v7.1.0: the laptop is not a site device
-        // a type the device announced (mDNS/SSDP/ONVIF) travels with the result
-        const tc = (row.className.match(/\btype-(\S+)/) || [])[1];
-        const type = row.dataset.typeSrc === 'disc' && tc ? (SITE_TYPES.find(t => intelTypeClass(t) === tc) || '') : '';
-        return ip ? { ip, vendor, mac, hostname, ports, type } : null;
-      }).filter(Boolean);
+      // 7.4.0-dev.4: one shared reading of the rows (see scanRowsAsDevices)
+      const results = scanRowsAsDevices();
       if (results.length) intelProcessScanResults(base, results, doneRange);
     }, 2500);
   }
@@ -8168,29 +8184,27 @@ async function persistSites() {
 }
 
 function collectCurrentRows() {
-  const devices = [];
-  document.querySelectorAll('#scan-results .scan-result-row').forEach(row => {
-    const ipEl     = row.querySelector('.scan-result-ip');
-    const macEl    = row.querySelector('.scan-result-mac');
-    const vendorEl = row.querySelector('.scan-result-vendor');
-    if (!ipEl) return;
-    devices.push({
-      ip:       ipEl.textContent.trim(),
-      mac:      macEl    ? macEl.textContent.trim().replace(/-/g, ':') : null,
-      vendor:   vendorEl ? (vendorEl.classList.contains('known') ? vendorEl.textContent.trim() : null) : null,
-      lastSeen: Date.now(),
-    });
-  });
-  return devices;
+  const now = Date.now();
+  return scanRowsAsDevices().map(d => ({ ip: d.ip, mac: d.mac ? d.mac.replace(/-/g, ':') : null, vendor: d.vendor || null, lastSeen: now }));
+}
+
+// 7.4.0-dev.4: the subnet SAVE SITE files the rows under — where they were scanned, not what
+// the base box says now. Typing another base (or picking another site) after a scan used to
+// save this network's devices into that other site.
+function scanSaveBase() {
+  const field = document.getElementById('scan-base').value.trim();
+  return scanRowsBase || field;
 }
 
 async function saveSite() {
-  const base = document.getElementById('scan-base').value.trim();
+  const base = scanSaveBase();
   if (!base) { setScanStatus('NO SUBNET TO SAVE', 'warn', 3000); return; }
 
   const devices = collectCurrentRows();
   if (!devices.length) { setScanStatus('NO RESULTS TO SAVE', 'warn', 3000); return; }
 
+  // 7.4.0-dev.4: the site these rows belong to is the one saved for THIS subnet
+  { const own = Object.values(intelDB || {}).find(x => x.subnet === base); scanCurrentSiteId = own ? own.id : null; }
   // If this is a known site, update it directly — no name prompt needed
   if (scanCurrentSiteId && intelDB[scanCurrentSiteId]) {
     await doSaveSite(base, devices, intelDB[scanCurrentSiteId].name);
@@ -8214,7 +8228,7 @@ function scanCancelNamePrompt() {
 }
 
 async function scanConfirmSave() {
-  const base = document.getElementById('scan-base').value.trim();
+  const base = scanSaveBase();
   const nameInput = document.getElementById('scan-name-input');
   const rawName = (nameInput ? nameInput.value.trim().toUpperCase() : '').replace(/[<>&"']/g, '');
   const name = rawName || ('SITE ' + base);
@@ -8225,6 +8239,7 @@ async function scanConfirmSave() {
 }
 
 async function doSaveSite(base, devices, name) {
+  if (scanCurrentSiteId && intelDB[scanCurrentSiteId] && intelDB[scanCurrentSiteId].subnet !== base) scanCurrentSiteId = null;   // 7.4.0-dev.4: never another subnet's site
   const isUpdate = !!(scanCurrentSiteId && intelDB[scanCurrentSiteId]);
 
   // ── Write into allSites (legacy) ──
@@ -8271,7 +8286,11 @@ async function doSaveSite(base, devices, name) {
     const devKey = d.mac
       ? d.mac.toUpperCase().replace(/[:\-]/g, '')
       : 'ip_' + d.ip.replace(/\./g, '_');
-    const exDev = intelSite.devices.find(x => (x.mac || '').replace(/[:\-]/g,'').toUpperCase() === devKey || x.ip === d.ip);
+    // 7.4.0-dev.4: MAC first. A swapped camera (same address, new MAC) used to be folded into
+    // the old entry by address — the old MAC stayed, and every scan after said NEW + MISSING.
+    const exDev = (d.mac && intelSite.devices.find(x => (x.mac || '').replace(/[:\-]/g,'').toUpperCase() === devKey))
+      || intelSite.devices.find(x => x.ip === d.ip && (!x.mac || !d.mac));
+    if (exDev && !exDev.mac && d.mac) exDev.mac = d.mac;
     if (exDev) {
       exDev.ip = d.ip; exDev.lastSeen = d.lastSeen;
       if (d.vendor && !exDev.vendor) exDev.vendor = d.vendor;
@@ -8776,6 +8795,7 @@ function scanOpenWeb(ip, port) {
 
 function clearScanResults() {
   if (scanRunning) return;
+  scanRowsBase = null;
   document.querySelectorAll('#scan-results .scan-result-row').forEach(r => r.remove());
   document.getElementById('scan-results').classList.remove('only-disc');
   document.getElementById('scan-results-header').style.display = 'none';
@@ -8858,6 +8878,7 @@ function applyDiscovery(d) {
   const safeId = d.ip.replace(/\./g, '_');
   let row = document.getElementById('sr-' + safeId);
   if (!row) {
+    if (!scanRowsBase) { const b = (document.getElementById('scan-base')?.value || '').trim(); if (/^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(b)) scanRowsBase = b.split('.').map(o => String(parseInt(o, 10))).join('.'); }
     appendScanResult(d.ip, 0, false, d.mac || '', d.vendor || '');
     row = document.getElementById('sr-' + safeId);
     if (!row) return;
