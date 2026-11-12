@@ -2920,7 +2920,9 @@ ipcMain.handle('arp-verify', async (e, { ips } = {}) => {
   if (!list.length) return out;
   await Promise.all(list.map(async ip => {
     await execAsync(`arp -d ${ip}`, { timeout: 3000 }).catch(() => {});
-    await execAsync(`ping -n 1 -w 600 ${ip}`, { timeout: 6000 }).catch(() => {});
+    // two tries a second apart: some devices only answer the repeated address lookup, a second
+    // after the first (three Bosch cameras on the bench, 2026-11-12) — one quick try called them gone
+    await execAsync(`ping -n 2 -w 1000 ${ip}`, { timeout: 8000 }).catch(() => {});
   }));
   const arpOut = await execAsync('arp -a', { timeout: 5000 }).catch(() => null);
   if (arpOut === null) return out;                       // could not read the table — say nothing, keep every row
