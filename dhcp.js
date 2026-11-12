@@ -170,6 +170,25 @@ module.exports = function initDhcp(deps) {
     return null;
   }
   const replyDest = () => serveCfg ? bcastFor(serveCfg.adapterIp, cardMask(serveCfg.adapterIp) || serveCfg.subnet) : '255.255.255.255';
+  // 7.4.0-dev.7 field lesson (2026-11-12, three Bosch cameras on a bench switch): they kept
+  // asking and never took an offer sent to the subnet broadcast (10.99.99.255) — on 7.3.1 too.
+  // A device with no address yet has no subnet, and a strict one only takes 255.255.255.255,
+  // which is what every ordinary DHCP server sends. The 7.2.1 problem with that address was
+  // that Windows picks the card by the default route — but only for a socket on 0.0.0.0.
+  // Since dev.4 the socket is bound to the laptop's address on the serving card, and a bound
+  // socket's 255.255.255.255 leaves by that card. So: bound to the serving address → send to
+  // 255.255.255.255 AND the subnet broadcast (a duplicate is harmless; the second covers a
+  // device that only takes its own subnet's). Not bound → subnet broadcast only, as before,
+  // so nothing can leave by another card.
+  function replyDests() {
+    const directed = replyDest();
+    const bound = !!(serveCfg && sockAddr && sockAddr !== '0.0.0.0' && sockAddr === serveCfg.adapterIp);
+    return bound && directed !== '255.255.255.255' ? ['255.255.255.255', directed] : [directed];
+  }
+  function sendReply(buf) {
+    if (!sock) return;
+    for (const dest of replyDests()) { try { sock.send(buf, 0, buf.length, 68, dest); } catch {} }
+  }
   // The probe's source address and its mask — from the serve/preview config when it's that
   // address, otherwise from the live adapter list.
   function probeDest(srcIp) {
@@ -782,10 +801,10 @@ module.exports = function initDhcp(deps) {
       if (!isServing() || !allowedToServe(mac)) return;      // 7.4: STOP pressed while the probe was out — say nothing
       if (!chosen) { log('Pool exhausted — cannot offer', 'err'); return; }
       d.state = 'offered'; d.ip = chosen; d.offerExpires = Date.now() + OFFER_HOLD_MS;
-      const dest = replyDest();
+      const dest = replyDests().join(' + ');
       log(`DISCOVER from ${mac} → offering ${chosen}  (via ${dest})`);
       const offer = buildDhcpPacket(2, probing[mac].xid, macToChaddr(mac), chosen, serveCfg);
-      sock && sock.send(offer, 0, offer.length, 68, dest);
+      sendReply(offer);
       lastServeAction = Date.now();
     } finally { delete probing[mac]; delete pendingPick[mac]; }
   }
@@ -819,7 +838,7 @@ module.exports = function initDhcp(deps) {
       const wrongNet = requestedIp && isValidIp(requestedIp) && ((ipToNum(requestedIp) & maskNum) !== (ipToNum(serveCfg.adapterIp) & maskNum));
       if (ours || wrongNet) {
         const nak = buildNakPacket(d.lastXid, chaddr, serveCfg.adapterIp);
-        sock && sock.send(nak, 0, nak.length, 68, replyDest());
+        sendReply(nak);
         log(`REQUEST from ${mac} → NAK${requestedIp ? ' (' + requestedIp + (wrongNet ? ' is not on our subnet' : ' unavailable') + ')' : ''}`, 'warn');
       } else {
         log(`REQUEST from ${mac} for ${requestedIp || '?'} — not ours, staying silent`, 'info');
@@ -833,7 +852,7 @@ module.exports = function initDhcp(deps) {
     rememberIp(mac, ip);
     log(`REQUEST from ${mac} → ACK ${ip}  [${d.vendor}]${d.hostname ? '  ' + d.hostname : ''}`, 'ok');
     const ack = buildDhcpPacket(5, d.lastXid, chaddr, ip, serveCfg);
-    sock && sock.send(ack, 0, ack.length, 68, replyDest());
+    sendReply(ack);
     lastServeAction = Date.now();
     send('dhcp-lease', { mac, ip, vendor: d.vendor, hostname: d.hostname, expires: d.expires, time: new Date().toLocaleTimeString() });
     announceTray();
