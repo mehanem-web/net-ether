@@ -754,7 +754,7 @@ module.exports = function initDhcp(deps) {
         if (d.state === 'offered') { d.state = 'asking'; d.ip = null; d.offerExpires = null; }
         emitDevices(); return;
       }
-      if (isServing() && allowedToServe(mac)) await ackRequest(mac, chaddr, requestedIp);
+      if (isServing() && allowedToServe(mac)) await ackRequest(mac, chaddr, requestedIp, rinfo && rinfo.address);
       emitDevices();
     } else if (msgType === 4) {                                // DECLINE
       if (isServing() && (!serverIdent || (serveCfg && serverIdent === serveCfg.adapterIp))) {
@@ -809,7 +809,7 @@ module.exports = function initDhcp(deps) {
     } finally { delete probing[mac]; delete pendingPick[mac]; }
   }
 
-  async function ackRequest(mac, chaddr, requestedIp) {
+  async function ackRequest(mac, chaddr, requestedIp, srcIp) {
     const d = devices[mac];
     if (!d) return;
     let ip = null;
@@ -819,11 +819,22 @@ module.exports = function initDhcp(deps) {
     if (renewal) ip = d.ip;
     else {
       const candidates = candidateList(mac, requestedIp);
-      if (requestedIp && candidates[0] === requestedIp) {
+      // 7.4.0-dev.8 field lesson (2026-11-12, RELEASE ALL then SERVE EVERYONE with four cameras
+      // still holding their addresses): each camera asked to keep its address, the probe found
+      // that address "in use" — by the camera asking — so it was quarantined and the camera was
+      // left unanswered until its lease ran out, then given a different address. A request that
+      // arrives FROM the address it asks for is the device renewing what it already uses: no
+      // probe, take the lease up again. (heldByOther / reservations are already ruled out by
+      // candidateList putting the address first.)
+      if (requestedIp && candidates[0] === requestedIp && srcIp === requestedIp) {
+        ip = requestedIp;
+        quarantinedIps.delete(requestedIp); delete probeCache[requestedIp];
+        log(`${mac} already uses ${requestedIp} — lease taken up again`);
+      } else if (requestedIp && candidates[0] === requestedIp) {
         const cached = probeCache[requestedIp];
         const alive = (cached && (Date.now() - cached.ts) < PROBE_CACHE_MS) ? !cached.free : await probeIp(requestedIp);
         if (alive === false) ip = requestedIp;
-        else if (alive) { quarantinedIps.add(requestedIp); log(`Probe: ${requestedIp} is in use — NAK to ${mac}`, 'warn'); }
+        else if (alive) { quarantinedIps.add(requestedIp); log(`Probe: ${requestedIp} answers already — not giving it to ${mac}`, 'warn'); }   // 7.4.0-dev.8: it said "NAK to" whether or not a NAK followed
         // null = the probe couldn't finish (v7.3.0) — don't hand it out on a guess; the device asks again
       }
     }
