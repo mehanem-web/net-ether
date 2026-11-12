@@ -3432,7 +3432,7 @@ html:has(body.resizing) { animation-play-state: paused !important; transition: n
       </div>
       <div class="dhcp-head">
         <select class="dhcp-select" id="dhcp-adapter" title="The network card the device's cable is plugged into"><option value="">— pick the card —</option></select>
-        <span class="adapter-refresh-btn" onclick="dhcpRefreshAdapters()" title="Refresh the card list">⟳</span>
+        <span class="adapter-refresh-btn" onclick="dhcpRefreshAdapters(true)" title="Refresh the card list">⟳</span>
         <span class="dhcp-link" id="dhcp-link"><span class="dot"></span><span id="dhcp-link-txt">NO LINK</span></span>
       </div>
       <div class="dhcp-card-sub" id="dhcp-card-sub"></div>
@@ -10727,10 +10727,16 @@ function dhcpSyncAdapterFromEther() {
   const etherName = (document.getElementById('adapter') || {}).value;
   if (etherName && [...sel.options].some(o => o.value === etherName)) { sel.value = etherName; dhcpAdapterChanged(); }
 }
-async function dhcpRefreshAdapters() {
+async function dhcpRefreshAdapters(byHand) {
   if (!(window.hud && hud.dhcp)) return;
-  try { dhcpFillAdapterSelect(await hud.dhcp.refreshAdapters()); } catch {}
+  let list = null;
+  try { list = await hud.dhcp.refreshAdapters(); dhcpFillAdapterSelect(list); } catch {}
   if (dEl('dhcp-adapter')?.value && !dhcpIsServing()) dhcpAdapterChanged(true);   // v7.1.0: ⟳ also re-runs the pick-and-fill
+  // 7.4.0-dev.4: the ⟳ button says what it found — with nothing new it used to look dead
+  if (byHand === true) {
+    const n = (list || []).length, up = (list || []).filter(a => a.connected).length;
+    setDhcpStatus(list ? `CARD LIST REFRESHED — ${n} CARD${n !== 1 ? 'S' : ''}, ${up} WITH LINK` + (n ? '' : ' · IS THE ADAPTER PLUGGED IN?') : 'COULD NOT READ THE CARD LIST', list ? 'ok' : 'err', 4000);
+  }
 }
 // v7.2.0: no "which address?" modal any more — step ②'s chips are the choice. Keep the
 // chosen laptop IP if it's still on the card (keepIfOnCard), else take the primary.

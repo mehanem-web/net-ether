@@ -208,7 +208,10 @@ module.exports = function initDhcp(deps) {
   //    keeps link state live between full refreshes ─────────────────────────
   function lightAdapters() {
     const ifaces = os.networkInterfaces();
-    const names = knownAdapters.length ? knownAdapters.map(a => a.name) : Object.keys(ifaces);
+    // 7.4.0-dev.4: with no wired card at all the fallback listed everything Windows has, including
+    // "Loopback Pseudo-Interface 1". The loopback is never a card a cable goes into.
+    const names = knownAdapters.length ? knownAdapters.map(a => a.name)
+      : Object.keys(ifaces).filter(n => !/loopback/i.test(n) && (ifaces[n] || []).some(x => !x.internal));
     return names.map(name => {
       const addrs = ifaces[name] || [];
       const v4s = addrs.filter(a => a.family === 'IPv4' && !a.internal);
