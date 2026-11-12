@@ -2857,14 +2857,21 @@ ipcMain.on('tracert-start', async (e, { host }) => {
     // v7.3.0: execFile, not exec — killing the cmd.exe wrapper left tracert itself running
     const proc = execFile('tracert', ['-d', '-h', '20', '-w', '800', safeHost], { timeout: 60000, windowsHide: true });
     tracertProc = proc;
+    // 7.4.0-dev.4: whole lines only. tracert writes a hop a piece at a time (the number, then
+    // each of the three times as it comes back, then the address), and each piece arrived here
+    // as its own chunk — so the panel showed "7", "10 ms", "9 ms", "13 ms  141.101.74.111" on
+    // separate lines, and a hop that timed out as just its number.
+    let pending = '';
     proc.stdout.on('data', chunk => {
       if (proc._quiet) return;
       if (e.sender.isDestroyed()) { proc.kill(); if (tracertProc === proc) tracertProc = null; return; }
-      const lines = chunk.toString().split('\n');
+      pending += chunk.toString();
+      const lines = pending.split('\n');
+      pending = lines.pop();                       // the unfinished line waits for the rest
       lines.forEach(line => {
         const m = line.match(/^\s*(\d+)\s+([\s\S]+?)\s*$/);
         if (!m) return;
-        e.sender.send('tracert-hop', { raw: m[0].trim() });
+        e.sender.send('tracert-hop', { raw: m[0].trim().replace(/\s{2,}/g, '  ') });
       });
     });
     const finished = () => {

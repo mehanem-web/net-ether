@@ -390,6 +390,28 @@ const VISIT = [
     expect(await text('#scan-base') === '10.20.30', 'the field still reads ' + await text('#scan-base'));
   });
 
+  await step('PING: a target added while it runs gets a row and is pinged; removing one drops its row', async () => {
+    await tab('tools');
+    await app.evaluate(() => { try { monStop(); } catch {} monHosts = ['10.20.30.1']; monRenderHostEditor(); monSetInterval(1000); monStart(); });
+    await tick(2500);
+    expect(await count('.monitor-row') === 1, 'setup: ' + await count('.monitor-row') + ' rows');
+    await click('.add-host-btn'); await tick(200);                     // while running
+    const inp = app.locator('#host-editor .host-input').nth(1);
+    await inp.fill('10.20.30.10'); await page.keyboard.press('Enter'); await tick(4000);
+    expect(await count('.monitor-row') === 2, 'after adding a target while running there are ' + await count('.monitor-row') + ' rows');
+    expect(await app.evaluate(() => /\d+ms/.test(document.getElementById('mr-' + safeid('10.20.30.10')).textContent)), 'the added target shows no reply time');
+    await click('#host-editor .host-remove-btn'); await tick(2500);     // remove the first, still running
+    const ids = await app.evaluate(() => [...document.querySelectorAll('.monitor-row')].map(r => r.id));
+    expect(ids.length === 1 && ids[0] === await app.evaluate(() => 'mr-' + safeid('10.20.30.10')), 'rows after removing the first target: ' + ids.join(', '));
+    // and the paused case: add while paused, resume
+    await app.evaluate(() => monPause()); await tick(300);
+    await click('.add-host-btn'); await tick(200);
+    await app.locator('#host-editor .host-input').nth(1).fill('10.20.30.20'); await page.keyboard.press('Tab'); await tick(300);
+    await app.evaluate(() => monResume()); await tick(3500);
+    expect(await count('.monitor-row') === 2, 'after adding a target while paused and resuming there are ' + await count('.monitor-row') + ' rows');
+    await app.evaluate(() => monStop()); await tick(500);
+  });
+
   await browser.close(); srv.close();
   const failed = results.filter(r => !r.ok);
   console.log(`\n${results.length - failed.length} of ${results.length} steps passed` + (failed.length ? ` — ${failed.length} FAILED` : ''));

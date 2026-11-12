@@ -6627,7 +6627,10 @@ let monUptimeTicker = null;
 function monRenderHostEditor() {
   const el = document.getElementById('host-editor');
   if (!el) return;
-  const locked = monState === 'running';
+  // 7.4.0-dev.4: targets can be added, changed and removed while PING runs. They used to lock
+  // (you had to PAUSE), and a target added while paused was pinged and counted after RESUME
+  // but never got a row. While running, a field is taken when you leave it or press Enter —
+  // not on every keystroke, or half-typed addresses would be pinged.
   el.innerHTML = '';
   monHosts.forEach((h, i) => {
     const row = document.createElement('div');
@@ -6635,10 +6638,8 @@ function monRenderHostEditor() {
     row.innerHTML = `
       <input class="host-input" type="text" value="${escHtml(h)}"
         placeholder="IP, hostname or IP:port"
-        ${locked ? 'disabled' : ''}
-        oninput="monHosts[${i}]=this.value.trim()">
+        oninput="monHostTyped(${i}, this.value)" onchange="monHostCommitted(${i}, this.value)">
       <div class="host-remove-btn" onclick="monRemoveHost(${i})"
-        ${locked ? 'style="opacity:.2;pointer-events:none"' : ''}
         title="Remove">✕</div>`;
     el.appendChild(row);
   });
@@ -6646,10 +6647,30 @@ function monRenderHostEditor() {
     const add = document.createElement('div');
     add.className = 'add-host-btn';
     add.textContent = '+ ADD TARGET';
-    if (locked) { add.style.opacity = '0.2'; add.style.pointerEvents = 'none'; }
-    else add.onclick = monAddHost;
+    add.onclick = monAddHost;
     el.appendChild(add);
   }
+}
+function monHostTyped(i, v) { if (monState !== 'running') monHosts[i] = String(v).trim(); }
+function monHostCommitted(i, v) {
+  const nv = String(v).trim();
+  if (monHosts[i] === nv && monState !== 'running') return;
+  monHosts[i] = nv;
+  if (monState !== 'stopped') monSyncRows();
+}
+// The table follows the target list: rows for new targets, none for removed ones; history kept.
+function monSyncRows() {
+  const active = monActiveHosts();
+  const shown = [...document.querySelectorAll('#monitor-rows .monitor-row')].map(r => r.id);
+  const want = active.map(h => 'mr-' + safeid(h));
+  if (shown.length === want.length && shown.every((id, k) => id === want[k])) return;
+  if (tracertActiveHost) tracertClose();
+  if (monToneHost && !active.includes(monToneHost)) { monToneSilence(); monToneHost = null; const bb = document.getElementById('mon-btn-blink'); if (bb) bb.style.display = 'none'; }
+  Object.keys(monHostData).forEach(h => { if (!active.includes(h)) delete monHostData[h]; });
+  if (!active.length) { monStop(); monSetStatus('NO TARGETS LEFT — STOPPED', 'warn'); return; }
+  monBuildRows();
+  monUpdateCounter();
+  autoResize();
 }
 
 function monAddHost() {
@@ -6661,9 +6682,10 @@ function monAddHost() {
 }
 
 function monRemoveHost(i) {
-  if (monHosts.length <= 1) { monHosts[0] = ''; monRenderHostEditor(); return; }
+  if (monHosts.length <= 1) { monHosts[0] = ''; monRenderHostEditor(); if (monState !== 'stopped') monSyncRows(); return; }
   monHosts.splice(i, 1);
   monRenderHostEditor();
+  if (monState !== 'stopped') monSyncRows();
 }
 
 function monActiveHosts() {
@@ -7087,10 +7109,12 @@ function monPause() {
 
 function monResume() {
   document.querySelectorAll('#host-editor .host-input').forEach((el, i) => { if (i < monHosts.length) monHosts[i] = el.value.trim(); });
+  if (!monActiveHosts().length) { monStop(); monSetStatus('ADD AT LEAST ONE TARGET', 'err'); return; }
   monState = 'running';
   monStartTicker();
   monUpdateControls();
   monRenderHostEditor();
+  monSyncRows();           // 7.4.0-dev.4: targets edited while paused get their rows
   monSetStatus('RESUMED', 'ok');
   monRunCycle();
 }
