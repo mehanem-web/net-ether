@@ -36,6 +36,31 @@ const origExec     = cp.exec;
 const origExecFile = cp.execFile;
 const origSpawn    = cp.spawn;
 
+// 7.4.0-dev.3: Windows system tools are launched by full path. A bare name ("netsh", "arp -a")
+// is looked up in the current folder before System32 — both by cmd.exe and by Node's own
+// launcher — and ETHER runs elevated, often as a portable from a folder any user can write to.
+// A file called netsh.exe dropped beside it would have run as administrator.
+const SYSROOT = process.env.SystemRoot || process.env.windir || 'C:\\Windows';
+const SYS32   = path.win32.join(SYSROOT, 'System32');
+const SYS_TOOLS = new Set(['netsh', 'ping', 'arp', 'ipconfig', 'tracert', 'tasklist', 'taskkill', 'netstat', 'reg', 'whoami',
+  'route', 'getmac', 'nslookup', 'nbtstat', 'cmd', 'mstsc', 'sc', 'findstr', 'pnputil', 'pathping']);
+function sysPath(file, platform) {
+  if ((platform || process.platform) !== 'win32') return file;
+  const f = String(file || '');
+  if (!f || /[\\/:]/.test(f)) return file;                       // already a path — leave it alone
+  const name = f.replace(/\.exe$/i, '').toLowerCase();
+  if (name === 'powershell') return path.win32.join(SYS32, 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  return SYS_TOOLS.has(name) ? path.win32.join(SYS32, name + '.exe') : file;
+}
+// The same for a command line: only the first word is the program.
+function sysCmd(cmd, platform) {
+  if ((platform || process.platform) !== 'win32') return cmd;
+  const m = /^(\s*)([A-Za-z0-9_.-]+)(?=\s|$)/.exec(String(cmd || ''));
+  if (!m) return cmd;
+  const full = sysPath(m[2], platform);
+  return full === m[2] ? cmd : m[1] + '"' + full + '"' + String(cmd).slice(m[0].length);
+}
+
 function argDelay() {
   const a = process.argv.find(x => /^--spawn-delay=\d+$/.test(x));
   return a ? parseInt(a.split('=')[1], 10) : 0;
@@ -95,6 +120,7 @@ function viaExec(fn) { inExec = true; try { return fn(); } finally { inExec = fa
 cp.exec = function patchedExec(cmd, opts, cb) {
   if (typeof opts === 'function') { cb = opts; opts = undefined; }
   const exe = exeOf(cmd);
+  cmd = sysCmd(cmd);
   if (typeof cb !== 'function') return watchChild(exe, viaExec(() => origExec.call(cp, cmd, opts)));
   const go = () => viaExec(() => origExec.call(cp, cmd, opts, wrapCallback(exe, cb)));
   return DELAY_MS ? delayedStub(go) : go();
@@ -106,6 +132,7 @@ cp.execFile = function patchedExecFile(file, args, opts, cb) {
   if (args && !Array.isArray(args) && typeof args === 'object') { opts = args; args = undefined; }
   // execFile gets a path, not a command line — "C:\\Program Files\\…\\tshark.exe" must not split at the space
   const exe = path.basename(String(file || '')).replace(/\.exe$/i, '').toLowerCase() || '?';
+  file = sysPath(file);
   if (typeof cb !== 'function') return watchChild(exe, origExecFile.call(cp, file, args, opts));
   const go = () => origExecFile.call(cp, file, args, opts, wrapCallback(exe, cb));
   return DELAY_MS ? delayedStub(go) : go();
@@ -130,7 +157,7 @@ function workerKill(reason) {
 function workerStart() {
   if (ps || S.worker.disabled) return !!ps;
   try {
-    ps = origSpawn.call(cp, 'powershell.exe', ['-NoProfile', '-NonInteractive', '-NoLogo', '-Command', '-'],
+    ps = origSpawn.call(cp, sysPath('powershell.exe'), ['-NoProfile', '-NonInteractive', '-NoLogo', '-Command', '-'],
       { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
   } catch { ps = null; countDeath(); return false; }
   const child = ps;                          // handlers act only on THIS worker — a late exit from a killed one must not touch its successor
@@ -223,7 +250,7 @@ function stopWorker() { workerKill('app quit'); }
 function selfCheck() {
   return new Promise(resolve => {
     const t0 = Date.now();
-    origExecFile.call(cp, 'cmd.exe', ['/c', 'ver'], { timeout: 15000, windowsHide: true }, err => {
+    origExecFile.call(cp, sysPath('cmd.exe'), ['/c', 'ver'], { timeout: 15000, windowsHide: true }, err => {
       S.selfCheckMs = Date.now() - t0; S.selfCheckTs = Date.now(); S.selfCheckErr = err ? err.message : null;
       resolve(S.selfCheckMs);
     });
@@ -249,4 +276,4 @@ function stats() {
   };
 }
 
-module.exports = { psRun, warmWorker, stopWorker, selfCheck, stats, DELAY_MS };
+module.exports = { psRun, warmWorker, stopWorker, selfCheck, stats, DELAY_MS, sysPath, sysCmd };

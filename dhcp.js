@@ -158,7 +158,15 @@ module.exports = function initDhcp(deps) {
     if (m >= 0xfffffffe) return '255.255.255.255';
     return numToIp(((ipToNum(ip) & m) | (~m >>> 0)) >>> 0);
   }
-  const replyDest = () => serveCfg ? bcastFor(serveCfg.adapterIp, serveCfg.subnet) : '255.255.255.255';
+  // 7.4.0-dev.3: the reply goes out on the CARD's network, so it is worked out from the card's
+  // real mask — not the MASK box, which is what devices are told. Home test 2026-11-11: card on
+  // 10.99.99.1/24, form on /16 → offers went to 10.99.255.255, which is not on the cable at all
+  // (Windows sent them toward the Wi-Fi router) and every row sat on OFFERED.
+  function cardMask(ip) {
+    for (const a of lightAdapters()) for (const x of (a.ips || [])) if (x.ip === ip && x.netmask && isValidSubnet(x.netmask)) return x.netmask;
+    return null;
+  }
+  const replyDest = () => serveCfg ? bcastFor(serveCfg.adapterIp, cardMask(serveCfg.adapterIp) || serveCfg.subnet) : '255.255.255.255';
   // The probe's source address and its mask — from the serve/preview config when it's that
   // address, otherwise from the live adapter list.
   function probeDest(srcIp) {
@@ -371,7 +379,19 @@ module.exports = function initDhcp(deps) {
     const a = lightAdapters().find(x => x.name === name);
     if (!a) return { ok: true };
     const ips = (a.ips || []).map(x => x.ip);
-    if (ips.includes(cfg.adapterIp)) return { ok: true };
+    if (ips.includes(cfg.adapterIp)) {
+      // 7.4.0-dev.3: the pool must sit on the card's own network. validateCfg only checks it
+      // against the MASK box, so a wider mask typed there let a pool through that the laptop
+      // could not reach (and could not answer — see replyDest).
+      const cm = cardMask(cfg.adapterIp);
+      if (cm) {
+        const m = ipToNum(cm), net = ipToNum(cfg.adapterIp) & m;
+        const off = [cfg.rangeStart, cfg.rangeEnd].some(x => isValidIp(x) && ((ipToNum(x) & m) !== net));
+        if (off) return { ok: false, code: 'POOL_OFF_CARD',
+          msg: `First/last ${cfg.rangeStart} – ${cfg.rangeEnd} are not on this card's network (${name} is ${cfg.adapterIp}, mask ${cm}) — the laptop could not reach those devices. Set MASK to ${cm} and pick first/last inside it` };
+      }
+      return { ok: true };
+    }
     return { ok: false, code: 'NOT_ON_CARD',
       msg: `Laptop IP ${cfg.adapterIp} is not an address on ${name}${ips.length ? ' (it has ' + ips.join(', ') + ')' : ''} — settings from another job. Refill from the card, or add ${cfg.adapterIp} as an alias` };
   }
@@ -396,6 +416,14 @@ module.exports = function initDhcp(deps) {
     if (gateway && gateway.trim() && ((ipToNum(gateway.trim()) & maskNum) !== serverNet))
       return { ok: false, msg: 'Gateway is not on the laptop IP subnet' };
     if (ipToNum(rangeEnd) - ipToNum(rangeStart) + 1 > 253) return { ok: false, msg: 'First–last range too large (max 253 addresses)' };
+    // 7.4.0-dev.3: settings that passed and then could not work
+    if (maskNum === 0 || maskNum >= 0xfffffffe) return { ok: false, msg: 'Mask leaves no room for devices — use 255.255.255.252 or wider' };
+    {
+      const bcastNum = (serverNet | (~maskNum >>> 0)) >>> 0, gw = gateway && gateway.trim() ? ipToNum(gateway.trim()) : null;
+      let usable = 0;
+      for (let n = ipToNum(rangeStart), e = ipToNum(rangeEnd); n <= e; n++) if (n !== ipToNum(adapterIp) && n !== serverNet && n !== bcastNum && n !== gw) usable++;
+      if (!usable) return { ok: false, msg: 'First–last holds no address a device can use (only the laptop, gateway, network or broadcast address)' };
+    }
 
     if (cfg.ntp && cfg.ntp.trim() && !isValidIp(cfg.ntp.trim())) return { ok: false, msg: 'NTP server: invalid IP address' };
     if (cfg.opt43 && cfg.opt43.trim()) {
@@ -471,6 +499,10 @@ module.exports = function initDhcp(deps) {
         if (newMode === 'serve-all')      log(`SERVING ALL on ${serveCfg.adapterIp} — pool ${serveCfg.rangeStart}–${serveCfg.rangeEnd}`, 'ok');
         if (newMode === 'serve-targeted') log(`SERVING TARGETS on ${serveCfg.adapterIp} — pool ${serveCfg.rangeStart}–${serveCfg.rangeEnd}`, 'ok');
         if (newMode === 'listen' && (old === 'serve-all' || old === 'serve-targeted')) log('Serving stopped — still listening');
+        if ((newMode === 'serve-all' || newMode === 'serve-targeted') && old !== newMode) {
+          const cm = cardMask(serveCfg.adapterIp);
+          if (cm && cm !== serveCfg.subnet) log(`Note — devices are told mask ${serveCfg.subnet}; this card is on ${cm}. Answers go out on the card's network (${replyDest()}).`, 'warn');
+        }
         if (old !== newMode) diagAdd({ kind: 'app', tag: 'dhcp', ok: true, note: `DHCP engine ${newMode}${serveCfg && newMode !== 'listen' ? ` on ${serveCfg.adapterName || serveCfg.adapterIp} pool ${serveCfg.rangeStart}–${serveCfg.rangeEnd}` : ''}` });
         lastServeAction = Date.now();
         startSweeper(); startPoller();
@@ -753,6 +785,7 @@ module.exports = function initDhcp(deps) {
     const netAddr = numToIp((ipToNum(cfg.adapterIp) & maskNum) >>> 0);
     const bcast   = numToIp(((ipToNum(cfg.adapterIp) & maskNum) | (~maskNum >>> 0)) >>> 0);
     const used = new Set([cfg.adapterIp, netAddr, bcast]);
+    if (cfg.gateway && cfg.gateway !== cfg.adapterIp) used.add(cfg.gateway);   // 7.4.0-dev.3: never hand a device the gateway's address
     if (cfg.gateway) used.add(cfg.gateway);
     if (cfg.dns)     used.add(cfg.dns);
     for (const q of quarantinedIps) used.add(q);
@@ -829,6 +862,7 @@ module.exports = function initDhcp(deps) {
     const netAddr = numToIp((ipToNum(cfg.adapterIp) & maskNum) >>> 0);
     const bcast   = numToIp(((ipToNum(cfg.adapterIp) & maskNum) | (~maskNum >>> 0)) >>> 0);
     const used = new Set([cfg.adapterIp, netAddr, bcast]);
+    if (cfg.gateway && cfg.gateway !== cfg.adapterIp) used.add(cfg.gateway);   // 7.4.0-dev.3: never hand a device the gateway's address
     if (cfg.gateway) used.add(cfg.gateway);
     if (cfg.dns)     used.add(cfg.dns);
     for (const q of quarantinedIps) used.add(q);

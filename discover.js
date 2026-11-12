@@ -510,7 +510,7 @@ module.exports = function initDiscover(deps) {
             case 'stp.root.hw': o.stpRoot = val.toLowerCase(); break;
             case 'stp.bridge.hw': o.stpBridge = val.toLowerCase(); break;
             case 'stp.pvst.origvlan': o.stpVlan = val; break;
-            case 'stp.protocol': o.stpProto = val; break;
+            case 'stp.version': o.stpProto = val; break;   // 7.4.0-dev.3: was stp.protocol — the protocol ID, always 0, so RSTP/MSTP always read as plain STP
             case 'nbns.name': o.nbName = o.nbName || val; break;
             case 'nbns.flags.opcode': o.nbOpcode = o.nbOpcode || val; break;
             case 'nbns.flags.response': o.nbResponse = o.nbResponse || val; break;
@@ -629,6 +629,8 @@ module.exports = function initDiscover(deps) {
         detail: nets.slice(1).length ? 'also: ' + nets.slice(1).map(([k, h]) => `${k}.x (${h.length})`).join(', ') : 'one subnet heard' });
       // free-address suggestion in the dominant subnet
       const seen = new Set([...hosts, ...(ev.arpAsked || []).filter(ip => ip.startsWith(top + '.'))]);
+      // 7.4.0-dev.3: an address clients are sent to (DHCP server, gateway, DNS, time server) is in use even if it never spoke
+      for (const ip of [...(ev.dhcp.servers || []), ...(ev.dhcp.routers || []), ...(ev.dhcp.dns || []), ...(ev.ntp || [])]) seen.add(ip);
       const mask = ev.dhcp.masks && ev.dhcp.masks[0] && /^255\.255\.255\./.test(ev.dhcp.masks[0]) ? ev.dhcp.masks[0] : '255.255.255.0';
       let pick = null;
       for (const last of [250, 249, 248, 247, 246, 245, 244, 243, 242, 241, 240, 239, 238, 237, 236, 235, 234, 233, 232, 231, 230, 229, 228, 227, 226, 225, 224, 223, 222, 221, 220]) {
