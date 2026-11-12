@@ -3879,7 +3879,8 @@ async function hudCopy(text) {
 // ── ONLINE VENDOR LOOKUP ───────────────────────────────────
 // When OUI CSV returns nothing, queue a macvendors.com lookup.
 // Deduped per session — same MAC prefix never looked up twice.
-const onlineVendorQueued  = new Set();  // MAC prefixes already queued this session
+const onlineVendorAnswers = new Map();  // 7.4.0-dev.4: maker prefix → { vendor, source } answered this session
+const onlineVendorWaiting = new Map();  // 7.4.0-dev.4: maker prefix → rows waiting for the answer in flight
 const ONLINE_LOOKUP_DELAY = 300;        // ms between requests (respect rate limit)
 let   onlineVendorTimer   = null;
 const onlineVendorQueue   = [];         // { mac, prefix, ip } pending lookup
@@ -3923,8 +3924,12 @@ function queueOnlineVendorLookup(mac, ip) {
   if (!mac || mac === 'ff-ff-ff-ff-ff-ff') return;
   const clean  = mac.replace(/[:\-]/g, '').toUpperCase();
   const prefix = clean.slice(0, 6);
-  if (onlineVendorQueued.has(prefix)) return;
-  onlineVendorQueued.add(prefix);
+  // 7.4.0-dev.4: one question per maker prefix, but EVERY row with that prefix gets the answer.
+  // Only the first row used to: twelve cameras from a maker missing from the built-in table
+  // showed one name and eleven UNKNOWN, and a second scan in the same session showed none.
+  if (onlineVendorAnswers.has(prefix)) { const a = onlineVendorAnswers.get(prefix); if (a.vendor) setTimeout(() => applyOnlineVendor(ip, mac, a.vendor, a.source), 0); return; }   // after the row is in the list
+  if (onlineVendorWaiting.has(prefix)) { onlineVendorWaiting.get(prefix).push({ ip, mac }); return; }
+  onlineVendorWaiting.set(prefix, [{ ip, mac }]);
   onlineVendorQueue.push({ mac, prefix, ip });
   scheduleOnlineLookup();
 }
@@ -3938,14 +3943,17 @@ async function drainOnlineLookupQueue() {
   onlineVendorTimer = null;
   if (!onlineVendorQueue.length) return;
 
-  const { mac, ip } = onlineVendorQueue.shift();
+  const { mac, prefix } = onlineVendorQueue.shift();
+  const waiting = onlineVendorWaiting.get(prefix) || [];
+  onlineVendorWaiting.delete(prefix);
   try {
     const result = await hud.macLookupOnline(mac);
-    if (result.vendor) {
-      applyOnlineVendor(ip, mac, result.vendor, result.source);
-    } else if (result.source === 'local') {
-      applyOnlineVendor(ip, mac, 'LOCAL/RANDOM', 'local');
-    }
+    const vendor = result.vendor || (result.source === 'local' ? 'LOCAL/RANDOM' : '');
+    const source = result.vendor ? result.source : result.source === 'local' ? 'local' : result.source;
+    // an answer (a name, "random MAC", or a firm "not listed") is kept for the session;
+    // an error or a rate limit is not, so the next scan asks again
+    if (vendor || source === 'cache' || source === 'online' || source === 'macvendors') onlineVendorAnswers.set(prefix, { vendor, source });
+    if (vendor) waiting.forEach(w => applyOnlineVendor(w.ip, w.mac, vendor, source));
   } catch {}
 
   // Schedule next item with delay to respect rate limit
@@ -7973,6 +7981,8 @@ function finishScan(aborted) {
   }
 
   if (aborted) {
+    // 7.4.0-dev.4: a stopped scan probes no ports — the "..." on every row said it still was
+    document.querySelectorAll('#scan-results .port-badge.probing').forEach(b => b.remove());
     setScanStatus('SCAN STOPPED — ' + found + ' HOST' + (found !== 1 ? 'S' : '') + ' FOUND' + elsewhere, 'warn');
   } else {
     setScanStatus(
@@ -8729,7 +8739,7 @@ function updateScanRowPorts(host, ports) {
   // Re-evaluate type using port data — fills in what vendor alone couldn't catch
   if (!row.className.match(/\btype-\S+/)) {
     const vendorEl = row.querySelector('.scan-result-vendor');
-    const vendor = vendorEl ? vendorEl.textContent : '';
+    const vendor = vendorEl && vendorEl.classList.contains('known') ? vendorEl.textContent : '';   // 7.4.0-dev.4: "UNKNOWN" is not a vendor — it kept the ports-only mark off, so a PC with 554 open stayed CAMERA
     const hostEl = row.querySelector('.scan-result-host');
     const tc = intelTypeClass(intelGuessType(vendor, ports, { self: row.classList.contains('self'), nbt: !!(hostEl && hostEl.classList.contains('nbt')) }));
     if (tc) { row.classList.add('type-' + tc); if (!vendor) row.dataset.typeSrc = 'ports'; }
@@ -8757,7 +8767,7 @@ function updateScanRowPorts(host, ports) {
   if (document.querySelectorAll('.port-badge.probing').length === 0) {
     { const f = scanCounts().on; setScanStatus(`SCAN COMPLETE — ${f} HOST${f !== 1 ? 'S' : ''} FOUND — PORTS MAPPED`, 'ok'); }
     // Second ARP pass — TCP connections from port probes warm the cache
-    const base = document.getElementById('scan-base').value.trim();
+    const base = scanRowsBase || document.getElementById('scan-base').value.trim();   // 7.4.0-dev.4: the subnet on screen, not what the box says now
     if (window.hud && base) {
       hud.arpSweep({ baseIp: base }).then(results => {
         Object.entries(results).forEach(([ip, { mac, vendor }]) => {

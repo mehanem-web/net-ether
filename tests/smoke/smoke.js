@@ -409,6 +409,30 @@ const VISIT = [
     await type('#scan-base', '10.20.30');
   });
 
+  await step('SCAN: every device from a maker looked up online gets the name, on a second scan too', async () => {
+    await tab('scan');
+    const got = await app.evaluate(async () => {
+      const was = { f: hud.macLookupOnline, en: onlineVendorEnabled, pol: onlineVendorPolicyOff };
+      let asked = 0;
+      hud.macLookupOnline = async mac => { asked++; return { mac, vendor: 'SMOKE CAMERA CO', source: 'online' }; };
+      onlineVendorEnabled = true; onlineVendorPolicyOff = false;
+      const add = (ip, mac) => appendScanResult(ip, 3, false, mac, '');
+      add('10.20.30.201', 'ac-de-48-00-00-01'); add('10.20.30.202', 'ac-de-48-00-00-02'); add('10.20.30.203', 'ac-de-48-00-00-03');
+      window.__vend = { was, asked: () => asked };
+      return true;
+    });
+    await tick(6000);
+    const first = await app.evaluate(() => ['201', '202', '203'].map(n => document.querySelector('#sr-10_20_30_' + n + ' .scan-result-vendor')?.textContent.trim()));
+    expect(first.every(v => v === 'SMOKE CAMERA CO'), 'three cameras from one maker show: ' + first.join(' / '));
+    // the same devices found again later in the session
+    await app.evaluate(() => { ['201', '202', '203'].forEach(n => document.getElementById('sr-10_20_30_' + n)?.remove()); appendScanResult('10.20.30.201', 3, false, 'ac-de-48-00-00-01', ''); });
+    await tick(6000);
+    const again = await app.evaluate(() => document.querySelector('#sr-10_20_30_201 .scan-result-vendor')?.textContent.trim());
+    const asked = await app.evaluate(() => { const n = window.__vend.asked(); const w = window.__vend.was; hud.macLookupOnline = w.f; onlineVendorEnabled = w.en; onlineVendorPolicyOff = w.pol; document.getElementById('sr-10_20_30_201')?.remove(); return n; });
+    expect(again === 'SMOKE CAMERA CO', 'found again in the same session it shows: ' + again);
+    expect(asked === 1, 'the maker was asked for ' + asked + ' times (once is enough)');
+  });
+
   await step('PING: a target added while it runs gets a row and is pinged; removing one drops its row', async () => {
     await tab('tools');
     await app.evaluate(() => { try { monStop(); } catch {} monHosts = ['10.20.30.1']; monRenderHostEditor(); monSetInterval(1000); monStart(); });
