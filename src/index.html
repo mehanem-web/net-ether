@@ -5935,9 +5935,14 @@ async function applyConfig() {
   // Skip during revert — revert always needs to fire even if IP looks the same
   if (!revertInProgress) {
     const currentAdapter = adapterList.find(a => a.name.toLowerCase() === (f.adapter || '').toLowerCase());
+    // 7.4.0-dev.4: gateway and DNS count too — adding a gateway (or changing DNS) on an address
+    // the card already had was answered with NO CHANGE DETECTED and never applied.
+    const same = (x, y) => String(x || '').trim() === String(y || '').trim();
     if (currentAdapter && currentAdapter.ip &&
         currentAdapter.ip     === f.ip &&
         currentAdapter.subnet === f.subnet &&
+        same(currentAdapter.gateway, f.gateway) &&
+        same(currentAdapter.dns, f.dns) &&
         !currentAdapter.isDhcp) {
       setNetStatus('NO CHANGE DETECTED — ADAPTER ALREADY HAS THIS CONFIG', 'warn', 5000);
       return;

@@ -203,6 +203,22 @@ const VISIT = [
     for (const t of ['net', 'tools', 'scan', 'intel', 'dhcp', 'recon', 'net']) await tab(t);
   });
 
+  await step('IP: adding only a gateway to a static card is applied, not "no change"', async () => {
+    await app.evaluate(() => { const a = window.__world.adapters[0]; a.isDhcp = false; a.gateway = ''; a.dns = ''; loadAdapters(true); });
+    await tick(3000);
+    await tab('net');
+    await app.evaluate(() => loadPreset(0, true)); await tick(1500);          // CURRENT: the form shows what the card has
+    const pre = await app.evaluate(() => ({ form: document.getElementById('ip').value, card: window.__world.adapters[0].ip, gw: document.getElementById('gateway').value }));
+    expect(pre.form === pre.card && !pre.gw, 'setup: form ' + pre.form + ' / card ' + pre.card + ' / gateway "' + pre.gw + '"');
+    const gw = pre.card.split('.').slice(0, 3).join('.') + '.254';
+    await app.evaluate(g => { const e = document.getElementById('gateway'); e.focus(); e.value = g; e.dispatchEvent(new Event('input', { bubbles: true })); e.blur(); }, gw);
+    await tick(500);
+    await click('#apply-btn'); await tick(6000);
+    const st = await text('#net-status') || '';
+    expect(!/NO CHANGE/i.test(st), 'APPLY answered: ' + st);
+    expect(await app.evaluate(g => window.__world.adapters[0].gateway === g, gw), 'the gateway did not reach the (pretend) card — status: ' + st);
+  });
+
   await browser.close(); srv.close();
   const failed = results.filter(r => !r.ok);
   console.log(`\n${results.length - failed.length} of ${results.length} steps passed` + (failed.length ? ` — ${failed.length} FAILED` : ''));
