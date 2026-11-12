@@ -242,7 +242,7 @@ NET-ETHER/
 
 ## CHANGELOG
 
-### v7.4.0 (unreleased — in test as 7.4.0-dev.3)
+### v7.4.0 (unreleased — in test as 7.4.0-dev.6)
 A full read of the code looking for bugs, then fixes tested on real hardware — including two fake test rigs (below) so DHCP and RECON can be proven at home without cameras or a managed switch. Nothing about how you use the app changes; things that were quietly wrong are now right.
 - **DHCP: two devices asking at once got the same address.** The ping-before-offer check takes a moment, and a second device asking inside that moment was offered the same address. Each address is now held for the device it is being checked for. Four fake devices 20 ms apart: four different addresses.
 - **DHCP: the pool has to be on the card's own network.** A wider MASK typed in the form let a pool through that the laptop could not reach, and the answers went to a broadcast address that is not on the cable (rows sat on OFFERED). Now refused, naming the card's real mask; answers always use the card's own mask. Masks with no room for devices and pools with no usable address are refused; the gateway's address is never handed out.
@@ -259,6 +259,21 @@ A full read of the code looking for bugs, then fixes tested on real hardware —
 - **PowerShell worker:** a query that throws now still reports back instead of waiting for its timeout.
 - **APPLY result stays on the status bar**, and no "✓ ON DHCP" flash after DHCP → static (both found while filming the 7.3.1 video).
 - **Guide 7.0** — the visual guide, rebuilt task-first with annotated screenshots.
+- **Second pass: the whole window script, tab by tab, with a UI smoke test** (`npm run smoke`, 32 steps; each fix below has a step or a harness run that fails on the code before it).
+- **IP: picking a card shows that card.** A DHCP card came up as STATIC with "APPLY <its lease>", the last card's gateway and DNS stayed in the form, and with two wired cards the form jumped back to the first after an APPLY on the other. A shortcut keeps the card you picked, and picking a card keeps the shortcut.
+- **IP: APPLY notices a gateway-only or DNS-only change** (it said NO CHANGE DETECTED), refuses the network, broadcast, loopback and multicast addresses in plain words, and never carries one card's 2nd address onto another card.
+- **IP: REVERT works after a switch to DHCP**, and only rewrites the MTU when it actually changed.
+- **PING: PAUSE → RESUME no longer speeds the pings up** (each one added another ping loop). Targets can be added and removed while it runs.
+- **PING: traceroute shows whole hops** (it showed fragments such as a lone "7"), and starting one on a second host no longer breaks the first.
+- **SCAN: a sweep of part of a subnet no longer reports the rest of the site as MISSING.**
+- **SCAN: SAVE SITE files the devices under the network that was scanned**, not whatever the base box says when you press it; never saves the laptop itself; never stores the word UNKNOWN as a vendor; and a replacement device on the same address is a new device, not the old one with the old MAC.
+- **SCAN: every device from a maker looked up online gets the name.** Only the first row with that maker did, and none on a second scan.
+- **SITES: a deleted site stays deleted** (it came back, empty, when it was the last one). DELETE SITE and REMOVE DEVICE use ETHER's own prompt; removing a device with logins or notes writes a backup first.
+- **SITES: an imported sites file can no longer run code or blank the tab** (a quote in a site id, MAC or address ended up inside a click handler; a device with neither MAC nor address stopped the list drawing).
+- **DHCP hears only the cable it serves.** The engine listened on every card, so a TV joining the Wi-Fi appeared under "devices on this cable". It now listens on the laptop's address on the chosen card.
+- **DHCP: settings and the card are locked while serving** (edits did nothing until the next start but looked live), a card pulled and put back is picked again, the card list follows cards being plugged in, never offers Wi-Fi or the loopback, and ⟳ says what it found.
+- **DHCP: reservations on the network or broadcast address, or on an address another device holds, are refused.**
+- **Start-up survives an unreadable shortcuts file**, and opened rows in the diagnostics list stay open when a new entry arrives.
 - **Test rigs** in `tools/`: `fake-cameras.js` (several devices asking for an address at once) and `fake-switch.py` (a managed switch port: LLDP, CDP, RSTP, 802.1X, DHCP, tagged VLANs, names, NTP). See TESTING.md § 7.4.0.
 - Known, unchanged: the DHCP engine still hears DHCP traffic from every connected card (it only answers on the cable); it warns when another card is up.
 
