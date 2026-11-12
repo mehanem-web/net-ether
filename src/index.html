@@ -9091,9 +9091,12 @@ async function reconToggle() {
     reconToolsState(); autoResize(); return;
   }
   reconLast = r;
+  // 7.4.0-dev.4: remember the card and the time of the listen — COPY used whatever card was
+  // selected when it was pressed, and "now", so a report could name the wrong card.
+  r.adapter = a.name; r.at = Date.now();
   reconRenderCards(r.verdicts || [], r.evidence);
   const secs = Math.round(((r.evidence && r.evidence.ms) || 0) / 1000);
-  setReconStatus(r.err ? 'RECON ENDED: ' + r.err.toUpperCase() : `DONE — ${r.evidence.packets} PACKETS IN ${secs} S`, r.err ? 'warn' : 'ok', 6000);
+  setReconStatus(r.err ? 'RECON ENDED: ' + r.err.toUpperCase() : `DONE — ${(r.evidence && r.evidence.packets) || 0} PACKETS IN ${secs} S`, r.err ? 'warn' : 'ok', 6000);
   reconToolsState();
   if (reconSilent) { setTimeout(() => loadAdapters('silent'), 1500); setTimeout(() => loadAdapters('silent'), 6500); }
   autoResize();
@@ -9129,7 +9132,7 @@ function reconTake(act) {
 function reconCopy() {
   if (!reconLast) return;
   const a = currentAdapterEntry();
-  const L = [`NET//ETHER recon — ${a ? a.name : ''} — ${new Date().toLocaleString()}`, ''];
+  const L = [`NET//ETHER recon — ${reconLast.adapter || (a ? a.name : '')} — ${new Date(reconLast.at || Date.now()).toLocaleString()}`, ''];
   (reconLast.verdicts || []).forEach(v => L.push(`${v.tag.padEnd(8)} ${v.title}${v.detail ? ' — ' + v.detail : ''}`));
   hudCopy(L.join('\n')).then(() => setReconStatus('VERDICTS COPIED', 'ok', 3000)).catch(() => setReconStatus('COPY FAILED', 'err', 2000));
 }
