@@ -4084,6 +4084,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
 // ── ADAPTER DROPDOWN ───────────────────────────────────────
 let adapterList = [];
+let _adapterPicked = null;   // 7.4.0-dev.4: the card chosen by hand this session — the form stays on it
 let adapterDropdownOpen = false;
 let adapterDropdownReady = false;
 // Delay opening the dropdown for ~1s after load to prevent a phantom click
@@ -4134,9 +4135,14 @@ function populateLivePreset(fromApply) {
   // rc.5: no wired card with a live address → the selected card's saved settings (an unplugged
   // card that was set static). Without this the form kept old values and read as UNSAVED CHANGES.
   const selName = (document.getElementById('adapter')?.value || '').trim().toLowerCase();
-  const connected = adapterList.find(a => a.connected && a.ip)
+  // 7.4.0-dev.4: the card you're on comes first. It used to be "the first connected card", so with
+  // two wired cards up the form jumped back to the other one after every APPLY and refresh.
+  const selCard = adapterList.find(a => a.name.toLowerCase() === selName) || null;
+  const connected = (selCard && selCard.connected && selCard.ip) ? selCard
+                 : (selCard && _adapterPicked === selCard.name) ? ((selCard.ip || selCard.savedIp) ? selCard : null)   // picked by hand: stay, even with no cable
+                 : (adapterList.find(a => a.connected && a.ip)
                  || adapterList.find(a => a.name.toLowerCase() === selName && a.savedIp)
-                 || adapterList.find(a => a.savedIp);
+                 || adapterList.find(a => a.savedIp));
   if (!connected || !(connected.ip || connected.savedIp)) {
     // rc.7: the selected card is unplugged and on DHCP (e.g. right after → DHCP with no cable) —
     // nothing to show, so empty the address instead of keeping the static that was just removed
@@ -4260,30 +4266,38 @@ function selectAdapter(a) {
   field.value = a.name;
   const display = document.getElementById('adapter-name-display');
   if (display) display.textContent = a.name;
-  markChanged(field);
+  _adapterPicked = a.name;
 
-  // Fill IP/subnet from live adapterList first (instant, covers connected adapters)
-  if (a.ip) {
-    const ipEl     = document.getElementById('ip');
-    const subnetEl = document.getElementById('subnet');
-    ipEl.value = a.ip;                         markChanged(ipEl);
-    if (a.subnet) { subnetEl.value = a.subnet; markChanged(subnetEl); }
-  }
-
-  // Always pull full config from netsh — works for disconnected adapters too.
-  // Netsh retains the static IP/subnet/gateway/DNS even when cable is unplugged.
-  if (window.hud) {
-    hud.getAdapterConfig(a.name).then(cfg => {
-      if (!cfg.ok) return;
-      const ipEl      = document.getElementById('ip');
-      const subnetEl  = document.getElementById('subnet');
-      const gatewayEl = document.getElementById('gateway');
-      const dnsEl     = document.getElementById('dns');
-      if (cfg.ip)      { ipEl.value      = cfg.ip;      markChanged(ipEl); }
-      if (cfg.subnet)  { subnetEl.value  = cfg.subnet;  markChanged(subnetEl); }
-      if (cfg.gateway) { gatewayEl.value = cfg.gateway; markChanged(gatewayEl); }
-      if (cfg.dns)     { dnsEl.value     = cfg.dns;     markChanged(dnsEl); }
-    }).catch(() => {});
+  // 7.4.0-dev.4: picking a card SHOWS that card — it is not an edit. It used to mark every field
+  // changed with the card's values, which (1) put a DHCP card in STATIC with "APPLY <its lease>"
+  // one click from turning the lease into a static, (2) left the previous card's gateway and DNS
+  // in the form when the new card had none, and (3) after an APPLY the form jumped back to the
+  // first connected card. Now the CURRENT shortcut follows the card you picked.
+  const live = presets[0];
+  const fill = c => {
+    live.adapter = a.name;
+    live.ip      = c.ip      || '';
+    live.subnet  = c.subnet  || '';
+    live.gateway = c.gateway || '';
+    live.dns     = c.dns     || '';
+    const savedPrev = previousConfig;
+    loadPreset(0, true);
+    previousConfig = savedPrev;
+    if (previousConfig) showRevertBtn(previousConfig);
+  };
+  if (live && live.name === 'LIVE') {
+    fill({ ip: a.ip || a.savedIp, subnet: a.subnet || a.savedSubnet, gateway: a.gateway, dns: a.dns });
+    setNetStatus(`${a.name.toUpperCase()} — CURRENT SETTINGS`, 'ok', 3000);
+    // The full config from netsh — covers a card with no cable (Windows keeps its static settings)
+    if (window.hud) {
+      hud.getAdapterConfig(a.name).then(cfg => {
+        if (!cfg || !cfg.ok) return;
+        if (field.value !== a.name || isDirty || activePreset !== 0) return;   // moved on, or started typing
+        fill({ ip: cfg.ip || a.ip || a.savedIp, subnet: cfg.subnet || a.subnet || a.savedSubnet, gateway: cfg.gateway, dns: cfg.dns });
+      }).catch(() => {});
+    }
+  } else {
+    markChanged(field);
   }
 
   closeAdapterDropdown();

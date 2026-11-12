@@ -219,6 +219,43 @@ const VISIT = [
     expect(await app.evaluate(g => window.__world.adapters[0].gateway === g, gw), 'the gateway did not reach the (pretend) card — status: ' + st);
   });
 
+  await step('IP: picking another card shows ITS gateway and DNS, not the last card\'s', async () => {
+    await app.evaluate(() => {
+      const W = window.__world;
+      Object.assign(W.adapters[0], { ip: '10.20.30.57', subnet: '255.255.255.0', gateway: '10.20.30.1', dns: '10.20.30.1', isDhcp: false, connected: true, state: 'Connected' });
+      Object.assign(W.adapters[1], { ip: '192.168.50.20', subnet: '255.255.255.0', gateway: '', dns: '', isDhcp: false, connected: true, state: 'Connected' });
+      loadAdapters();
+    });
+    await tick(3000);
+    await app.evaluate(() => selectAdapter(adapterList.find(a => a.name === 'Ethernet'))); await tick(1200);
+    expect(await text('#gateway') === '10.20.30.1', 'setup: first card should show its gateway, shows "' + await text('#gateway') + '"');
+    await app.evaluate(() => selectAdapter(adapterList.find(a => a.name === 'Ethernet 2'))); await tick(1200);
+    expect(await text('#ip') === '192.168.50.20', 'second card address not shown: ' + await text('#ip'));
+    expect(await text('#gateway') === '' && await text('#dns') === '', 'second card has no gateway/DNS but the form shows gateway "' + await text('#gateway') + '" dns "' + await text('#dns') + '"');
+  });
+
+  await step('IP: picking a card that is on DHCP leaves it on DHCP (no "APPLY <its lease>")', async () => {
+    await app.evaluate(() => { Object.assign(window.__world.adapters[1], { isDhcp: true, gateway: '192.168.50.1', dns: '192.168.50.1' }); loadAdapters(); });
+    await tick(3000);
+    await app.evaluate(() => selectAdapter(adapterList.find(a => a.name === 'Ethernet'))); await tick(1200);
+    await app.evaluate(() => selectAdapter(adapterList.find(a => a.name === 'Ethernet 2'))); await tick(1200);
+    const v = await app.evaluate(() => ({ mode: ipMode, btn: document.getElementById('apply-btn').textContent.trim(), ro: document.getElementById('ip').readOnly, dirty: isDirty }));
+    expect(v.mode === 'dhcp' && /ON DHCP/.test(v.btn) && v.ro && !v.dirty, 'after picking the DHCP card: ' + JSON.stringify(v));
+  });
+
+  await step('IP: after APPLY on the second card the form stays on that card', async () => {
+    await app.evaluate(() => { Object.assign(window.__world.adapters[1], { isDhcp: false, gateway: '', dns: '' }); loadAdapters(); });
+    await tick(3000);
+    await app.evaluate(() => selectAdapter(adapterList.find(a => a.name === 'Ethernet 2'))); await tick(1200);
+    await app.evaluate(() => { const e = document.getElementById('ip'); e.focus(); e.value = '192.168.50.77'; e.dispatchEvent(new Event('input', { bubbles: true })); e.blur(); });
+    await tick(400);
+    await click('#apply-btn'); await tick(4000);
+    expect(await app.evaluate(() => window.__world.adapters[1].ip === '192.168.50.77'), 'the address did not reach the second (pretend) card — status: ' + await text('#net-status'));
+    await tick(20000);                                   // through the 2 s refresh and a 15 s poll
+    const v = await app.evaluate(() => ({ card: document.getElementById('adapter').value, ip: document.getElementById('ip').value }));
+    expect(v.card === 'Ethernet 2' && v.ip === '192.168.50.77', 'form shows ' + JSON.stringify(v));
+  });
+
   await browser.close(); srv.close();
   const failed = results.filter(r => !r.ok);
   console.log(`\n${results.length - failed.length} of ${results.length} steps passed` + (failed.length ? ` — ${failed.length} FAILED` : ''));
