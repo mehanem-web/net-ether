@@ -10788,7 +10788,7 @@ function dhcpUpdateLink() {
   const el = dEl('dhcp-link'), txt = dEl('dhcp-link-txt'); if (!el) return;
   const a = dhcpCurCard();
   if (!a || !a.connected) { el.className = 'dhcp-link'; txt.textContent = 'NO LINK'; return; }
-  if (a.apipa || !dhcpCardIps(a).length) { el.className = 'dhcp-link apipa'; txt.textContent = 'NO ADDRESS'; return; }
+  if (!dhcpCardIps(a).length) { el.className = 'dhcp-link apipa'; txt.textContent = 'NO ADDRESS'; return; }   // 7.4.0-dev.15: a usable 2nd address counts, even when the main one is self-assigned
   el.className = 'dhcp-link up'; txt.textContent = 'LINK UP';
 }
 // ETHER's full adapter list (IP tab) carries description, link speed and DHCP/static —

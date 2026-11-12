@@ -1298,12 +1298,22 @@ module.exports = function initDhcp(deps) {
       const sv = (fromIp && a.saved.find(x => x.ip === fromIp)) || a.saved[0];
       a = { ...a, ip: sv.ip, netmask: sv.netmask, apipa: false, ips: a.saved.map(x => ({ ip: x.ip, netmask: x.netmask, apipa: false })) };
     }
-    if (!a || !a.ip || !a.netmask || a.apipa) return null;
-    // v7.1.0: serve from a specific address on the adapter (a MULTI-IP alias) when asked
+    if (!a) return null;
+    // v7.1.0: serve from a specific address on the adapter (a MULTI-IP alias) when asked.
+    // 7.4.0-dev.15: asked-for address first. A card whose main address is a self-assigned
+    // 169.254.x.x (on DHCP with no server on the cable) and that carries a usable 2nd address
+    // (REACH, + ALIAS) was refused here before the 2nd address was looked at — the tab offered
+    // the address as a chip and then answered "THAT ADDRESS IS NOT USABLE" (bench, 2026-11-12).
     if (fromIp && isValidIp(fromIp)) {
-      const alt = (a.ips || []).find(x => x.ip === fromIp && !x.apipa);
-      if (alt) return deriveCfgFromAdapter({ ...a, ip: alt.ip, netmask: alt.netmask });
+      const alt = (a.ips || []).find(x => x.ip === fromIp && !x.apipa && x.netmask);
+      if (alt) return deriveCfgFromAdapter({ ...a, ip: alt.ip, netmask: alt.netmask, apipa: false });
     }
+    if (a.apipa || !a.ip) {
+      const alt = (a.ips || []).find(x => !x.apipa && x.netmask);
+      if (!alt) return null;
+      return deriveCfgFromAdapter({ ...a, ip: alt.ip, netmask: alt.netmask, apipa: false });
+    }
+    if (!a.netmask) return null;
     return deriveCfgFromAdapter(a);
   });
   ipcMain.handle('dhcp-validate-config', async (_e, cfg) => fullValidate(cfg));
