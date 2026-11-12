@@ -7655,14 +7655,18 @@ function toggleScan() {
   }
 }
 
+var scanRangeNow = null;   // 7.4.0-dev.4: the host range of the running / last sweep
 function startScan() {
-  const base     = document.getElementById('scan-base').value.trim();
+  let base       = document.getElementById('scan-base').value.trim();
   const rangeRaw = document.getElementById('scan-range').value.trim() || '1-254';
 
-  if (!base || !/^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(base)) {
+  if (!base || !/^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(base) || base.split('.').some(o => parseInt(o, 10) > 255)) {
     setScanStatus('ERROR: ENTER VALID BASE IP (e.g. 192.168.1)', 'err', 5000);
     return;
   }
+  // 7.4.0-dev.4: 192.168.010 → 192.168.10. Windows reads a leading zero as octal, so the padded
+  // base swept 192.168.8.x while the rows and the saved site said 192.168.010.x.
+  { const clean = base.split('.').map(o => String(parseInt(o, 10))).join('.'); if (clean !== base) { base = clean; document.getElementById('scan-base').value = clean; } }
 
   // Parse range — accept "1-254", "67-160", "50" (single host), etc.
   let scanStart = 1, scanEnd = 254;
@@ -7679,6 +7683,7 @@ function startScan() {
   }
 
   const total = scanEnd - scanStart + 1;
+  scanRangeNow = { start: scanStart, end: scanEnd };
 
   // RFC1918 sanity check
   const octets = base.split('.').map(Number);
@@ -7803,6 +7808,7 @@ function onScanDone({ aborted }) {
   // Feed results to SITES for change detection (after a short delay so port probes can enrich)
   if (!aborted) {
     const doneBase = document.getElementById('scan-base').value.trim();   // v7.3.0: the base this scan ran on
+    const doneRange = scanRangeNow ? { ...scanRangeNow } : null;
     setTimeout(() => {
       // a new scan started inside the delay → these rows aren't this scan's; don't diff them
       if (typeof scanRunning !== 'undefined' && scanRunning) return;
@@ -7827,7 +7833,7 @@ function onScanDone({ aborted }) {
         const type = row.dataset.typeSrc === 'disc' && tc ? (SITE_TYPES.find(t => intelTypeClass(t) === tc) || '') : '';
         return ip ? { ip, vendor, mac, hostname, ports, type } : null;
       }).filter(Boolean);
-      if (results.length) intelProcessScanResults(base, results);
+      if (results.length) intelProcessScanResults(base, results, doneRange);
     }, 2500);
   }
 }
@@ -9758,7 +9764,7 @@ function intelLinkScan() {
 // ── CHANGE DETECTION ───────────────────────────────────────
 // Called by the SCAN tab when a scan completes. Compares fresh results
 // against the stored device list for the matching site and flags changes.
-function intelProcessScanResults(baseIp, scanResults) {
+function intelProcessScanResults(baseIp, scanResults, range) {
   // Find the matching site by subnet
   const site = Object.values(intelDB).find(s => s.subnet === baseIp);
   if (!site) return; // no site for this subnet — nothing to compare
@@ -9802,6 +9808,12 @@ function intelProcessScanResults(baseIp, scanResults) {
     if (!d.mac) return;
     const key = d.mac.toUpperCase().replace(/[:\-]/g,'');
     if (selfMacs.has(key) || (d.ip && selfIpsNow.has(d.ip) && !freshByMac[key] && !scanResults.some(r => r.ip === d.ip))) return;
+    // 7.4.0-dev.4: a sweep of part of the subnet (say 100-120) says nothing about the rest —
+    // every saved device outside the range used to come back as MISSING.
+    if (range && d.ip && d.ip.startsWith(baseIp + '.')) {
+      const last = parseInt(d.ip.split('.')[3], 10);
+      if (last < range.start || last > range.end) return;
+    }
     if (!freshByMac[key]) {
       changes.missing.push(d);
     }

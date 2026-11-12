@@ -362,6 +362,34 @@ const VISIT = [
     expect(n <= 9, n + ' pings in 20 s for one host (one every 2.5 s would be 8) — more than one ping loop is running');
   });
 
+  await step('SCAN: sweeping part of a subnet does not report the rest of the site as missing', async () => {
+    await tab('scan');
+    await app.evaluate(v => { window.__world.scanSet = 'visit'; window.__world.scanSets.visit = v; }, VISIT);
+    // a full sweep first, so the saved site holds every pretend host
+    await type('#scan-base', '10.20.30'); await type('#scan-range', '1-254'); await tick(200);
+    await click('#scan-start-btn'); await tick(12000);
+    const site = await app.evaluate(() => { const s = Object.values(intelDB).find(x => x.subnet === '10.20.30'); return s ? { id: s.id, n: (s.devices || []).length } : null; });
+    expect(site && site.n >= 5, 'setup: the saved site has ' + (site ? site.n : 'no') + ' devices');
+    await app.evaluate(id => { delete intelPendingChanges[id]; }, site.id);
+    // now only .1 – .30: three of the hosts are in range and answer; .100 and .101 are outside it
+    await app.evaluate(v => { window.__world.scanSets.part = v.filter(h => +h.ip.split('.')[3] <= 30); window.__world.scanSet = 'part'; }, VISIT);
+    await type('#scan-range', '1-30'); await tick(200);
+    await click('#scan-start-btn'); await tick(12000);
+    await app.evaluate(() => { window.__world.scanSet = 'visit'; });
+    const ch = await app.evaluate(id => { const c = intelPendingChanges[id]; return c ? { missing: c.missing.map(d => d.ip), n: c.new.length } : { missing: [], n: 0 }; }, site.id);
+    expect(!ch.missing.some(ip => +ip.split('.')[3] > 30), 'a 1-30 sweep reported ' + ch.missing.join(', ') + ' as missing');
+    await type('#scan-range', '1-254');
+  });
+
+  await step('SCAN: a zero-padded base (010.020.030) is cleaned before the sweep', async () => {
+    await app.evaluate(() => { window.__scanArgs = null; const f = hud.scanStart; hud.scanStart = a => { window.__scanArgs = a; hud.scanStart = f; return f(a); }; });
+    await type('#scan-base', '010.020.030'); await tick(200);
+    await click('#scan-start-btn'); await tick(9000);
+    const a = await app.evaluate(() => window.__scanArgs);
+    expect(a && a.baseIp === '10.20.30', 'the sweep was started with base ' + JSON.stringify(a && a.baseIp));
+    expect(await text('#scan-base') === '10.20.30', 'the field still reads ' + await text('#scan-base'));
+  });
+
   await browser.close(); srv.close();
   const failed = results.filter(r => !r.ok);
   console.log(`\n${results.length - failed.length} of ${results.length} steps passed` + (failed.length ? ` — ${failed.length} FAILED` : ''));
