@@ -82,6 +82,7 @@ module.exports = function initDhcp(deps) {
   let pollTimer   = null;
   let lastAdapterState = {};
   let knownAdapters    = [];      // last full list from ETHER's get-adapters
+  let bindFailNoted    = null;    // 7.4.0-dev.4: the address whose failed bind has already been logged
   let knownLoaded      = false;   // 7.4.0-dev.4: a full read has answered (an empty answer is still an answer)
   let lastOsNames      = '';      // 7.4.0-dev.4: Windows' own interface names at the last poll — a change means a card came or went
   let lastSquatter     = null;
@@ -549,7 +550,17 @@ module.exports = function initDhcp(deps) {
       s.on('error', err => {
         if (bound) { log('DHCP socket error: ' + err.message, 'err'); return; }
         try { s.close(); } catch {}
-        if (addr !== '0.0.0.0') { log(`Could not listen on ${addr} alone (${err.code || err.message}) — listening on every card instead`, 'warn'); openSock('0.0.0.0').then(resolve, reject); }
+        if (addr !== '0.0.0.0') {
+          // 7.4.0-dev.4: right after APPLY Windows needs a few seconds before the address can be bound
+          // (EADDRNOTAVAIL). The adapter poll retries, so that case is a calm one-time note, said once
+          // per address — anything else is still a warning.
+          if (bindFailNoted !== addr) {
+            bindFailNoted = addr;
+            if (err.code === 'EADDRNOTAVAIL') log(`Windows is still putting ${addr} on the card — hearing every card until it is ready`);
+            else log(`Could not listen on ${addr} alone (${err.code || err.message}) — listening on every card instead`, 'warn');
+          }
+          openSock('0.0.0.0').then(resolve, reject);
+        }
         else { log('DHCP socket error: ' + err.message, 'err'); reject(err); }
       });
       s.on('message', (msg, rinfo) => { handleDhcpMessage(msg, rinfo).catch(e => log('DHCP parse error: ' + e.message, 'err')); });
@@ -558,6 +569,7 @@ module.exports = function initDhcp(deps) {
         try { s.setBroadcast(true); } catch {}
         if (sockAddr !== addr) log(addr === '0.0.0.0' ? 'Hearing DHCP on every connected card — no laptop address on the cable yet' : `Hearing DHCP on ${addr} only — this cable`);
         sockAddr = addr;
+        if (addr !== '0.0.0.0') bindFailNoted = null;
         resolve(s);
       });
     });
