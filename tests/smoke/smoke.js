@@ -185,7 +185,11 @@ const VISIT = [
     const dbg = await app.evaluate(() => 'card=' + document.getElementById('dhcp-adapter').value + ' chips=' + [...document.querySelectorAll('.dhcp-chip')].map(c => c.textContent.trim()).join(',') + ' first=' + document.getElementById('dcfg-rangeStart').value);
     const rowTxt = await app.evaluate(() => [...document.querySelectorAll('.dhcp-row')].map(r => r.textContent.replace(/\s+/g, ' ').trim()).join(' || '));
     expect(/SERVED|OFFERED/i.test(rowTxt), 'row did not become SERVED / OFFERED — rows read: ' + rowTxt.slice(0, 200) + ' · status after click: ' + st + ' · ' + dbg);
+    // while serving, the settings are what is being handed out — locked
+    const locked = await app.evaluate(() => ['rangeStart', 'rangeEnd', 'subnet', 'gateway'].map(k => document.getElementById('dcfg-' + k).readOnly));
+    expect(locked.every(Boolean), 'while serving, the settings fields are still editable: ' + JSON.stringify(locked));
     await app.evaluate(() => hud.dhcp.stopServing()); await tick(800);
+    expect(await app.evaluate(() => !document.getElementById('dcfg-rangeStart').readOnly), 'the settings stayed locked after STOP SERVING');
   });
 
   await step('RECON: listen runs, stops, and draws its result', async () => {

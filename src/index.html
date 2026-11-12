@@ -2834,6 +2834,7 @@ html, body {
 .dhcp-grid .field-label { font-size: 9.5px; letter-spacing: 0.8px; }
 .dhcp-grid .field-input { padding: 6px 9px; font-size: 12px; }
 .dhcp-field.error .field-input { border-color: rgba(255,68,85,0.7); }
+.dcfg-locked { opacity: 0.6; cursor: not-allowed; }
 .dhcp-adv-toggle { font-size: 10px; font-weight: 700; letter-spacing: 1px; color: var(--label-dim); cursor: pointer; user-select: none; margin: 8px 0 2px; }
 .dhcp-adv-toggle:hover { color: var(--green); }
 .dhcp-adv-drawer { display: none; margin-top: 6px; }
@@ -10606,6 +10607,21 @@ function dhcpApplyMode(st) {
     stop.textContent = `■ STOP SERVING (${D.targets.length})`;
   }
   if (tab) { tab.classList.toggle('serving', dhcpIsServing()); tab.classList.toggle('listening', D.mode === 'listen'); tab.classList.toggle('suspended', D.mode === 'suspended'); }
+  // 7.4.0-dev.4: while serving, the settings on screen ARE what is being handed out. They used to
+  // stay editable — a change did nothing until the next start, but the form and the "DEVICES GET"
+  // strip showed the new values as if they were live.
+  {
+    const lock = dhcpIsServing();
+    const why = 'Being handed out right now — stop serving to change it';
+    [...DCFG_KEYS, 'idle'].forEach(k => {
+      const el = dEl('dcfg-' + k); if (!el) return;
+      if (el.dataset.t0 === undefined) el.dataset.t0 = el.title || '';
+      if (el.tagName === 'SELECT') el.disabled = lock; else el.readOnly = lock;
+      el.classList.toggle('dcfg-locked', lock);
+      el.title = lock ? why : el.dataset.t0;
+    });
+    const prof = dEl('dhcp-profile'); if (prof) { prof.disabled = lock; prof.classList.toggle('dcfg-locked', lock); }
+  }
   updateLiveBarDhcp();
   dhcpRenderDevices();
   if (D.mode === 'off') dhcpWireWatchStop();
@@ -10844,6 +10860,7 @@ async function dhcpProfileChanged() {
   const sel = dEl('dhcp-profile');
   dEl('dhcp-profile-del')?.classList.toggle('disabled', !sel.value);
   if (!sel.value) return;
+  if (dhcpIsServing()) { sel.value = ''; setDhcpStatus('STOP SERVING BEFORE LOADING A PROFILE', 'warn', 4000); return; }
   const cfg = await hud.dhcp.profilesLoad(sel.value);
   if (cfg) {
     dhcpFill(cfg);
