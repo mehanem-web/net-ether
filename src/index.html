@@ -6388,11 +6388,16 @@ async function revertConfig() {
     revertInProgress = false;
   }
   if (!ok) { keepWayBack(); return; }
-  // Restore MTU if we snapshotted it (runs after applyConfig resolves)
+  // Restore the MTU only if it is different now (7.4.0-dev.4). It used to be written on every
+  // REVERT — an elevated netsh for a value that had not changed.
   if (target.mtu && window.hud) {
     try {
-      await hud.fixMtu(target.adapter || document.getElementById('adapter').value.trim(), target.mtu);
-      setNetStatus('REVERTED — MTU RESTORED TO ' + target.mtu, 'ok', 5000);
+      const card = target.adapter || document.getElementById('adapter').value.trim();
+      const now = await hud.getAdapterMtu(card);
+      if (now && now.ok && now.mtu && now.mtu !== target.mtu) {
+        await hud.fixMtu(card, target.mtu);
+        setNetStatus('REVERTED — MTU RESTORED TO ' + target.mtu, 'ok', 5000);
+      }
     } catch {}
   }
 }
@@ -7299,14 +7304,26 @@ async function applyDhcp() {
     setNetStatus('DHCP COMMANDS READY — RUN AS ADMIN', 'ok');
     return false;
   }
+  // 7.4.0-dev.4: a static card handed back to DHCP keeps a way back. The switch used to clear
+  // REVERT, so a static applied this session and then switched away by mistake was gone.
+  let wayBack = null;
+  if (!revertInProgress) {
+    try {
+      const entry = adapterList.find(x => x.name.toLowerCase() === adapter.toLowerCase());
+      const cfg = await hud.getAdapterConfig(adapter);
+      if (cfg && cfg.ok && !cfg.dhcp && !(entry && entry.isDhcp === true) && isValidIP(cfg.ip) && isValidSubnet(cfg.subnet)) {
+        wayBack = { adapter, ip: cfg.ip, subnet: cfg.subnet, gateway: cfg.gateway || '', dns: cfg.dns || '', mtu: null, dhcp: false };
+      }
+    } catch {}
+  }
   setNetStatus('SWITCHING TO DHCP...', '');
   try {
     const result = await hud.applyDhcp(adapter, revertInProgress ? 'revert' : undefined);
     if (result.ok) {
-      setNetStatus(`✓ ${adapter.toUpperCase()} IS BACK ON DHCP`, 'ok', 6000);   // rc.3: was "— REFRESHING...", which animated forever
+      setNetStatus(`✓ ${adapter.toUpperCase()} IS BACK ON DHCP` + (wayBack ? ` — REVERT PUTS ${wayBack.ip} BACK` : ''), 'ok', 6000);   // rc.3: was "— REFRESHING...", which animated forever
       clearIpApplied();
-      previousConfig = null;
-      hideRevertBtn();
+      previousConfig = wayBack;
+      if (wayBack) showRevertBtn(wayBack); else hideRevertBtn();
       clearDirtyState();
       setTimeout(() => loadAdapters(true), 2500);
       return true;

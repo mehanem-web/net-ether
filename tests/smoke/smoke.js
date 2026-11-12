@@ -256,6 +256,42 @@ const VISIT = [
     expect(v.card === 'Ethernet 2' && v.ip === '192.168.50.77', 'form shows ' + JSON.stringify(v));
   });
 
+  await step('IP: a static card switched to DHCP keeps REVERT, and REVERT puts the static back', async () => {
+    await app.evaluate(() => {
+      const W = window.__world;
+      Object.assign(W.adapters[0], { ip: '10.20.30.57', subnet: '255.255.255.0', gateway: '10.20.30.1', dns: '10.20.30.1', isDhcp: false, connected: true, state: 'Connected' });
+      previousConfig = null; hideRevertBtn(); loadAdapters();
+    });
+    await tick(3000);
+    await app.evaluate(() => selectAdapter(adapterList.find(a => a.name === 'Ethernet'))); await tick(1200);
+    await click('#ip-mode-dhcp'); await tick(400);
+    expect(/SWITCH TO DHCP/.test(await text('#apply-btn') || ''), 'button reads "' + await text('#apply-btn') + '"');
+    await click('#apply-btn'); await tick(5000);
+    expect(await app.evaluate(() => window.__world.adapters[0].isDhcp === true), 'the (pretend) card did not go to DHCP — status: ' + await text('#net-status'));
+    expect(await visible('#revert-btn'), 'no REVERT button after switching a static card to DHCP');
+    await click('#revert-btn'); await tick(8000);
+    const a = await app.evaluate(() => { const x = window.__world.adapters[0]; return { ip: x.ip, dhcp: x.isDhcp, gw: x.gateway }; });
+    expect(a.ip === '10.20.30.57' && a.dhcp === false && a.gw === '10.20.30.1', 'after REVERT the card is ' + JSON.stringify(a) + ' — status: ' + await text('#net-status'));
+  });
+
+  await step('IP: APPLY then REVERT puts the address back and leaves an unchanged MTU alone', async () => {
+    await app.evaluate(() => {
+      Object.assign(window.__world.adapters[0], { ip: '10.20.30.57', subnet: '255.255.255.0', gateway: '10.20.30.1', dns: '10.20.30.1', isDhcp: false });
+      window.__mtuWrites = 0; if (!hud.fixMtu.__counted) { const f = hud.fixMtu; hud.fixMtu = async (...a) => { window.__mtuWrites++; return f(...a); }; hud.fixMtu.__counted = true; }
+      previousConfig = null; hideRevertBtn(); loadAdapters();
+    });
+    await tick(3000);
+    await app.evaluate(() => selectAdapter(adapterList.find(a => a.name === 'Ethernet'))); await tick(1200);
+    await app.evaluate(() => { const e = document.getElementById('ip'); e.focus(); e.value = '10.20.30.58'; e.dispatchEvent(new Event('input', { bubbles: true })); e.blur(); });
+    await tick(400);
+    await click('#apply-btn'); await tick(5000);
+    expect(await app.evaluate(() => window.__world.adapters[0].ip === '10.20.30.58'), 'APPLY did not reach the (pretend) card — status: ' + await text('#net-status'));
+    expect(await visible('#revert-btn'), 'no REVERT button after APPLY');
+    await click('#revert-btn'); await tick(8000);
+    expect(await app.evaluate(() => window.__world.adapters[0].ip === '10.20.30.57'), 'REVERT did not put 10.20.30.57 back — status: ' + await text('#net-status'));
+    expect(await app.evaluate(() => window.__mtuWrites === 0), 'REVERT wrote the MTU ' + await app.evaluate(() => window.__mtuWrites) + ' time(s) although it had not changed');
+  });
+
   await browser.close(); srv.close();
   const failed = results.filter(r => !r.ok);
   console.log(`\n${results.length - failed.length} of ${results.length} steps passed` + (failed.length ? ` — ${failed.length} FAILED` : ''));
