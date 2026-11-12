@@ -4344,6 +4344,13 @@ document.addEventListener('click', e => {
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
+// 7.4.0-dev.4: for a value placed inside a quoted string in an inline handler —
+// onclick="fn('${escJs(x)}')". escHtml is NOT enough there: the browser decodes &#39; back to
+// a quote before it runs the handler, so a site id or address from an imported file containing
+// a quote ended the string and ran as code. Everything outside a small safe set becomes \uXXXX.
+function escJs(s) {
+  return String(s == null ? '' : s).replace(/[^A-Za-z0-9_.:\- ]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
+}
 
 // ── AUTO RESIZE (v7.0.0 rewrite) ───────────────────────────
 // The window height follows the active tab's real content height, measured by
@@ -5741,6 +5748,22 @@ function isValidIP(ip) {
   return /^(\d{1,3}\.){3}\d{1,3}$/.test(ip) &&
     ip.split('.').every(n => parseInt(n, 10) <= 255);
 }
+// 7.4.0-dev.4: addresses that pass the format check but that no card can use. Windows refuses
+// them with "The parameter is incorrect", which told the tech nothing. '' = fine.
+function ipHostProblem(ip, mask) {
+  if (!isValidIP(ip) || !isValidSubnet(mask)) return '';
+  const n = x => x.split('.').reduce((a, o) => (a * 256) + parseInt(o, 10), 0);
+  const first = parseInt(ip.split('.')[0], 10);
+  if (first === 127) return `${ip} IS A LOOPBACK ADDRESS — A CARD CAN'T USE IT`;
+  if (first >= 224)  return `${ip} IS A MULTICAST / RESERVED ADDRESS — A CARD CAN'T USE IT`;
+  const m = n(mask);
+  if (m === 0 || m === 4294967295) return `MASK ${mask} LEAVES NO ROOM FOR OTHER DEVICES — USE e.g. 255.255.255.0`;
+  if (m >= 4294967294) return '';                       // /31 point-to-point: no network/broadcast address
+  const host = n(ip) % (4294967296 - m), size = 4294967296 - m;
+  if (host === 0)        return `${ip} IS THE NETWORK ADDRESS FOR MASK ${mask} — PICK ONE ABOVE IT`;
+  if (host === size - 1) return `${ip} IS THE BROADCAST ADDRESS FOR MASK ${mask} — PICK ONE BELOW IT`;
+  return '';
+}
 
 // Only accept proper contiguous subnet masks
 const VALID_SUBNETS_SET = new Set([
@@ -5864,6 +5887,14 @@ async function applyConfig() {
     setNetStatus('ERROR: IP CANNOT START WITH 0', 'err', 5000);
     document.getElementById('ip').classList.add('changed');
     return;
+  }
+  {
+    const prob = revertInProgress ? '' : ipHostProblem(f.ip, f.subnet);   // 7.4.0-dev.4
+    if (prob) {
+      setNetStatus('ERROR: ' + prob, 'err', 7000);
+      document.getElementById(/MASK /.test(prob) ? 'subnet' : 'ip').classList.add('changed');
+      return;
+    }
   }
 
   // ── SAFEGUARD: IP/subnet class mismatch ────────────────
@@ -6793,9 +6824,9 @@ function monPaintRow(host, dotState, idx) {
     <div class="metric ${avgCls}">${avgStr}</div>
     <div class="loss-cell"><span class="loss-val ${lossCls}">${lossStr}</span></div>
     <div class="spark-cell">${monSparkline(d.history)}</div>
-    <div class="trcrt-btn" onclick="tracertToggle('${escHtml(host)}')" title="Traceroute">TRCRT</div>
-    <div class="tone-btn${monToneHost === host ? ' on' + (last && !last.ok ? ' alarm' : '') : ''}" onclick="monToneToggle('${escHtml(host)}')" title="Toner: hear this host — sonar while it answers, alarm when it doesn't. Pull cables at the switch and listen.">♪</div>
-    ${el.classList.contains('has-cap') ? `<div class="cap-btn" onclick="monCapture('${escHtml(host)}')" title="Open a live Wireshark capture filtered to this host">◉</div>` : ''}`);
+    <div class="trcrt-btn" onclick="tracertToggle('${escJs(host)}')" title="Traceroute">TRCRT</div>
+    <div class="tone-btn${monToneHost === host ? ' on' + (last && !last.ok ? ' alarm' : '') : ''}" onclick="monToneToggle('${escJs(host)}')" title="Toner: hear this host — sonar while it answers, alarm when it doesn't. Pull cables at the switch and listen.">♪</div>
+    ${el.classList.contains('has-cap') ? `<div class="cap-btn" onclick="monCapture('${escJs(host)}')" title="Open a live Wireshark capture filtered to this host">◉</div>` : ''}`);
 
   // Restore tracert button state if a tracert is active for this host
   if (tracertActiveHost === host) {
@@ -7950,9 +7981,9 @@ function appendScanResult(ip, ms, fromArp, mac, vendor) {
     ${hasMeta ? `<span class="scan-result-mac-top" title="${escHtml(macDisplay)}">${escHtml(macDisplay)}</span>` : ''}
     <div class="scan-result-ms">${msStr}</div>
     <div class="scan-row-actions">
-      <span class="scan-copy-btn" onclick="scanCopy('${escHtml(ip)}', this)" title="Copy IP">IP</span>
-      ${hasMeta ? `<span class="scan-copy-btn" data-mac="1" onclick="scanCopy('${escHtml(macDisplay)}', this)" title="Copy MAC">MAC</span>` : ''}
-      <span class="scan-copy-btn" onclick="scanPingHost('${escHtml(ip)}')" title="Add to the PING monitor and start it">PING</span>
+      <span class="scan-copy-btn" onclick="scanCopy('${escJs(ip)}', this)" title="Copy IP">IP</span>
+      ${hasMeta ? `<span class="scan-copy-btn" data-mac="1" onclick="scanCopy('${escJs(macDisplay)}', this)" title="Copy MAC">MAC</span>` : ''}
+      <span class="scan-copy-btn" onclick="scanPingHost('${escJs(ip)}')" title="Add to the PING monitor and start it">PING</span>
     </div>
     ${metaBlock}`;
 
@@ -8451,6 +8482,7 @@ async function importSites() {
     intelSetListStatus(r.err === 'CANCELLED' ? 'IMPORT CANCELLED' : 'IMPORT FAILED — ' + (r.err || 'unknown').toUpperCase(), r.err === 'CANCELLED' ? '' : 'err', 6000);
     return;
   }
+  r.sites = intelCleanDB(r.sites);   // 7.4.0-dev.4
   const siteCount = Object.keys(r.sites).length;
   const credCount = intelCountCreds(r.sites);
   const fileName  = (r.file || '').split(/[\\/]/).pop();
@@ -9210,7 +9242,7 @@ async function loadAliasTab() {
     box.innerHTML = extras.map((x, i) => `<div class="field-row ca-extra${before.size && !before.has(x.ip) ? ' row-enter' : ''}">
         <div class="field-label">${ordinal(i + 2)} NETWORK ADDRESS</div>
         <div class="ip-field-wrap"><div class="field-input ca-ro">${escHtml(x.ip)}<span class="m">/${maskBits(x.subnet) || '?'} · ${escHtml(x.subnet || '')}</span></div>
-          <span class="ca-acts"><span class="cp" title="Copy ${escHtml(x.ip)}" onclick="aliasCopyIp('${escHtml(x.ip)}')">COPY</span><span class="rm" title="Take ${escHtml(x.ip)} off this card" onclick="aliasRemoveFromTab('${escHtml(x.ip)}')">REMOVE</span></span></div>
+          <span class="ca-acts"><span class="cp" title="Copy ${escHtml(x.ip)}" onclick="aliasCopyIp('${escJs(x.ip)}')">COPY</span><span class="rm" title="Take ${escHtml(x.ip)} off this card" onclick="aliasRemoveFromTab('${escJs(x.ip)}')">REMOVE</span></span></div>
       </div>`).join('');
     const add = document.getElementById('ca-add');
     if (add) add.textContent = `+ ADD A ${ordinal(extras.length + 2)} NETWORK ADDRESS`;
@@ -9276,6 +9308,7 @@ async function aliasAddRun() {
   if (!adapter) { setAliasStatus('NO ADAPTER SELECTED', 'err', 4000); return; }
   if (!ip || !isValidIP(ip))     { setAliasStatus('INVALID IP ADDRESS', 'err', 4000); return; }
   if (!isValidSubnet(subnet))    { setAliasStatus('INVALID SUBNET MASK — USE e.g. 255.255.255.0', 'err', 4000); return; }
+  { const prob = ipHostProblem(ip, subnet); if (prob) { setAliasStatus(prob, 'err', 6000); return; } }   // 7.4.0-dev.4
 
   if (!window.hud) {
     aliasCopyCmd('add');
@@ -9382,11 +9415,34 @@ let intelActiveSite = null;        // siteId of open detail view
 let intelPendingChanges = {};      // { siteId: { new:[], missing:[], moved:[] } }
 
 // ── PERSISTENCE ────────────────────────────────────────────
+// 7.4.0-dev.4: site data comes from disk and from imported files — shape it before anything
+// renders it. A site that isn't an object, a device that isn't one, or a device with neither a
+// MAC nor an address used to throw in the device list and leave the SITES tab blank.
+function intelCleanDB(db) {
+  const out = {};
+  if (!db || typeof db !== 'object' || Array.isArray(db)) return out;
+  for (const [key, site] of Object.entries(db)) {
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
+    if (!site || typeof site !== 'object' || Array.isArray(site)) continue;
+    site.devices = (Array.isArray(site.devices) ? site.devices : [])
+      .filter(d => d && typeof d === 'object' && !Array.isArray(d))
+      .map(d => {
+        if (d.mac != null && typeof d.mac !== 'string') d.mac = String(d.mac);
+        if (d.ip  != null && typeof d.ip  !== 'string') d.ip  = String(d.ip);
+        if (d.creds != null && !Array.isArray(d.creds)) d.creds = [];
+        return d;
+      })
+      .filter(d => d.mac || d.ip);
+    if (typeof site.id !== 'string' || !site.id) site.id = key;
+    out[key] = site;
+  }
+  return out;
+}
 async function intelLoad() {
   if (!window.hud) return;
   try {
     const data = await hud.intelLoad();
-    if (data && typeof data === 'object') intelDB = data;
+    if (data && typeof data === 'object') intelDB = intelCleanDB(data);
   } catch {}
 }
 
@@ -9517,7 +9573,7 @@ function intelRenderSiteList(filter) {
       <div class="intel-site-top">
       <div class="intel-site-name" contenteditable="true" spellcheck="false"
         title="Click to rename"
-        onblur="intelRenameSite('${escHtml(site.id)}', this)"
+        onblur="intelRenameSite('${escJs(site.id)}', this)"
         onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();} if(event.key==='Escape'){this.textContent=this.dataset.orig;this.blur();}"
         onmousedown="event.stopPropagation()"
         onclick="event.stopPropagation()"
@@ -9525,15 +9581,15 @@ function intelRenderSiteList(filter) {
         data-orig="${escHtml(site.name || '—')}"
       >${escHtml(site.name || '—')}</div>
       ${isHere ? '<span class="intel-here" title="Your network card is on this site\'s subnet">● YOU\'RE HERE</span>' : ''}
-      <span style="flex:1" onclick="intelOpenSite('${escHtml(site.id)}')"></span>
-      ${site.subnet ? `<span class="intel-card-scan" title="Scan ${escHtml(site.subnet)}.0/24 now" onclick="event.stopPropagation(); intelActiveSite='${escHtml(site.id)}'; intelLinkScan()">▶ SCAN</span>` : ''}
+      <span style="flex:1" onclick="intelOpenSite('${escJs(site.id)}')"></span>
+      ${site.subnet ? `<span class="intel-card-scan" title="Scan ${escHtml(site.subnet)}.0/24 now" onclick="event.stopPropagation(); intelActiveSite='${escJs(site.id)}'; intelLinkScan()">▶ SCAN</span>` : ''}
       </div>
-      <div class="intel-site-net" onclick="intelOpenSite('${escHtml(site.id)}')">${site.subnet ? escHtml(site.subnet) + '.0/24' : 'no subnet saved'}</div>
-      <div class="intel-site-meta" onclick="intelOpenSite('${escHtml(site.id)}')">
+      <div class="intel-site-net" onclick="intelOpenSite('${escJs(site.id)}')">${site.subnet ? escHtml(site.subnet) + '.0/24' : 'no subnet saved'}</div>
+      <div class="intel-site-meta" onclick="intelOpenSite('${escJs(site.id)}')">
         <span>${escHtml(site.customer || '')}${site.address ? ' · ' + escHtml(site.address) : ''}</span>
         <span>${siteTag ? siteTag + ' · ' : ''}${lastScan}</span>
       </div>
-      <div class="intel-site-badges" onclick="intelOpenSite('${escHtml(site.id)}')">${badges}</div>`;
+      <div class="intel-site-badges" onclick="intelOpenSite('${escJs(site.id)}')">${badges}</div>`;
     // No card.onclick — navigation is on meta/badges only, not the name
     container.appendChild(card);
   });
@@ -9933,8 +9989,8 @@ function intelRenderDeviceList(site, filter) {
     row.id = rowId;
 
     const typeLabel = device.type
-      ? `<div class="intel-device-type ${chipTypeCls}" onclick="event.stopPropagation();intelCycleType('${escHtml(device.mac||device.ip)}')" title="Click to change type">${escHtml(device.type)}</div>`
-      : `<div class="intel-device-type" onclick="event.stopPropagation();intelCycleType('${escHtml(device.mac||device.ip)}')" title="Click to set type">TAG</div>`;
+      ? `<div class="intel-device-type ${chipTypeCls}" onclick="event.stopPropagation();intelCycleType('${escJs(device.mac||device.ip)}')" title="Click to change type">${escHtml(device.type)}</div>`
+      : `<div class="intel-device-type" onclick="event.stopPropagation();intelCycleType('${escJs(device.mac||device.ip)}')" title="Click to set type">TAG</div>`;
 
     row.innerHTML = `
       <div class="intel-device-main" onclick="intelToggleDrawer('${rowId}')">
@@ -9957,7 +10013,7 @@ function intelBuildDrawer(device, siteId) {
   const firstSeen = device.firstSeen ? new Date(device.firstSeen).toLocaleDateString() : '—';
   const lastSeen  = device.lastSeen  ? new Date(device.lastSeen).toLocaleDateString()  : '—';
   const portStr   = (device.ports||[]).filter(p=>p.open).map(p=>p.port).join(', ') || '—';
-  const deviceKey = escHtml(device.mac || device.ip);
+  const deviceKey = String(device.mac || device.ip || '');   // raw — escaped where it is used (escJs in handlers)
 
   let credsHtml = intelCredRowsHtml(device, deviceKey, siteId);
 
@@ -9989,21 +10045,21 @@ function intelBuildDrawer(device, siteId) {
       <div class="intel-drawer-field intel-drawer-full">
         <div class="intel-drawer-label">NOTES</div>
         <textarea class="intel-note-input" rows="2" placeholder="device notes..."
-          oninput="intelUpdateNote('${deviceKey}','${siteId}',this.value)"
+          oninput="intelUpdateNote('${escJs(deviceKey)}','${escJs(siteId)}',this.value)"
           onblur="intelAutoSave()"
         >${escHtml(device.notes||'')}</textarea>
       </div>
       <div class="intel-drawer-field intel-drawer-full">
         <div class="intel-drawer-label" style="margin-bottom:5px">CREDENTIALS</div>
         <div id="intel-creds-${deviceKey.replace(/[^a-zA-Z0-9]/g,'_')}">${credsHtml}</div>
-        <div class="intel-add-cred-btn" onclick="intelAddCred('${deviceKey}','${siteId}')">+ ADD CREDENTIAL</div>
+        <div class="intel-add-cred-btn" onclick="intelAddCred('${escJs(deviceKey)}','${escJs(siteId)}')">+ ADD CREDENTIAL</div>
       </div>
     </div>
     <div class="intel-drawer-actions">
-      <div class="intel-save-btn" onclick="intelSaveDevice('${deviceKey}','${siteId}')">SAVE</div>
-      ${device.mac ? `<div class="intel-wake-btn" onclick="intelWake('${escHtml(device.mac)}', this)" title="Wake-on-LAN — send a magic packet to this MAC on every connected subnet">WAKE</div>` : ''}
-      ${device.ip ? `<div class="intel-wake-btn" onclick="openDevicePage('${escHtml(device.ip)}')" title="Open ${escHtml(device.ip)} in the browser">↗ OPEN</div><div class="intel-wake-btn" onclick="scanPingHost('${escHtml(device.ip)}')" title="Ping ${escHtml(device.ip)} on the PING tab">PING</div>` : ''}
-      <div class="intel-del-device-btn" onclick="intelDeleteDevice('${deviceKey}','${siteId}')">REMOVE DEVICE</div>
+      <div class="intel-save-btn" onclick="intelSaveDevice('${escJs(deviceKey)}','${escJs(siteId)}')">SAVE</div>
+      ${device.mac ? `<div class="intel-wake-btn" onclick="intelWake('${escJs(device.mac)}', this)" title="Wake-on-LAN — send a magic packet to this MAC on every connected subnet">WAKE</div>` : ''}
+      ${device.ip ? `<div class="intel-wake-btn" onclick="openDevicePage('${escJs(device.ip)}')" title="Open ${escHtml(device.ip)} in the browser">↗ OPEN</div><div class="intel-wake-btn" onclick="scanPingHost('${escJs(device.ip)}')" title="Ping ${escHtml(device.ip)} on the PING tab">PING</div>` : ''}
+      <div class="intel-del-device-btn" onclick="intelDeleteDevice('${escJs(deviceKey)}','${escJs(siteId)}')">REMOVE DEVICE</div>
     </div>`;
 }
 
@@ -10074,14 +10130,14 @@ function intelUpdateNote(deviceKey, siteId, value) {
 
 // Shared credential row template. Values are masked (type=password) with a per-row
 // reveal toggle so a job-site shoulder-surf doesn't read every camera password.
-// deviceKey must already be escHtml'd by the caller.
+// deviceKey and siteId are raw; the handlers escape them with escJs.
 function intelCredRowsHtml(device, deviceKey, siteId) {
   return (device.creds || []).map((c, i) => `
     <div class="intel-cred-row">
-      <input class="intel-cred-key" value="${escHtml(c.key)}" placeholder="label" spellcheck="false" oninput="intelUpdateCred('${deviceKey}','${siteId}',${i},'key',this.value)" onchange="intelAutoSave()">
-      <input class="intel-cred-val" type="password" value="${escHtml(c.val)}" placeholder="value" spellcheck="false" autocomplete="off" oninput="intelUpdateCred('${deviceKey}','${siteId}',${i},'val',this.value)" onchange="intelAutoSave()">
+      <input class="intel-cred-key" value="${escHtml(c.key)}" placeholder="label" spellcheck="false" oninput="intelUpdateCred('${escJs(deviceKey)}','${escJs(siteId)}',${i},'key',this.value)" onchange="intelAutoSave()">
+      <input class="intel-cred-val" type="password" value="${escHtml(c.val)}" placeholder="value" spellcheck="false" autocomplete="off" oninput="intelUpdateCred('${escJs(deviceKey)}','${escJs(siteId)}',${i},'val',this.value)" onchange="intelAutoSave()">
       <div class="intel-cred-eye" onclick="intelToggleCredReveal(this)" title="Show / hide">◉</div>
-      <div class="intel-cred-del" onclick="intelRemoveCred('${deviceKey}','${siteId}',${i})">✕</div>
+      <div class="intel-cred-del" onclick="intelRemoveCred('${escJs(deviceKey)}','${escJs(siteId)}',${i})">✕</div>
     </div>`).join('');
 }
 
@@ -10112,7 +10168,7 @@ function intelAddCred(deviceKey, siteId) {
   const safe = deviceKey.replace(/[^a-zA-Z0-9]/g,'_');
   const credsEl = document.getElementById('intel-creds-' + safe);
   if (credsEl) {
-    credsEl.innerHTML = intelCredRowsHtml(device, escHtml(deviceKey), siteId);
+    credsEl.innerHTML = intelCredRowsHtml(device, deviceKey, siteId);
   }
   autoResize();
 }
@@ -10127,7 +10183,7 @@ function intelRemoveCred(deviceKey, siteId, idx) {
   const safe = deviceKey.replace(/[^a-zA-Z0-9]/g,'_');
   const credsEl = document.getElementById('intel-creds-' + safe);
   if (credsEl) {
-    credsEl.innerHTML = intelCredRowsHtml(device, escHtml(deviceKey), siteId);
+    credsEl.innerHTML = intelCredRowsHtml(device, deviceKey, siteId);
   }
   autoResize();
 }
