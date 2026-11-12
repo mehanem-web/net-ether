@@ -18,19 +18,26 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 
 ### UI smoke test (7.4.0) — run on every tag, or by hand
 `tests/smoke/smoke.js` opens the real window in a headless browser against a pretend backend
-(`tests/smoke/sim/`, the fake network the tutorial film uses) and clicks through 16 steps:
-boot, IP (zero-padded address, broadcast refusal), help, PING (start, TRCRT, toner), SCAN (sweep,
-row buttons, SAVE SITE), SITES (card, device drawer, note, login add/remove, type chip), DHCP
-(listen, SET LAPTOP IP, a device asking, SERVE), RECON (listen, stop, cards). Any error on the
+(`tests/smoke/sim/`, the fake network the tutorial film uses) and clicks through 32 steps:
+boot, IP (zero-padded address, broadcast refusal, gateway-only change, picking a card, two cards,
+shortcut + card, REVERT after DHCP, MTU left alone, 2nd address per card), help, PING (start, TRCRT,
+toner, PAUSE/RESUME rate, targets edited while running), SCAN (sweep, row buttons, SAVE SITE, part
+of a subnet, padded base, save under the scanned subnet, vendor from an online lookup), SITES (card,
+device drawer, note, login add/remove, type chip, remove device, delete site), DHCP
+(card replug + lock while serving,
+listen, SET LAPTOP IP, a device asking, SERVE), RECON (listen, stop, cards). Any error on the
 page fails the step; a failed step leaves a screenshot in `tests/smoke/shots/`.
 By hand: `npm i --no-save playwright`, `npx playwright install chromium`, `npm run smoke`.
+Rule: a fix to the window gets a step that fails on the code before the fix.
+Result 2026-11-11: 32 of 32 on the home PC (Windows) and on Linux.
 It proves the screen works — not that Windows applied anything. When the app's window↔main
 calls change, the sim in `tests/smoke/sim/` has to learn the new call.
 
-### v7.4.0 — audit fixes (dev builds `7.4.0-dev.1` … `dev.3`, signed drafts)
+### v7.4.0 — audit fixes (dev builds `7.4.0-dev.1` … `dev.6`, signed drafts)
 **Result 2026-11-11 (home PC `dev.bat` + work laptop signed portable, cabled straight to each other):**
 every fix below was seen working except the three marked *work*. Details and evidence per fix:
-`claude/AUDIT-7.4-status.md` in the project.
+`claude/AUDIT-7.4-status.md` in the project. dev.4 – dev.6 (the second pass, 2026-11-11 night) are in
+the block "Second pass" below.
 
 Home, no gear needed (two PCs and one cable for the rigs):
 - [x] Smoke run after the full-path launch change: IP tab lists the card, PING answers, DHCP tab starts (firewall rule added), APPLY + REVERT verify. COPY DIAGNOSTICS shows no failed launch.
@@ -58,6 +65,21 @@ Home, no gear needed (two PCs and one cable for the rigs):
 2. PC, admin PowerShell: `python fake-switch.py "Ethernet"` (no arguments lists the cards).
 - [x] RECON shows what the script prints at the end: SWITCH `FAKE-SW-01 · port Gi1/0/12 · VLAN 110`, Port wants 802.1X, **RSTP** running, Trunk VLANs 20, 30, DHCP server 10.99.99.254, hosts on 10.99.99.x, **10.99.99.249** looks free, NAMES FAKE-NVR, fake-cam, NTP 10.99.99.250.
 - TRUNK may be empty on a card that strips VLAN tags (the laptop's USB Realtek 2.5GbE does not).
+
+**Second pass (dev.4 – dev.6)** — seen live at home on 2026-11-11 unless marked:
+- [x] Two wired cards: picking the second shows its own settings; a shortcut then keeps that card; picking a card keeps the shortcut; APPLY leaves the form on that card.
+- [x] Static card → SWITCH TO DHCP → REVERT puts the static back; diagnostics show `revert` with no `mtu` step.
+- [x] IP `x.x.x.255` on a /24 → refused in plain words.
+- [x] PING: add a target while running → it gets a row; ten PAUSE/RESUME clicks → the rate does not climb.
+- [x] TRCRT: whole hop lines, no lone numbers.
+- [x] SITES: REMOVE DEVICE on a device with logins → ETHER's own prompt, logins counted.
+- [x] DHCP socket: laptop serving on `10.99.99.1`, log says "Hearing DHCP on 10.99.99.1 only — this cable"; `fake-cameras.js` PASS; again with `$env:FAKE_BCAST='255.255.255.255'` PASS; a phone on the Wi-Fi does not appear.
+- [x] DHCP card list: pull the USB card → it leaves the list; put it back → it returns without ⟳.
+- [ ] Built with the fix (dev.6): with no wired card the list is empty (no Wi-Fi, no loopback); ⟳ shows CARD LIST REFRESHED; a pulled and replaced card is picked again.
+- [ ] SCAN a network, type another base, SAVE SITE → saved under the scanned network, no row for the laptop.
+- [ ] *work* SCAN where several devices share a maker missing from the built-in table → all show the vendor.
+- [ ] *work* Two cards with the dock + USB adapter: same card-picking checks as above.
+- [ ] *work* A sweep of part of a saved site's subnet → nothing outside the range reported MISSING.
 
 Work (confirmation on real gear):
 - [ ] Three or more real cameras on one PoE switch, powered together, SERVE EVERYONE → every camera a different address, each opens.

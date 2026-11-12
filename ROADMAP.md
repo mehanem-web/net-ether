@@ -9,8 +9,9 @@
 - Video guide for 7.3.1: done (5:17, `_media/Tutorial Video/NET-ETHER-v7.3.1-Tutorial.mp4`).
 - **Code audit (2026-11-10/11)** — a full read for bugs, then fixes tested live. Lives on branch `dev/7.4` and as signed draft builds `v7.4.0-dev.1…3` (the "git stays untouched" rule now means `main`). Fixed: DHCP duplicate address for two devices asking at once; pool must be on the card's network and replies use the card's mask; double engine start; RECON capture filter (DHCP/NAMES/NTP were filtered out), DHCP card wording, RSTP/MSTP label, free-address pick; PING/SCAN latency was launch time; RDP button; zero-padded addresses; stale mask after → DHCP; stale discovery firewall rule; system tools by full path; PowerShell worker on a throwing query. Full list in the README changelog; evidence per fix in `claude/AUDIT-7.4-status.md` (project).
 - **Test rigs** — `tools/fake-cameras.js` and `tools/fake-switch.py`: DHCP and RECON provable at home with two PCs and a cable. TESTING.md § 7.4.0.
-- **To ship 7.4.0:** work pass on real cameras and a managed port (TESTING.md § 7.4.0, the three unticked lines) → merge `dev/7.4` to `main` → tag → delete the `v7.4.0-dev.*` drafts. Guide 7.1 is built (version line and the RECON DHCP wording; same 22 pages, screenshots unchanged and still showing the 7.3.1 chip). Video: no re-film needed (every line of the narration is still true); optional re-render from the 7.4.0 source with the same take so the version chip reads 7.4.0, which would refresh the guide screenshots in the same run.
-- **Moved to 7.5:** PING on one long-lived `ping -t`, SCAN by ARP, IP-tab poll and one shared netsh reader, RECON on `spawn`, dead code, tests in CI, DHCP socket bound to the card (so it stops hearing other cards), IP-tab wrong-input sweep.
+- **Second pass (2026-11-11 night, `v7.4.0-dev.4` … `dev.6`)** — the decision changed from "ship soon" to "no deadline, most thorough release so far, should last". The whole window script was read tab by tab; about forty more fixes (README changelog; evidence in the project's `claude/AUDIT-7.4-status.md`). A UI smoke test (`npm run smoke`, 32 steps, real window against a pretend backend) runs on every tag; rule: a fix gets a step that fails on the old code. The DHCP engine now hears only the cable it serves (proven at home with the fake cameras).
+- **Plan from here:** (1) work pass on dev.6 — TESTING.md § 7.4.0, the unticked lines; (2) next dev build: fewer process launches — PING on one long-lived `ping -t` per host, SCAN by ARP, IP-tab poll and one shared netsh reader, RECON on `spawn`; (3) then the RECON glow-up (verdict line, cards updated in place, comparison with SITES, address conflicts); (4) docs, guide screenshots and one video re-render at the end; merge `dev/7.4` to `main`, tag, delete the `v7.4.0-dev.*` drafts.
+- **Still open inside 7.4:** harness tests into the repo and the workflow; smoke step in `release.yml` switched to blocking once seen green on the GitHub runner; unused functions removed (ten found); imported site files keep unknown fields; top bar shows the form's gateway while a shortcut is loaded.
 
 ## 7.3.1 — the feel pass + IP tab rebuild (released 2026-11-02)
 The fleet's first 7.3 (7.3.0 never left the bench). Built live in a dev copy on Johan's PC (`ETHER-dev`, outside git), one change at a time, folded into git as one commit; two private rcs (draft releases) for the work-laptop test.
@@ -22,9 +23,9 @@ The fleet's first 7.3 (7.3.0 never left the bench). Built live in a dev copy on 
 
 ## Next
 - ~~**Video guide** redone for 7.3.1~~ → done 2026-11-02.
-- **RECON glow-up** — used all the time, due the same "fresh eyes" pass SITES got.
+- **RECON glow-up** — now part of 7.4 (see above).
 - Bench, still: camera-side checks (APPLY onto a camera's subnet → Windows' duplicate verdict, FACTORY DEFAULTS + ADD → OPEN, DHCP serve/OPEN, window growing for a new device) — not run for 7.3.1 for lack of gear; they fall back to 7.3.0 behaviour.
-- Carried: SCAN's one ping.exe per address; DHCP listen hears every card; firewall-rule adds not read back.
+- Carried: SCAN's one ping.exe per address (planned inside 7.4); ~~DHCP listen hears every card~~ → fixed in 7.4.0-dev.4; firewall-rule adds not read back.
 
 ## 7.3.0 — the stability release (released 2026-10-30, eight rcs)
 Goal: one fleet update that lasts. Everything 7.2 added gets its bench round inside 7.3 (TESTING.md § 7.3.0 "the one pass"); rcs stay on Johan's machines; the fleet gets 7.3.0 only, then 7.3.x for things that block work.
