@@ -6941,8 +6941,15 @@ function monFlashRow(host, ok) {
   setTimeout(() => el.classList.remove('flash-ok', 'flash-fail'), 500);
 }
 
-async function monRunCycle() {
-  if (monState !== 'running') return;
+// 7.4.0-dev.4: one ping loop at a time. A cycle waits on its pings (up to ~2 s for a dead host);
+// PAUSE → RESUME or STOP → START inside that wait started a second loop while the first carried
+// on when its pings came back — every such click added another loop, pinging 2×, 3×… as often
+// (and launching that many more ping.exe) until STOP. Each cycle now carries the number of the
+// loop it belongs to; start / resume / pause / stop move the number on, and an old cycle quits.
+let monLoop = 0;
+async function monRunCycle(loop) {
+  if (loop === undefined) loop = ++monLoop;      // a fresh loop (START / RESUME); the timer passes its own number
+  if (monState !== 'running' || loop !== monLoop) return;
   const targets = monActiveHosts();
   if (!targets.length) return;
   targets.forEach((h, i) => monPaintRow(h, 'pinging', i));
@@ -6952,7 +6959,7 @@ async function monRunCycle() {
     catch { r = { ok: false, err: 'ERR' }; }
     return { host, r };
   }));
-  if (monState !== 'running') return;
+  if (monState !== 'running' || loop !== monLoop) return;
   let anyFail = false;
   results.forEach(({ host, r }, i) => {
     if (!monHostData[host]) monHostData[host] = { history: [], sent: 0, successful: 0 };
@@ -6987,7 +6994,7 @@ async function monRunCycle() {
   monUpdateStatus(anyFail);
   monUpdateCounter();
   if (window.hud && anyFail) { try { hud.traySetMode('ping_fail'); } catch {} }
-  monPingTimer = setTimeout(monRunCycle, monIntervalMs);
+  monPingTimer = setTimeout(() => monRunCycle(loop), monIntervalMs);
 }
 
 function monHandleStart() {
@@ -7069,7 +7076,7 @@ function monStart() {
 function monPause() {
   monToneSilence();
   if (monState !== 'running') return;
-  monState = 'paused';
+  monState = 'paused'; monLoop++;
   if (monPingTimer) { clearTimeout(monPingTimer); monPingTimer = null; }
   monStopTicker();
   monUpdateControls();
@@ -7089,7 +7096,7 @@ function monResume() {
 }
 
 function monStop() {
-  monState = 'stopped';
+  monState = 'stopped'; monLoop++;
   monToneSilence();
   tracertClose();
   if (monPingTimer) { clearTimeout(monPingTimer); monPingTimer = null; }

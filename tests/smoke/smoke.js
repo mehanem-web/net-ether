@@ -341,6 +341,27 @@ const VISIT = [
     await app.evaluate(() => loadPreset(0, true));
   });
 
+  await step('PING: PAUSE then RESUME while a ping is still out does not double the ping rate', async () => {
+    await tab('tools');
+    await app.evaluate(() => { try { monStop(); } catch {} });
+    await tick(500);
+    await app.evaluate(() => {
+      window.__pings = 0;
+      const p = hud.ping; hud.ping = async h => { window.__pings++; await new Promise(r => setTimeout(r, 1500)); return p(h); };   // a slow host: 1.5 s per answer
+      monHosts = ['10.20.30.1']; monRenderHostEditor(); monSetInterval(1000); monStart();
+    });
+    await tick(300);
+    await app.evaluate(() => { monPause(); monResume(); });      // inside the first ping's 1.5 s
+    await tick(600);
+    await app.evaluate(() => { monPause(); monResume(); });      // and once more
+    await app.evaluate(() => { window.__pings = 0; });
+    await tick(20000);
+    const n = await app.evaluate(() => window.__pings);
+    await app.evaluate(() => monStop()); await tick(2500);
+    // one chain: a 1.5 s ping + 1 s wait = one ping every 2.5 s → 8 in 20 s. Doubled chains give 16, tripled 24.
+    expect(n <= 9, n + ' pings in 20 s for one host (one every 2.5 s would be 8) — more than one ping loop is running');
+  });
+
   await browser.close(); srv.close();
   const failed = results.filter(r => !r.ok);
   console.log(`\n${results.length - failed.length} of ${results.length} steps passed` + (failed.length ? ` — ${failed.length} FAILED` : ''));
