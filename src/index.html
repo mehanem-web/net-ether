@@ -4366,9 +4366,6 @@ function toggleAdapterDropdown() {
   else openAdapterDropdown();
 }
 
-function filterAdapterDropdown(val) {
-  // No-op — typing is disabled, dropdown is click-only
-}
 
 // Close when clicking outside
 document.addEventListener('click', e => {
@@ -6306,12 +6303,8 @@ const CIDR_DATA = [
   { slash: '/8',  mask: '255.0.0.0',       hosts: 16777214, label: 'A'  },
 ];
 
-let cidrVisible = false;
 let cidrHighlighted = null;
 
-// v7.0.0: the CIDR reference moved to the ? quick guide (CIDR tab). Clicking a
-// row there still writes the mask into the ETHER subnet field.
-function toggleCidr() { openHelp(); renderHelp('cidr'); }
 
 function buildCidrTable(container) {
   container = container || document.getElementById('cidr-table');
@@ -8383,114 +8376,9 @@ function renderSiteLibrary() {
   // Site library was moved to the SITES tab — this is now a no-op kept for call-site compat
 }
 
-async function renameSite(key, el) {
-  const val = el.textContent.trim().toUpperCase();
-  if (!val || !allSites[key]) return;
-  allSites[key].name = val;
-  el.textContent = val;
-  await persistSites();
-  // Sync to intelDB (SITES tab) if a matching subnet entry exists
-  const intelSite = Object.values(intelDB).find(s => s.subnet === key);
-  if (intelSite) {
-    intelSite.name = val;
-    intelPersist();
-  }
-}
 
-function loadSite(key) {
-  const site = allSites[key];
-  if (!site) return;
 
-  // Set scan base IP
-  document.getElementById('scan-base').value = site.subnet || key;
 
-  // Pre-load activeSiteDB for label recall on next scan
-  activeSiteDB = {};
-  if (site.devices) {
-    site.devices.forEach(d => {
-      if (d.mac) activeSiteDB[d.mac.toUpperCase()] = d;
-    });
-  }
-
-  // Clear any existing results and render saved devices immediately
-  document.getElementById('scan-results').querySelectorAll('.scan-result-row').forEach(r => r.remove());
-  document.getElementById('scan-empty').style.display = 'none';
-  document.getElementById('scan-progress-wrap').classList.remove('visible');
-
-  const devices = site.devices || [];
-  if (!devices.length) {
-    document.getElementById('scan-empty').textContent = 'NO DEVICES IN THIS SITE YET';
-    document.getElementById('scan-empty').style.display = '';
-    document.getElementById('scan-results-header').style.display = 'none';
-    setScanStatus(`SITE LOADED: ${site.name || key} — NO SAVED DEVICES`, 'warn', 4000);
-    autoResize();
-    return;
-  }
-
-  // Reset save button — this is a known site so always UPDATE
-  const saveBtn = document.getElementById('scan-save-site-btn');
-  if (saveBtn) { saveBtn.textContent = 'UPDATE SITE'; saveBtn.classList.remove('saved'); saveBtn.classList.add('update'); }
-  scanCancelNamePrompt();
-
-  scanFound = devices.length;
-  document.getElementById('scan-results-header').style.display = 'flex';
-  updateScanFoundCount();
-
-  // Render each saved device as a library row
-  devices.forEach(d => {
-    const mac = d.mac || null;
-    const vendor = d.vendor || null;
-
-    appendScanResult(d.ip, 0, false, mac, vendor);
-
-    // Queue online lookup for unknown vendors in library rows too
-    if (mac && !vendor) queueOnlineVendorLookup(mac, d.ip);
-
-    // Mark it as a library row (dimmed until a live scan confirms it)
-    const row = document.getElementById('sr-' + d.ip.replace(/\./g, '_'));
-    if (row) {
-      row.classList.add('from-library');
-      // Show last seen date in the ms slot
-      if (d.lastSeen) {
-        const msEl = row.querySelector('.scan-result-ms');
-        if (msEl) {
-          const date = new Date(d.lastSeen);
-          msEl.textContent = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-          msEl.title = 'Last seen ' + date.toLocaleString();
-        }
-      }
-    }
-  });
-
-  // Port probe placeholder shows "CACHED" for library rows instead of "PROBING..."
-  document.querySelectorAll('.from-library .port-badge.probing').forEach(b => {
-    b.textContent = 'CACHED';
-    b.classList.remove('probing');
-    b.style.opacity = '0.3';
-  });
-
-  setScanStatus(
-    `SITE LOADED: ${site.name || key} — ${devices.length} DEVICE${devices.length !== 1 ? 'S' : ''} — SCAN TO VERIFY`,
-    'ok', 6000
-  );
-  autoResize();
-}
-
-function loadAndScanSite(key) {
-  loadSite(key);
-  switchTab('scan');
-  // Wait for the tab switch and DOM paint to settle before starting the scan.
-  // 250ms is conservative — loadSite is synchronous DOM work, switchTab triggers autoResize.
-  setTimeout(() => startScan(), 250);
-}
-
-async function deleteSite(key) {
-  if (!allSites[key]) return;
-  delete allSites[key];
-  await persistSites();
-  renderSiteLibrary();
-  setScanStatus('SITE DELETED', '', 3000);
-}
 
 async function exportSites() {
   if (!window.hud) {
@@ -9368,30 +9256,6 @@ function getAliasAdapter() {
 }
 
 // ── INLINE MULTI-IP SECTION ───────────────────────────────
-async function toggleAliasPeek() {
-  const row  = document.getElementById('multiip-toggle-row');
-  const peek = document.getElementById('alias-peek');
-  if (aliasPeekOpen) {
-    peek.style.display = 'none';
-    row.classList.remove('open');
-    aliasPeekOpen = false;
-    autoResize();
-    return;
-  }
-  aliasPeekOpen = true;
-  row.classList.add('open');
-  peek.style.display = 'block';
-  autoResize();
-
-  // Disable ADD / CMD if no adapter is selected yet
-  const hasAdapter = !!getAliasAdapter();
-  const addBtn = peek.querySelector('.apply-btn');
-  const cmdBtn = peek.querySelector('.cmd-btn');
-  if (addBtn) { addBtn.style.opacity = hasAdapter ? '' : '0.35'; addBtn.style.pointerEvents = hasAdapter ? '' : 'none'; }
-  if (cmdBtn) { cmdBtn.style.opacity = hasAdapter ? '' : '0.35'; cmdBtn.style.pointerEvents = hasAdapter ? '' : 'none'; }
-
-  await loadAliasTab();
-}
 
 // Updates the amber badge on the MULTI-IP toggle button showing active extra IP count
 async function updateMultiIpBadge() {
@@ -9433,10 +9297,6 @@ async function performAliasRemove(ip, statusFn, adapter) {
   }
 }
 
-async function aliasRemoveQuick(ip) {
-  const res = await performAliasRemove(ip, setNetStatus);
-  if (res) setNetStatus(res.err === 'CANCELLED' ? 'CANCELLED — UAC PROMPT DISMISSED' : 'ERROR: ' + (res.err || 'unknown').toUpperCase(), res.err === 'CANCELLED' ? 'warn' : 'err', 6000);
-}
 
 async function aliasRemoveFromTab(ip) {
   // Capture adapter once here so the remove call and CMD fallback use the same value,

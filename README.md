@@ -242,7 +242,7 @@ NET-ETHER/
 
 ## CHANGELOG
 
-### v7.4.0 (unreleased — in test as 7.4.0-dev.17)
+### v7.4.0 (unreleased — in test as 7.4.0-dev.21)
 A full read of the code looking for bugs, then fixes tested on real hardware — including two fake test rigs (below) so DHCP and RECON can be proven at home without cameras or a managed switch. Nothing about how you use the app changes; things that were quietly wrong are now right.
 - **DHCP: two devices asking at once got the same address.** The ping-before-offer check takes a moment, and a second device asking inside that moment was offered the same address. Each address is now held for the device it is being checked for. Four fake devices 20 ms apart: four different addresses.
 - **DHCP: the pool has to be on the card's own network.** A wider MASK typed in the form let a pool through that the laptop could not reach, and the answers went to a broadcast address that is not on the cable (rows sat on OFFERED). Now refused, naming the card's real mask; answers always use the card's own mask. Masks with no room for devices and pools with no usable address are refused; the gateway's address is never handed out.
@@ -286,6 +286,8 @@ A full read of the code looking for bugs, then fixes tested on real hardware —
 - **DHCP tab works from a 2nd address when the card's main one is self-assigned.** After REACH on a card holding only 169.254.x.x, the tab offered the new address and then said THAT ADDRESS IS NOT USABLE. Fixed and tested on the rig; not yet seen on a real card.
 - **RELEASE ALL says what it does:** it forgets the leases; devices keep their address and show up again when they next ask. Behaviour unchanged.
 - **Third pass: every file read again top to bottom (dev.17).** No fault in what the earlier passes fixed. Small things put right: SITES lists devices in address order (as text, .100 came before .20); + GATEWAY and + MY IP on the PING tab work while the monitor runs; a device that answers a port in under a millisecond but not the ping shows 1 ms instead of ARP; the SCAN CSV no longer lets a device's announced name run as a spreadsheet formula; a damaged scan library, vendor cache or DHCP settings file is treated as empty instead of stopping a scan or a lookup; the DHCP tab's list of devices sitting on the wire forgets what has been silent for five minutes.
+- **A card with no cable (found by pressing everything on one, dev.18 – dev.20).** APPLY could be reported as active when the address was only saved: the check searched Windows' answer for the address as plain text and found `192.168.0.2` inside the gateway `192.168.0.254`. It now needs the whole address on the card's own address line. ADD A 2ND ADDRESS on a static card with no cable ran and failed its own check five seconds later; it is declined at once, as an amber line. SERVE on the DHCP tab said the laptop address "isn't on Ethernet (it has" that same address ")"; it says NO CABLE.
+- **Housekeeping (dev.21):** the engine tests from the audit are in the repo (`npm run test:engine`, five checks, also run by the build); ten functions nothing called are gone.
 - Not in 7.4, planned for 7.5: fewer program launches per action, and a rework of how RECON presents what it heard (see ROADMAP.md).
 
 ### v7.3.1 (2026-11-02)

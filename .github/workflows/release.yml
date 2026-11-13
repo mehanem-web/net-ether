@@ -85,6 +85,12 @@ jobs:
           npx playwright install chromium
           node tests/smoke/smoke.js
 
+      # Engine tests (7.4.0): dhcp.js against pretend sockets and cards — plain Node, a few seconds.
+      # Non-blocking for its first run on this runner, like the smoke test above.
+      - name: Engine tests
+        continue-on-error: true
+        run: node tests/engine/run.js
+
       # ── Code signing (Azure Artifact Signing, formerly Trusted Signing) ──
       # electron-builder's Azure signing path authenticates with the three
       # AZURE_* environment variables below (Azure.Identity EnvironmentCredential)

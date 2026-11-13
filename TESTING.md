@@ -34,7 +34,7 @@ Result 2026-11-12: 35 of 35 on the home PC (Windows) and on Linux (32 of 32 on 2
 It proves the screen works — not that Windows applied anything. When the app's window↔main
 calls change, the sim in `tests/smoke/sim/` has to learn the new call.
 
-### v7.4.0 — audit fixes (dev builds `7.4.0-dev.1` … `dev.17`; signed drafts up to dev.12)
+### v7.4.0 — audit fixes (dev builds `7.4.0-dev.1` … `dev.21`; signed drafts up to dev.12)
 **Result 2026-11-11 (home PC `dev.bat` + work laptop signed portable, cabled straight to each other):**
 every fix below was seen working except the three marked *work*. Details and evidence per fix:
 `claude/AUDIT-7.4-status.md` in the project. dev.4 – dev.6 (the second pass, 2026-11-11 night) are in
@@ -100,6 +100,13 @@ Third pass, 2026-11-12 night (dev.17) — every file read again; checked by the 
 - [ ] SITES: a site with devices on .2, .20 and .100 lists them in that order.
 - [ ] PING running: + GATEWAY adds the gateway as a new row without stopping.
 - [ ] SCAN → COPY → CSV with a device whose name starts with `=` → the cell starts with an apostrophe.
+
+Card with no cable, 2026-11-12 night (home PC, dev.18 – dev.20):
+- [x] DHCP tab, SERVE EVERYONE on a card with no cable → "NO CABLE ON … — PLUG THE DEVICE IN FIRST", no yellow box (dev.18; the box was seen on dev.17).
+- [x] ADD A 2ND ADDRESS on a static card with no cable → declined at once (dev.19, seen as a red line; amber from dev.20 — amber not yet looked at).
+- [x] APPLY 192.168.0.2 with gateway 192.168.0.254, no cable → "SAVED … NO CABLE YET", not active (dev.19).
+
+Engine tests: `npm run test:engine` → 5 of 5 (plain Node; no network needed).
 
 Still to be seen on real gear:
 - [ ] A card holding only 169.254.x.x, REACH adds an address, DHCP tab → settings fill in from that address, link reads LINK UP (dev.15; rig test `t_dhcp10` only).

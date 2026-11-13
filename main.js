@@ -974,11 +974,6 @@ function progResize(width, height) {
   win.setSize(w, h, false);
   if (hadFocus) setTimeout(() => { try { if (winAlive() && !win.isFocused()) win.focus(); win.webContents.focus(); } catch {} }, 30);
 }
-function maxHeightHere() {
-  const area = currentDisplay().workArea;
-  const cur  = win.getBounds();
-  return Math.max(300, (area.y + area.height) - cur.y - 8);
-}
 ipcMain.handle('win-set-size', (e, height) => {
   if (!winAlive()) return;
   // v7.1.0: the content fit may grow the window taller than the room below it.
