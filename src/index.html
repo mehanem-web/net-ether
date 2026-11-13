@@ -9585,6 +9585,10 @@ async function aliasAddRun() {
     setAliasStatus(`✕ ${ip} IS ALREADY TAKEN${who} — PICK ANOTHER ADDRESS` + (res.converted ? ' (THE CARD IS NOW STATIC ON ITS OWN ADDRESS)' : ''), 'err', 12000);
     const el = document.getElementById('alias-new-ip'); if (el) { el.focus(); el.select(); }
     loadAliasTab();
+  } else if (/^No cable on /i.test(res.err || '') || /has no address yet/i.test(res.err || '')) {
+    // 7.4.0-dev.20: ETHER declined before running anything — a plain amber line, not a red error
+    // with a command to paste (the command would fail the same way)
+    setAliasStatus(String(res.err).toUpperCase(), 'warn', 8000);
   } else {
     // Real failure with captured netsh output — show it, and offer the CMD fallback
     aliasCopyCmd('add');
