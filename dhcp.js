@@ -426,6 +426,11 @@ module.exports = function initDhcp(deps) {
       }
       return { ok: true };
     }
+    // 7.4.0-dev.18: no cable. The card's static is only saved, so it is not "on the card" yet — but
+    // saying "192.168.0.146 isn't on Ethernet (it has 192.168.0.146)" and offering REFILL / ADD AS
+    // ALIAS helped nobody. Say what is actually wrong.
+    if (!ips.length && (a.saved || []).some(x => x.ip === cfg.adapterIp)) return { ok: false, code: 'NO_LINK',
+      msg: `No cable on ${name} — plug the device in first. ${cfg.adapterIp} is saved on the card and comes up with the link.` };
     return { ok: false, code: 'NOT_ON_CARD',
       msg: `Laptop IP ${cfg.adapterIp} is not an address on ${name}${ips.length ? ' (it has ' + ips.join(', ') + ')' : ''} — settings from another job. Refill from the card, or add ${cfg.adapterIp} as an alias` };
   }

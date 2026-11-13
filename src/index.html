@@ -11066,6 +11066,7 @@ async function dhcpValidateForm() {
   if (!opts.adapterIp) { setDhcpStatus('THE LAPTOP HAS NO ADDRESS ON THIS CARD — SET ONE IN STEP 2', 'warn', 5000); dhcpGuardCheck('card'); return null; }
   const v = await hud.dhcp.validateConfig(opts);
   if (!v.ok) {
+    if (v.code === 'NO_LINK') { dhcpGuardHide(); setDhcpStatus(`NO CABLE ON ${opts.adapterName.toUpperCase()} — PLUG THE DEVICE IN FIRST, THEN SERVE`, 'warn', 7000); return null; }   // 7.4.0-dev.18
     if (v.code === 'NOT_ON_CARD') { dhcpGuardShow(opts.adapterIp, dhcpCurCard(), 'serve'); setDhcpStatus('NOT SERVED — LAPTOP IP IS NOT ON THIS CARD (SEE STEP 2)', 'err', 7000); return null; }
     dhcpMarkError(v.msg); setDhcpStatus('CHECK SETTINGS: ' + v.msg.toUpperCase(), 'err', 6000); return null;
   }
