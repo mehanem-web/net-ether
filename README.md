@@ -242,7 +242,7 @@ NET-ETHER/
 
 ## CHANGELOG
 
-### v7.4.0 (unreleased — in test as 7.4.0-dev.6)
+### v7.4.0 (unreleased — in test as 7.4.0-dev.16)
 A full read of the code looking for bugs, then fixes tested on real hardware — including two fake test rigs (below) so DHCP and RECON can be proven at home without cameras or a managed switch. Nothing about how you use the app changes; things that were quietly wrong are now right.
 - **DHCP: two devices asking at once got the same address.** The ping-before-offer check takes a moment, and a second device asking inside that moment was offered the same address. Each address is now held for the device it is being checked for. Four fake devices 20 ms apart: four different addresses.
 - **DHCP: the pool has to be on the card's own network.** A wider MASK typed in the form let a pool through that the laptop could not reach, and the answers went to a broadcast address that is not on the cable (rows sat on OFFERED). Now refused, naming the card's real mask; answers always use the card's own mask. Masks with no room for devices and pools with no usable address are refused; the gateway's address is never handed out.
@@ -259,7 +259,7 @@ A full read of the code looking for bugs, then fixes tested on real hardware —
 - **PowerShell worker:** a query that throws now still reports back instead of waiting for its timeout.
 - **APPLY result stays on the status bar**, and no "✓ ON DHCP" flash after DHCP → static (both found while filming the 7.3.1 video).
 - **Guide 7.0** — the visual guide, rebuilt task-first with annotated screenshots.
-- **Second pass: the whole window script, tab by tab, with a UI smoke test** (`npm run smoke`, 32 steps; each fix below has a step or a harness run that fails on the code before it).
+- **Second pass: the whole window script, tab by tab, with a UI smoke test** (`npm run smoke`, 35 steps; each fix below has a step or a harness run that fails on the code before it).
 - **IP: picking a card shows that card.** A DHCP card came up as STATIC with "APPLY <its lease>", the last card's gateway and DNS stayed in the form, and with two wired cards the form jumped back to the first after an APPLY on the other. A shortcut keeps the card you picked, and picking a card keeps the shortcut.
 - **IP: APPLY notices a gateway-only or DNS-only change** (it said NO CHANGE DETECTED), refuses the network, broadcast, loopback and multicast addresses in plain words, and never carries one card's 2nd address onto another card.
 - **IP: REVERT works after a switch to DHCP**, and only rewrites the MTU when it actually changed.
@@ -275,7 +275,17 @@ A full read of the code looking for bugs, then fixes tested on real hardware —
 - **DHCP: reservations on the network or broadcast address, or on an address another device holds, are refused.**
 - **Start-up survives an unreadable shortcuts file**, and opened rows in the diagnostics list stay open when a new entry arrives.
 - **Test rigs** in `tools/`: `fake-cameras.js` (several devices asking for an address at once) and `fake-switch.py` (a managed switch port: LLDP, CDP, RSTP, 802.1X, DHCP, tagged VLANs, names, NTP). See TESTING.md § 7.4.0.
-- Known, unchanged: the DHCP engine still hears DHCP traffic from every connected card (it only answers on the cable); it warns when another card is up.
+- **Bench round on real cameras (2026-11-12; three Bosch and one Hanwha on a PoE switch, the laptop on a dock with a second card on the office network).** Each fix below was found there and seen working there unless it says otherwise.
+- **DHCP: real cameras now take the offer.** With the engine tied to one card, the answers went only to the subnet broadcast address, and a camera still holding an old address from another network ignored them (rows sat on OFFERED). Answers now go to both the all-networks broadcast and the subnet one, out of the serving card only. A 200-second capture on the other card saw none of them.
+- **DHCP: a camera keeps the address it is using.** A camera that asks again from the address it already has was treated as an address conflict (the ping check found the camera itself), quarantined, and moved. It is now offered the same address, without the check.
+- **SCAN: a device that is silent on first contact gets one second look.** The Bosch cameras answered neither the ping nor any port on a sweep's first try (rows read "ARP" with no OPEN button) and answered in 1 ms a moment later. A row with total silence is tried once more 2.5 s later; a slow first answer is pinged again and the better time shown; a device that answers a port but not the ping shows its connect time.
+- **SCAN: addresses Windows only remembers are marked GONE.** A camera unplugged an hour earlier still came up as a host. A row with no ping, no port and no discovery answer is checked once more at the address level (two tries, a second apart); with no answer it is greyed out, reads GONE, and is left out of the count, SAVE SITE and the site comparison. The scan hands its result to SITES only after these checks have finished.
+- **SCAN / SITES: a site of three cameras no longer saves as six devices.** Each camera also announces a 169.254.x.x address; those rows are no longer saved as devices. The laptop answering its own discovery is badged SELF.
+- **RECON: a phone is not the switch.** On a switch that does not speak CDP and passes the announcements along (Allied Telesis here), the SWITCH card named an IP phone. An announcement from something that is not a switch now gets its own NEIGHBOUR card and the SWITCH card says the switch is not announcing itself. HOSTS no longer lists the laptop; NAMES drops machine-generated ids.
+- **Top bar:** the gateway shown is the card's own, not the one in a loaded shortcut; the address line stays centred while the SERVING badge shows.
+- **DHCP tab works from a 2nd address when the card's main one is self-assigned.** After REACH on a card holding only 169.254.x.x, the tab offered the new address and then said THAT ADDRESS IS NOT USABLE. Fixed and tested on the rig; not yet seen on a real card.
+- **RELEASE ALL says what it does:** it forgets the leases; devices keep their address and show up again when they next ask. Behaviour unchanged.
+- Not in 7.4, planned for 7.5: fewer program launches per action, and a rework of how RECON presents what it heard (see ROADMAP.md).
 
 ### v7.3.1 (2026-11-02)
 The first 7.3 the fleet gets (7.3.0 never left the bench). Three things: the IP tab is rebuilt around the job a tech is actually doing, SITES becomes a proper notebook, and the whole HUD stops snapping and blinking. Built and tried live on the real app, one change at a time.

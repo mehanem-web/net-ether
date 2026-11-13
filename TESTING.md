@@ -18,22 +18,23 @@ once from the portable build (UAC once at launch — chip normal, no prompts).
 
 ### UI smoke test (7.4.0) — run on every tag, or by hand
 `tests/smoke/smoke.js` opens the real window in a headless browser against a pretend backend
-(`tests/smoke/sim/`, the fake network the tutorial film uses) and clicks through 32 steps:
+(`tests/smoke/sim/`, the fake network the tutorial film uses) and clicks through 35 steps:
 boot, IP (zero-padded address, broadcast refusal, gateway-only change, picking a card, two cards,
 shortcut + card, REVERT after DHCP, MTU left alone, 2nd address per card), help, PING (start, TRCRT,
 toner, PAUSE/RESUME rate, targets edited while running), SCAN (sweep, row buttons, SAVE SITE, part
-of a subnet, padded base, save under the scanned subnet, vendor from an online lookup), SITES (card,
+of a subnet, padded base, save under the scanned subnet, vendor from an online lookup, off-subnet
+row not saved, second look, GONE row and connect time), SITES (card,
 device drawer, note, login add/remove, type chip, remove device, delete site), DHCP
-(card replug + lock while serving,
+(card replug + lock while serving, top bar,
 listen, SET LAPTOP IP, a device asking, SERVE), RECON (listen, stop, cards). Any error on the
 page fails the step; a failed step leaves a screenshot in `tests/smoke/shots/`.
 By hand: `npm i --no-save playwright`, `npx playwright install chromium`, `npm run smoke`.
 Rule: a fix to the window gets a step that fails on the code before the fix.
-Result 2026-11-11: 32 of 32 on the home PC (Windows) and on Linux.
+Result 2026-11-12: 35 of 35 on the home PC (Windows) and on Linux (32 of 32 on 2026-11-11, before the bench steps were added).
 It proves the screen works — not that Windows applied anything. When the app's window↔main
 calls change, the sim in `tests/smoke/sim/` has to learn the new call.
 
-### v7.4.0 — audit fixes (dev builds `7.4.0-dev.1` … `dev.6`, signed drafts)
+### v7.4.0 — audit fixes (dev builds `7.4.0-dev.1` … `dev.16`; signed drafts up to dev.12)
 **Result 2026-11-11 (home PC `dev.bat` + work laptop signed portable, cabled straight to each other):**
 every fix below was seen working except the three marked *work*. Details and evidence per fix:
 `claude/AUDIT-7.4-status.md` in the project. dev.4 – dev.6 (the second pass, 2026-11-11 night) are in
@@ -77,15 +78,32 @@ Home, no gear needed (two PCs and one cable for the rigs):
 - [x] DHCP card list: pull the USB card → it leaves the list; put it back → it returns without ⟳.
 - [ ] Built with the fix (dev.6): with no wired card the list is empty (no Wi-Fi, no loopback); ⟳ shows CARD LIST REFRESHED; a pulled and replaced card is picked again.
 - [ ] SCAN a network, type another base, SAVE SITE → saved under the scanned network, no row for the laptop.
-- [ ] *work* SCAN where several devices share a maker missing from the built-in table → all show the vendor.
 - [ ] *work* Two cards with the dock + USB adapter: same card-picking checks as above.
-- [ ] *work* A sweep of part of a saved site's subnet → nothing outside the range reported MISSING.
 
-Work (confirmation on real gear):
-- [ ] Three or more real cameras on one PoE switch, powered together, SERVE EVERYONE → every camera a different address, each opens.
-- [ ] A camera asking, press STOP SERVING while its row says checking/offering → no offer goes out after the stop (engine log).
-- [ ] RECON on a managed port → SWITCH card from the real switch; DHCP / NAMES / NTP cards fill in where the VLAN has them.
-- [ ] COPY DIAGNOSTICS at the end.
+Work bench, 2026-11-12 (signed portables dev.6 – dev.12; three Bosch + one Hanwha camera on a PoE switch,
+laptop on a dock with a second card on the office network). Evidence per line: `claude/AUDIT-7.4-status.md`.
+- [x] Real cameras on one PoE switch, SERVE EVERYONE → every camera a different address, each opens (dev.7; on dev.6 they were offered and none accepted).
+- [x] Nothing from the office card appears on the DHCP tab while serving; `tshark -i "Ethernet" -f "src host 10.99.99.1"` on the other card for 200 s while the log shows ACKs → 0 packets.
+- [x] Renewals keep their addresses; RELEASE ALL, then the cameras come back on the same addresses inside the lease time.
+- [x] STOP SERVING in the middle of a request → nothing goes out after the stop.
+- [x] The app restarted after being killed mid-serve (Intune closed it) → starts clean.
+- [x] RECON on a real switch port → cards fill in; on the Allied Telesis port the phone is a NEIGHBOUR card, not the switch (dev.9).
+- [x] Site comparison: MOVED and MISSING reported correctly; a three-camera site saves as three devices (dev.9).
+- [x] SCAN: the Bosch rows get their buttons on the second look (dev.11); an unplugged camera's row reads GONE (dev.12); top bar centred while serving (dev.11).
+
+Home, 2026-11-12 evening (`dev.bat`, dev.13 – dev.16):
+- [x] `npm run smoke` 35 of 35; chip reads the build.
+- [x] SCAN the home network → nothing that is switched on reads GONE (dev.14, two tries).
+- [x] Phone Wi-Fi off, SCAN → "1 REMEMBERED ADDRESS NOT ANSWERING"; SCAN again → the address is not listed. (The GONE row itself was not looked at.)
+
+Still to be seen on real gear:
+- [ ] A card holding only 169.254.x.x, REACH adds an address, DHCP tab → settings fill in from that address, link reads LINK UP (dev.15; rig test `t_dhcp10` only).
+- [ ] RELEASE ALL → status line "FORGOT n LEASES — DEVICES KEEP THEIR ADDRESS…" (dev.16; wording only).
+- [ ] A sweep of part of a saved site's subnet → nothing outside the range reported MISSING.
+- [ ] A device that answers a port but not the ping → the time column shows its connect time.
+- [ ] SCAN where several devices share a maker missing from the built-in table → all show the vendor.
+- [ ] With no wired card at all the DHCP card list is empty (no Wi-Fi, no loopback).
+- [ ] `getmac /v` on the work laptop against the Intel "DESKTOP-…" row seen while listening on every card (expected: another PC, not the laptop).
 
 ### v7.3.1 — THE ONE TEST (work laptop, installed + elevated build)
 **Result 2026-11-02 (rc.1 / rc.2 portable, managed laptop, elevated High):** passed. APPLY on the
