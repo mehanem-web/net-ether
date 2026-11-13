@@ -712,6 +712,9 @@ module.exports = function initDiscover(deps) {
     }
     function list() {
       const cut = Date.now() - 5 * 60000;
+      // 7.4.0-dev.17: forget what has been silent for five minutes — on a big flat network the
+      // table of everything ever heard only grew for as long as the DHCP tab stayed open
+      for (const k of Object.keys(seen)) if (seen[k].lastSeen < cut) delete seen[k];
       return Object.values(seen).filter(r => r.lastSeen >= cut).map(r => ({
         ...r, services: r.services.slice(0, 8), sources: r.sources.slice(),
         vendor: r.mac ? (lookupVendor(r.mac) || '') : '', linkLocal: /^169\.254\./.test(r.ip),

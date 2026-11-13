@@ -571,6 +571,7 @@ function startTrayAnimation() {
 }
 
 function setTrayMode(mode) {
+  if (!FRAME_MS[mode]) return;   // 7.4.0-dev.17: an unknown mode had no frame time — the icon timer would spin flat out
   if (trayState.mode === mode) return;
   const wasFail = trayState.mode === 'ping_fail';
   trayState.mode = mode;
@@ -2686,6 +2687,9 @@ ipcMain.on('scan-start', async (e, { baseIp, concurrency, scanStart, scanEnd }) 
   const post = (ch, payload) => { if (gen === scanGen && !e.sender.isDestroyed()) e.sender.send(ch, payload); };
   const start   = Math.max(1,   Math.min(254, parseInt(scanStart, 10) || 1));
   const end     = Math.max(1,   Math.min(254, parseInt(scanEnd,   10) || 254));
+  // 7.4.0-dev.17: a range given backwards made the host list throw before any clean-up, and
+  // every scan after it was refused until restart (the window swaps the two, so only a guard)
+  if (end < start) { scanRunningMain = false; if (!e.sender.isDestroyed()) e.sender.send('scan-done', { aborted: true }); return; }
   const TOTAL   = end - start + 1;
   // 32 workers saturates a local /24 without overwhelming the host.
   // LAN ICMP RTT is <5ms so process-spawn overhead dominates, not network.
@@ -3114,6 +3118,8 @@ function loadVendorCache() {
   try {
     const raw = fs.readFileSync(VENDOR_CACHE_PATH, 'utf8');
     vendorCache = JSON.parse(raw);
+    // 7.4.0-dev.17: a file holding null or a list parsed fine and then broke every online lookup
+    if (!vendorCache || typeof vendorCache !== 'object' || Array.isArray(vendorCache)) vendorCache = {};
     console.log(`[VendorCache] Loaded ${Object.keys(vendorCache).length} cached entries`);
   } catch { vendorCache = {}; }
 }

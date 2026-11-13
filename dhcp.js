@@ -100,7 +100,7 @@ module.exports = function initDhcp(deps) {
     // runs only on a true first run, never because the current file failed to parse
     const existed = fs.existsSync(CONFIG_FILE);
     s = existed ? readJsonSafe(CONFIG_FILE, null) : null;
-    if (s && typeof s !== 'object') s = null;
+    if (s && (typeof s !== 'object' || Array.isArray(s))) s = null;   // 7.4.0-dev.17: a list is not a settings file
     if (!s && !existed) {
       try {
         if (fs.existsSync(LEGACY_FILE)) {
@@ -243,7 +243,8 @@ module.exports = function initDhcp(deps) {
       // holding the gateway) — never just the first one Windows lists. Aliases ride
       // along in `ips` so the DHCP tab can serve from a MULTI-IP alias's subnet.
       const known = knownAdapters.find(a => a.name === name);
-      const v4 = (known && known.ip && v4s.find(a => a.address === known.ip)) || v4s.find(a => !isApipa(a.address)) || v4s[0];
+      // 7.4.0-dev.17: …unless that primary is a self-assigned 169.254.x.x and the card has a usable address by now (REACH, + ALIAS)
+      const v4 = (known && known.ip && !isApipa(known.ip) && v4s.find(a => a.address === known.ip)) || v4s.find(a => !isApipa(a.address)) || v4s[0];
       return {
         name,
         ip:        v4 ? v4.address : null,
