@@ -3497,7 +3497,7 @@ html:has(body.resizing) { animation-play-state: paused !important; transition: n
         <span class="cmd-btn dhcp-mini serve" id="dhcp-serve-sel-btn" onclick="dhcpServeSelected()" style="display:none" title="Answer only the ticked devices">▶ SERVE TICKED</span>
         <span class="cmd-btn dhcp-mini" id="dhcp-resv-sel-btn" onclick="dhcpReserveSelected()" style="display:none" title="Pin the ticked devices to consecutive addresses from a start IP — 20 cameras in one go">★ RESERVE TICKED</span>
         <span class="cmd-btn dhcp-mini disabled" id="dhcp-csv-btn" onclick="dhcpExportCsv()" title="Copy lease table as CSV">⎘ CSV</span>
-        <span class="cmd-btn dhcp-mini disabled" id="dhcp-release-btn" onclick="dhcpReleaseAll()" title="Clear every lease and offer">✕ RELEASE ALL</span>
+        <span class="cmd-btn dhcp-mini disabled" id="dhcp-release-btn" onclick="dhcpReleaseAll()" title="Forget every lease and offer. Devices keep the address they have until they ask again — this does not stop serving">✕ RELEASE ALL</span>
       </div>
     </div>
     <div class="dhcp-hint" id="dhcp-hint">Type the address you want it to end up on, press <b>SERVE</b>, then <b>OPEN</b>. Set it static on the device and ETHER marks it done.</div>
@@ -11485,7 +11485,13 @@ setInterval(() => {
   document.querySelectorAll('#dhcp-dev-list [data-ago]').forEach(el => { el.textContent = dhcpAgo(parseInt(el.dataset.ago, 10)); });
 }, 1000);
 
-async function dhcpReleaseAll() { const n = await hud.dhcp.releaseAll(); if (n > 0) setDhcpStatus(`RELEASED ${n} LEASE${n !== 1 ? 'S' : ''}`, 'warn', 4000); }
+// 7.4.0-dev.16: says what the button does and does not do. A DHCP server cannot make a device
+// let go of its address — the devices keep theirs and show up again when they next ask
+// (bench, 2026-11-12: "they aren't showing back up" — they did, inside the lease time).
+async function dhcpReleaseAll() {
+  const n = await hud.dhcp.releaseAll();
+  if (n > 0) setDhcpStatus(`FORGOT ${n} LEASE${n !== 1 ? 'S' : ''} — DEVICES KEEP THEIR ADDRESS AND SHOW UP AGAIN WHEN THEY NEXT ASK`, 'warn', 8000);
+}
 async function dhcpExportCsv() {
   const csv = await hud.dhcp.exportCsv();
   if (!csv) { setDhcpStatus('NO LEASES TO EXPORT', 'warn', 3000); return; }
