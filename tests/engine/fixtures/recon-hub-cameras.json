@@ -1,0 +1,57 @@
+[
+  {
+    "frame.protocols": "eth:ethertype:lldp",
+    "eth.src": "00:07:5f:8f:95:37",
+    "lldp.chassis.id.mac": "00:07:5f:8f:95:37",
+    "lldp.port.id.mac": "00:07:5f:8f:95:37",
+    "lldp.port.desc": "Not set",
+    "lldp.tlv.system.name": "Not set",
+    "lldp.tlv.system.desc": "FLEXIDOME IP starlight 7000 VR - IP Surveillance",
+    "lldp.tlv.system_cap": "0x0080",
+    "lldp.tlv.enable_system_cap": "0x0080"
+  },
+  {
+    "frame.protocols": "eth:ethertype:lldp",
+    "eth.src": "00:07:5f:95:aa:ee",
+    "lldp.chassis.id.mac": "00:07:5f:95:aa:ee",
+    "lldp.port.id.mac": "00:07:5f:95:aa:ee",
+    "lldp.port.desc": "Not set",
+    "lldp.tlv.system.name": "Not set",
+    "lldp.tlv.system.desc": "FLEXIDOME IP starlight 7000 VR - IP Surveillance",
+    "lldp.tlv.system_cap": "0x0080",
+    "lldp.tlv.enable_system_cap": "0x0080"
+  },
+  {
+    "frame.protocols": "eth:ethertype:lldp",
+    "eth.src": "d0:3d:52:13:97:7f",
+    "lldp.chassis.id.mac": "d0:3d:52:13:97:7f",
+    "lldp.port.id.mac": "d0:3d:52:13:97:7f",
+    "lldp.tlv.system.name": "avacam-aclo-r63a-shx4",
+    "lldp.tlv.system.desc": "Ava Camera Software",
+    "lldp.tlv.system_cap": "0x009c",
+    "lldp.tlv.enable_system_cap": "0x0080",
+    "lldp.mgn.addr.ip4": "10.90.44.27",
+    "lldp.port.desc": "eth0"
+  },
+  {
+    "frame.protocols": "eth:ethertype:lldp",
+    "eth.src": "e4:30:22:e0:a6:24",
+    "lldp.chassis.id.mac": "e4:30:22:e0:a6:24",
+    "lldp.port.id.mac": "e4:30:22:e0:a6:24",
+    "lldp.tlv.system.name": "PNM-7002VD",
+    "lldp.tlv.system.desc": "HWT_Multidirectional_Camera",
+    "lldp.tlv.system_cap": "0x009c",
+    "lldp.tlv.enable_system_cap": "0x0090",
+    "lldp.mgn.addr.ip4": "192.168.1.100",
+    "lldp.port.desc": "eth0"
+  },
+  {
+    "frame.protocols": "eth:llc:cdp",
+    "eth.src": "e4:30:22:e0:a6:24",
+    "cdp.deviceid": "PNM-7002VD",
+    "cdp.portid": "eth0",
+    "cdp.capabilities": "0x00000011",
+    "cdp.software_version": "HWT_Multidirectional_Camera",
+    "cdp.platform": "Linux"
+  }
+]

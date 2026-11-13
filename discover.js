@@ -393,8 +393,31 @@ module.exports = function initDiscover(deps) {
   function cdpIsSwitch(c) {
     if (!c || !c.caps) return true;
     const n = parseInt(String(c.caps).replace(/^0x/i, ''), 16);
-    return !Number.isFinite(n) || (n & 0x0F) !== 0;
+    if (!Number.isFinite(n)) return true;
+    // 7.4.0-dev.23: a bridge or switch bit makes it a switch; "router" alone does too, but not next to
+    // the host bit — a Hanwha camera announces 0x11 (router + host) and was shown as the switch
+    return (n & 0x0E) !== 0 || ((n & 0x01) !== 0 && (n & 0x10) === 0);
   }
+  // 7.4.0-dev.23: the same question for LLDP. Cameras announce themselves over LLDP and a small
+  // unmanaged switch passes that along; every sender used to be folded into one "switch".
+  // System capabilities, enabled set if given, else the supported set: "station only" (0x80) is an
+  // end device whatever else it claims (the Hanwha enables router + station); otherwise a repeater,
+  // bridge, access point, router or VLAN component is network gear. No capabilities given, or only
+  // "other": taken as the switch, as before.
+  function lldpIsSwitch(l) {
+    const raw = (l && (l.capsOn || l.caps)) || '';
+    if (!raw) return true;
+    const n = parseInt(String(raw).replace(/^0x/i, ''), 16);
+    if (!Number.isFinite(n) || n === 0) return true;
+    if (n & 0x80) return false;
+    if (n & (0x02 | 0x04 | 0x08 | 0x10 | 0x100 | 0x200 | 0x400)) return true;
+    return (n & (0x20 | 0x40)) === 0;      // telephone or cable modem alone: an end device
+  }
+  function lldpKind(l) {
+    const n = parseInt(String((l && (l.capsOn || l.caps)) || '').replace(/^0x/i, ''), 16) || 0;
+    return (n & 0x20) ? 'IP phone' : 'device';
+  }
+  const lldpId = l => String((l && (l.chassis || l.src || l.sysName)) || '').toLowerCase();
   function cdpKind(c) {
     const n = parseInt(String((c && c.caps) || '').replace(/^0x/i, ''), 16) || 0;
     return (n & 0x80) ? 'IP phone' : (n & 0x10) ? 'device' : 'device';
@@ -402,7 +425,7 @@ module.exports = function initDiscover(deps) {
   function emptyEvidence() {
     return {
       packets: 0, ms: 0, err: null,
-      lldp: null, cdp: null, cdpNb: null,
+      lldp: null, cdp: null, cdpNb: null, lldpNb: [],
       eapol: { count: 0, from: new Set() },
       stp:   { count: 0, root: null, bridge: null, vlans: new Set(), proto: null },
       vlanTags: new Set(),
@@ -415,7 +438,7 @@ module.exports = function initDiscover(deps) {
   function serializeEvidence(ev) {
     const arr = x => (x instanceof Set ? [...x] : x);
     return {
-      packets: ev.packets, ms: ev.ms, err: ev.err, lldp: ev.lldp, cdp: ev.cdp, cdpNb: ev.cdpNb || null,
+      packets: ev.packets, ms: ev.ms, err: ev.err, lldp: ev.lldp, cdp: ev.cdp, cdpNb: ev.cdpNb || null, lldpNb: ev.lldpNb || [],
       eapol: { count: ev.eapol.count, from: arr(ev.eapol.from) },
       stp: { count: ev.stp.count, root: ev.stp.root, bridge: ev.stp.bridge, vlans: arr(ev.stp.vlans), proto: ev.stp.proto },
       vlanTags: arr(ev.vlanTags), arpSeen: ev.arpSeen, arpAsked: arr(ev.arpAsked),
@@ -451,7 +474,18 @@ module.exports = function initDiscover(deps) {
         if (!p) return;
         ev.packets++;
         const o = p.obj, proto = p.protos || '';
-        if (/\blldp\b/.test(proto)) { ev.lldp = ev.lldp || {}; Object.assign(ev.lldp, Object.fromEntries(Object.entries(p.lldp).filter(([, v]) => v))); }
+        if (/\blldp\b/.test(proto)) {
+          // 7.4.0-dev.23: one sender at a time, by chassis. The switch goes in ev.lldp (the first one
+          // heard keeps the card); a camera, phone or PC announcing itself goes in ev.lldpNb.
+          const l = Object.fromEntries(Object.entries(p.lldp).filter(([, v]) => v));
+          if (o.ethSrc) l.src = o.ethSrc;
+          if (lldpIsSwitch(l)) {
+            if (!ev.lldp || lldpId(ev.lldp) === lldpId(l)) ev.lldp = Object.assign(ev.lldp || {}, l);
+          } else {
+            const had = ev.lldpNb.find(x => lldpId(x) === lldpId(l));
+            if (had) Object.assign(had, l); else if (ev.lldpNb.length < 32) ev.lldpNb.push(l);
+          }
+        }
         if (/\bcdp\b/.test(proto))  {
           // one sender at a time (two senders used to be blended into one card); the switch goes in
           // ev.cdp, a phone or other end device announcing itself in ev.cdpNb
@@ -543,6 +577,8 @@ module.exports = function initDiscover(deps) {
             case 'lldp.port.desc':       cur.lldp.portDesc = val; break;
             case 'lldp.chassis.id.mac':  cur.lldp.chassis = val; break;
             case 'lldp.mgn.addr.ip4':    cur.lldp.mgmtIp = val; break;
+            case 'lldp.tlv.system_cap':        cur.lldp.caps = val; break;
+            case 'lldp.tlv.enable_system_cap': cur.lldp.capsOn = val; break;
             case 'cdp.deviceid':         cur.cdp.sysName = val; break;
             case 'cdp.portid':           cur.cdp.port = val; break;
             case 'cdp.native_vlan':      cur.cdp.vlan = val; break;
@@ -607,16 +643,34 @@ module.exports = function initDiscover(deps) {
       const vlan = sw.vlan || (ev.cdp && ev.cdp.vlan) || (ev.lldp && ev.lldp.vlan) || '';
       V.push({ kind: 'ok', tag: 'SWITCH', title: `${name} · port ${port}${vlan ? ' · VLAN ' + vlan : ''}`,
         detail: [proto, sw.portDesc && sw.portDesc !== port ? sw.portDesc : '', (ev.cdp && ev.cdp.platform) || '', sw.mgmtIp ? 'mgmt ' + sw.mgmtIp : ''].filter(Boolean).join(' · ') });
-    } else if (ev.cdpNb) {
-      V.push({ kind: 'quiet', tag: 'SWITCH', title: 'The switch is not announcing itself', detail: 'LLDP/CDP is off on this port, or the switch does not speak it — the announcement heard is from another device (below)' });
+    } else if (ev.cdpNb || (ev.lldpNb || []).length) {
+      const many = (ev.lldpNb || []).length + (ev.cdpNb ? 1 : 0) > 1;
+      V.push({ kind: 'quiet', tag: 'SWITCH', title: 'The switch is not announcing itself', detail: `LLDP/CDP is off on this port, or the switch does not speak it — the announcement${many ? 's' : ''} heard ${many ? 'are from other devices' : 'is from another device'} (below)` });
     } else {
       V.push({ kind: 'quiet', tag: 'SWITCH', title: 'No LLDP/CDP announcement', detail: secs < 60 ? `${secs} s so far — CDP needs up to 60 s` : 'LLDP/CDP is off on this port, or it is not a managed switch' });
     }
 
-    if (ev.cdpNb) {
-      const nb = ev.cdpNb, what = cdpKind(nb);
-      V.push({ kind: 'info', tag: 'NEIGHBOUR', title: `${what === 'IP phone' ? 'IP phone' : 'A device'} ${nb.sysName || '?'} is announcing on this VLAN`,
-        detail: ['CDP', nb.platform || '', `its own port ${nb.port || '?'}`, 'not your switch — a switch that does not speak CDP passes these along'].filter(Boolean).join(' · ') });
+    // neighbours: end devices announcing themselves. One list from both protocols — a device that
+    // speaks LLDP and CDP (the Hanwha does) is one neighbour, not two.
+    {
+      const real = s => (s && !/^not set$/i.test(String(s).trim())) ? String(s).trim() : '';   // Bosch ships with the literal name "Not set"
+      const macName = m => { let v = ''; try { v = m ? (lookupVendor(m) || '') : ''; } catch {} return m ? (v && !/^unknown$/i.test(v) ? `${v} ${m}` : m) : ''; };
+      const nbs = (ev.lldpNb || []).map(l => ({ name: real(l.sysName) || macName(l.chassis || l.src) || '?', key: real(l.sysName).toLowerCase(), ip: l.mgmtIp || '',
+        what: lldpKind(l), via: 'LLDP', extra: real(l.sysDesc) && !real(l.sysName) ? real(l.sysDesc) : '', port: real(l.portDesc) || '' }));
+      if (ev.cdpNb) {
+        const c = ev.cdpNb, same = nbs.find(n => n.key && n.key === String(c.sysName || '').trim().toLowerCase());
+        if (same) same.via = 'LLDP+CDP';
+        else nbs.push({ name: c.sysName || '?', key: '', ip: '', what: cdpKind(c), via: 'CDP', extra: c.platform || '', port: c.port || '' });
+      }
+      if (nbs.length === 1) {
+        const nb = nbs[0];
+        V.push({ kind: 'info', tag: 'NEIGHBOUR', title: `${nb.what === 'IP phone' ? 'IP phone' : 'A device'} ${nb.name} is announcing on this VLAN`,
+          detail: [nb.via, nb.extra, nb.port ? `its own port ${nb.port}` : '', nb.ip ? 'at ' + nb.ip : '', `not your switch — a switch that does not speak ${nb.via === 'CDP' ? 'CDP' : 'LLDP'} passes these along`].filter(Boolean).join(' · ') });
+      } else if (nbs.length > 1) {
+        const show = nbs.slice(0, 6).map(n => n.ip ? `${n.name} (${n.ip})` : n.name);
+        V.push({ kind: 'info', tag: 'NEIGHBOUR', title: `${nbs.length} devices are announcing on this VLAN`,
+          detail: `${show.join(' · ')}${nbs.length > 6 ? ` · and ${nbs.length - 6} more` : ''} · none is your switch — a switch that does not speak LLDP/CDP passes these along` });
+      }
     }
 
     // 802.1X
