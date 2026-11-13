@@ -769,8 +769,12 @@ module.exports = function initDiscover(deps) {
       // used; with two networks heard that put 10.0.60.254 next to a 10.0.30.x address, and TAKE
       // would have applied it.
       const mN = toNum(mask), sameNet = ip => ((toNum(ip) & mN) >>> 0) === ((toNum(aTop + '.0') & mN) >>> 0);
-      const gw = (ev.dhcp.routers || []).find(r => /^\d+(\.\d+){3}$/.test(r) && sameNet(r)) || (seen.has(aTop + '.1') ? aTop + '.1' : '');
-      if (pick) V.push({ kind: 'info', tag: 'ADDRESS', title: `${pick} looks free`, detail: `nobody used or asked for it in ${secs} s · mask ${mask}${gw ? ' · gateway ' + gw : ''}${trunk ? (onUntagged ? ' · on the untagged network of this trunk' : ' · trunk port: this may be a tagged VLAN you will not land on') : ''} — APPLY still runs the duplicate check`, action: { ip: pick, subnet: mask, gateway: gw } });
+      const gwLease = (ev.dhcp.routers || []).find(r => /^\d+(\.\d+){3}$/.test(r) && sameNet(r)) || '';
+      // dev.28: with no lease naming a gateway, ".1 is in use" is only a guess (on the office trunk
+      // 10.0.60.1 is the DHCP server and the gateway is .254) — it is still offered, and says so
+      const gw = gwLease || (seen.has(aTop + '.1') ? aTop + '.1' : '');
+      const gwNote = gw ? (gwLease ? ' · gateway ' + gw : ` · gateway ${gw}? (a guess — no lease named one; check it or leave it blank)`) : '';
+      if (pick) V.push({ kind: 'info', tag: 'ADDRESS', title: `${pick} looks free`, detail: `nobody used or asked for it in ${secs} s · mask ${mask}${gwNote}${trunk ? (onUntagged ? ' · on the untagged network of this trunk' : ' · trunk port: this may be a tagged VLAN you will not land on') : ''} — APPLY still runs the duplicate check`, action: { ip: pick, subnet: mask, gateway: gw } });
     } else {
       V.push({ kind: 'quiet', tag: 'HOSTS', title: 'Nothing talking', detail: `${secs} s — empty port, wrong VLAN, or a very quiet segment` });
     }

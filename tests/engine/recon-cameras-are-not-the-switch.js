@@ -96,6 +96,13 @@ async function listen(list) { feed = asTshark(list); const ev = await D.reconLis
   const a2 = D.reconVerdicts(ev, { selfIps: [], selfName: '' }).find(v => v.tag === 'ADDRESS');
   check(a2 && /^10\.0\.30\.250/.test(a2.title) && a2.action.gateway === '10.0.30.254', 'access port: gateway on the suggested network, got: ' + (a2 && a2.title + ' gw ' + a2.action.gateway));
 
+  // no lease heard: a gateway at .1 is a guess and the card says so
+  feed = asTshark([ipFrom('10.0.60.1'), ipFrom('10.0.60.12')]);
+  ev = await D.reconListen({ tshark: 'tshark', npf: 'X', durationS: 1 });
+  const a3 = D.reconVerdicts(ev, { selfIps: [], selfName: '' }).find(v => v.tag === 'ADDRESS');
+  check(a3 && /gateway 10\.0\.60\.1\? \(a guess/.test(a3.detail), 'no lease: the .1 gateway is marked as a guess, got: ' + (a3 && a3.detail));
+  check(a2 && / · gateway 10\.0\.30\.254 /.test(a2.detail + ' ') && !/guess/.test(a2.detail), 'lease heard: the gateway is stated plainly, got: ' + (a2 && a2.detail));
+
   if (problems.length) { console.log(problems.join('\n')); process.exit(1); }
   console.log('RECON: cameras announcing through an unmanaged switch are neighbours, not the switch'); process.exit(0);
 })();
