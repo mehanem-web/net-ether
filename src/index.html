@@ -5157,7 +5157,10 @@ function updateAdapterWarn(a) {
   const ip = a.ip || '';
   let kind = null, msg = '';
   if (a.noAddress) { kind = 'none'; msg = `Link is up but ${escHtml(a.name)} has no address${a.isDhcp ? ' — nothing answered DHCP on this cable' : ''}.`; }
-  else if (/^169\.254\./.test(ip)) { kind = 'apipa'; msg = `${escHtml(ip)} is self-assigned — nothing on this cable answered DHCP. Devices on a real subnet aren't reachable from here, and SCAN only sweeps link-local.`; }
+  // 7.4.0-dev.30: a 169.254 address SET as static was described as self-assigned ("nothing answered DHCP")
+  else if (/^169\.254\./.test(ip)) { kind = 'apipa'; msg = a.isDhcp === false
+    ? `${escHtml(ip)} is a link-local address set as static on this card. Devices on a real subnet aren't reachable from here, and SCAN only sweeps link-local.`
+    : `${escHtml(ip)} is self-assigned — nothing on this cable answered DHCP. Devices on a real subnet aren't reachable from here, and SCAN only sweeps link-local.`; }
   else if (a.isDhcp && a.gateway && window.hud && hud.ping) {
     const key = a.name + '|' + ip + '|' + a.gateway;
     const st = _awGw[key];

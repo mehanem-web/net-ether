@@ -5,13 +5,15 @@
 // Checks: the socket ends up bound to the card's self-assigned address; the Wi-Fi's own lease is
 // not an other-server signal; a lease taken by the card on the cable still is.
 const Module = require('module'); const EventEmitter = require('events');
-const binds = []; let sockRef = null; const sentToWindow = [];
+const binds = []; let sockRef = null; const sentToWindow = []; const notYet = new Set(); let cableIps = [['169.254.122.136', '255.255.0.0']];
 const fakeDgram = { createSocket() { const s = new EventEmitter();
-  s.bind = (p, a, cb) => { if (typeof a === 'function') { cb = a; a = '0.0.0.0'; } binds.push(a); setImmediate(cb); }; s.setBroadcast = () => {}; s.close = () => {}; s.send = (b, o, l, p, d, cb) => cb && cb(); sockRef = s; return s; } };
+  s.bind = (p, a, cb) => { if (typeof a === 'function') { cb = a; a = '0.0.0.0'; } binds.push(a);
+    if (notYet.has(a)) return setImmediate(() => s.emit('error', Object.assign(new Error('bind EADDRNOTAVAIL'), { code: 'EADDRNOTAVAIL' })));
+    setImmediate(cb); }; s.setBroadcast = () => {}; s.close = () => {}; s.send = (b, o, l, p, d, cb) => cb && cb(); sockRef = s; return s; } };
 const fakeCp = { execFile(file, args, opts, cb) { if (typeof opts === 'function') cb = opts; setTimeout(() => cb(null, file === 'netsh' ? 'Enabled: Yes' : ''), 5); } };
 const CABLE = '9c:bf:0d:01:61:f7', WIFI = 'c4:13:75:1a:9b:7f';
 const fakeOs = { networkInterfaces: () => ({
-  'Ethernet 2': [{ family: 'IPv4', internal: false, address: '169.254.122.136', netmask: '255.255.0.0', mac: CABLE }],
+  'Ethernet 2': cableIps.map(([address, netmask]) => ({ family: 'IPv4', internal: false, address, netmask, mac: CABLE })),
   'Wi-Fi 2':    [{ family: 'IPv4', internal: false, address: '10.0.30.70', netmask: '255.255.255.0', mac: WIFI }],
 }) };
 const origLoad = Module._load;
@@ -43,6 +45,12 @@ const rogue = () => sentToWindow.filter(x => x[0] === 'dhcp-rogue').map(x => x[1
   sockRef.emit('message', request(CABLE, '192.168.50.1'), { address: '0.0.0.0', port: 68 });
   await wait(50);
   if (!rogue().includes('192.168.50.1')) problems.push('the card on the cable leasing from 192.168.50.1 should still be reported as another DHCP server');
+  // REACH has just added 10.90.44.250 under the self-assigned address; Windows lists it but will not
+  // let it be bound for a few seconds. The engine must wait on the cable, not on every card.
+  cableIps = [['169.254.122.136', '255.255.0.0'], ['10.90.44.250', '255.255.255.0']]; notYet.add('10.90.44.250'); binds.length = 0;
+  await handlers['dhcp-set-preview'](null, { adapterName: 'Ethernet 2', adapterIp: '10.90.44.250', subnet: '255.255.255.0', rangeStart: '10.90.44.100', rangeEnd: '10.90.44.200', gateway: '', dns: '', lease: 300 });
+  await wait(100);
+  if (binds.includes('0.0.0.0') || binds[binds.length - 1] !== '169.254.122.136') problems.push('while Windows is still adding the new address the socket should stay on the cable; binds were: ' + binds.join(' → '));
   if (problems.length) { console.log(problems.join('\n')); process.exit(1); }
   console.log('listen: bound to the cable\'s self-assigned address; only the cable card\'s lease counts as another server'); process.exit(0);
 })();

@@ -589,7 +589,15 @@ module.exports = function initDhcp(deps) {
     for (const x of (os.networkInterfaces()[name] || [])) if (x.mac && x.mac !== '00:00:00:00:00:00') out.add(x.mac.toLowerCase());
     return out;
   }
-  function openSock(addr) {
+  // dev.30: where to listen while `addr` cannot be bound yet — another address the chosen card
+  // already holds (the self-assigned one REACH kept under its new address), else every card
+  function fallbackAddr(addr) {
+    const name = cableCard();
+    const card = name ? lightAdapters().find(a => a.name === name) : null;
+    const alt = card && (card.ips || []).find(x => x.ip !== addr && isValidIp(x.ip));
+    return alt ? alt.ip : '0.0.0.0';
+  }
+  function openSock(addr, isFallback) {
     return new Promise((resolve, reject) => {
       const s = dgram.createSocket({ type: 'udp4', reuseAddr: true });
       let bound = false;
@@ -600,12 +608,15 @@ module.exports = function initDhcp(deps) {
           // 7.4.0-dev.4: right after APPLY Windows needs a few seconds before the address can be bound
           // (EADDRNOTAVAIL). The adapter poll retries, so that case is a calm one-time note, said once
           // per address — anything else is still a warning.
+          // dev.30: stay on the cable while waiting. Falling back to every card for those few seconds
+          // let an office Wi-Fi client slip into the list right after REACH (bench 2026-11-13).
+          const fb = isFallback ? '0.0.0.0' : fallbackAddr(addr);
           if (bindFailNoted !== addr) {
             bindFailNoted = addr;
-            if (err.code === 'EADDRNOTAVAIL') log(`Windows is still putting ${addr} on the card — hearing every card until it is ready`);
-            else log(`Could not listen on ${addr} alone (${err.code || err.message}) — listening on every card instead`, 'warn');
+            if (err.code === 'EADDRNOTAVAIL') log(`Windows is still putting ${addr} on the card — ${fb === '0.0.0.0' ? 'hearing every card' : 'staying on ' + fb} until it is ready`);
+            else log(`Could not listen on ${addr} alone (${err.code || err.message}) — listening on ${fb === '0.0.0.0' ? 'every card' : fb} instead`, 'warn');
           }
-          openSock('0.0.0.0').then(resolve, reject);
+          openSock(fb, true).then(resolve, reject);
         }
         else { log('DHCP socket error: ' + err.message, 'err'); reject(err); }
       });
@@ -615,7 +626,7 @@ module.exports = function initDhcp(deps) {
         try { s.setBroadcast(true); } catch {}
         if (sockAddr !== addr) log(addr === '0.0.0.0' ? 'Hearing DHCP on every connected card — no laptop address on the cable yet' : `Hearing DHCP on ${addr} only — this cable${isApipa(addr) ? ' (the card\'s self-assigned address)' : ''}`);
         sockAddr = addr;
-        if (addr !== '0.0.0.0') bindFailNoted = null;
+        if (addr !== '0.0.0.0' && !isFallback) bindFailNoted = null;   // dev.30: a fallback bind is not the wanted one — keep the note said once
         resolve(s);
       });
     });
