@@ -106,16 +106,28 @@ Card with no cable, 2026-11-12 night (home PC, dev.18 – dev.20):
 - [x] ADD A 2ND ADDRESS on a static card with no cable → declined at once (dev.19, seen as a red line; amber from dev.20 — amber not yet looked at).
 - [x] APPLY 192.168.0.2 with gateway 192.168.0.254, no cable → "SAVED … NO CABLE YET", not active (dev.19).
 
+Bench 2, 2026-11-13 (work laptop, signed portables dev.22 – dev.32, bench hub with two Bosch, a Hanwha and an Avigilon; office access and trunk ports):
+- [x] REACH on a card holding only 169.254.x.x, then the DHCP tab fills in (dev.15).
+- [x] SCAN: GONE row seen (greyed, out of the count); Bosch rows 1 ms.
+- [x] No cable + ADD A 2ND ADDRESS → amber line, no command box (dev.20).
+- [x] RELEASE ALL status line (dev.16).
+- [x] `getmac /v`: the Intel row was another PC.
+- [x] RECON on the hub → "The switch is not announcing itself", NEIGHBOUR lists the four cameras once each (dev.23; dev.22 showed them as one switch).
+- [x] RECON on an office trunk → no access point or camera as the switch, 18 neighbours (dev.25); HOSTS short (dev.24); address on the untagged network (dev.27), guessed gateway marked (dev.28).
+- [x] DHCP tab, card at 169.254 → "Hearing DHCP on 169.254.… only — this cable", cameras ASKING, no Wi-Fi clients, no OTHER DHCP SERVER (dev.29); SERVE EVERYONE → all three SERVED.
+- [x] REACH from that state → "staying on …", "not ready either — waiting", bound three seconds later, no stray row (dev.31).
+- [x] REACH then APPLY a static → single `set address`, no 169.254 carried (dev.26); quit → no `reach_del FAIL`.
+- [x] Trunk port, DHCP tab → no row for the laptop's own Wi-Fi (dev.26; Johan's word).
+- [ ] NAMES lists a host once (dev.32; engine test only).
+- [ ] IP-tab banner for a 169.254 address set as static (dev.30; not looked at).
+
 Engine tests: `npm run test:engine` → 8 of 8 (plain Node; no network needed).
 
 Still to be seen on real gear:
-- [ ] A card holding only 169.254.x.x, REACH adds an address, DHCP tab → settings fill in from that address, link reads LINK UP (dev.15; rig test `t_dhcp10` only).
-- [ ] RELEASE ALL → status line "FORGOT n LEASES — DEVICES KEEP THEIR ADDRESS…" (dev.16; wording only).
 - [ ] A sweep of part of a saved site's subnet → nothing outside the range reported MISSING.
 - [ ] A device that answers a port but not the ping → the time column shows its connect time.
 - [ ] SCAN where several devices share a maker missing from the built-in table → all show the vendor.
 - [ ] With no wired card at all the DHCP card list is empty (no Wi-Fi, no loopback).
-- [ ] `getmac /v` on the work laptop against the Intel "DESKTOP-…" row seen while listening on every card (expected: another PC, not the laptop).
 
 ### v7.3.1 — THE ONE TEST (work laptop, installed + elevated build)
 **Result 2026-11-02 (rc.1 / rc.2 portable, managed laptop, elevated High):** passed. APPLY on the
