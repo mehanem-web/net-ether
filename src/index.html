@@ -9311,7 +9311,9 @@ async function scanExportClick() {
   const cell = r => [r.ip + (r.self ? ' (self)' : ''), r.hostname, r.mac, r.vendor, r.type, r.ports.join(' '), r.ms];
   let text;
   if (fmt === 'csv') {
-    const q = v => /[",\n]/.test(v) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v);
+    // 7.4.0-dev.17: a name a device announces can start with = + - @ — Excel would run it as a formula.
+    // Same guard the DHCP lease CSV has: such a value gets a leading apostrophe.
+    const q = v0 => { const v = /^[=+\-@\t\r]/.test(String(v0)) ? "'" + v0 : String(v0); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
     text = [cols.map(q).join(','), ...rows.map(r => cell(r).map(q).join(','))].join('\r\n');
   } else {
     const esc = v => String(v).replace(/\|/g, '\\|');
@@ -10213,7 +10215,9 @@ function intelRenderDeviceList(site, filter) {
     };
     const dr = rank(a) - rank(b);
     if (dr !== 0) return dr;
-    return (a.ip||'').localeCompare(b.ip||'');
+    // 7.4.0-dev.17: by number — as text, .100 came before .20
+    const ipn = x => String(x.ip || '').split('.').reduce((n, o) => n * 256 + (parseInt(o, 10) || 0), 0);
+    return ipn(a) - ipn(b) || (a.ip||'').localeCompare(b.ip||'');
   });
 
   document.getElementById('intel-device-count').textContent =

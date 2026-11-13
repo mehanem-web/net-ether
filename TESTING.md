@@ -34,7 +34,7 @@ Result 2026-11-12: 35 of 35 on the home PC (Windows) and on Linux (32 of 32 on 2
 It proves the screen works — not that Windows applied anything. When the app's window↔main
 calls change, the sim in `tests/smoke/sim/` has to learn the new call.
 
-### v7.4.0 — audit fixes (dev builds `7.4.0-dev.1` … `dev.16`; signed drafts up to dev.12)
+### v7.4.0 — audit fixes (dev builds `7.4.0-dev.1` … `dev.17`; signed drafts up to dev.12)
 **Result 2026-11-11 (home PC `dev.bat` + work laptop signed portable, cabled straight to each other):**
 every fix below was seen working except the three marked *work*. Details and evidence per fix:
 `claude/AUDIT-7.4-status.md` in the project. dev.4 – dev.6 (the second pass, 2026-11-11 night) are in
@@ -95,6 +95,11 @@ Home, 2026-11-12 evening (`dev.bat`, dev.13 – dev.16):
 - [x] `npm run smoke` 35 of 35; chip reads the build.
 - [x] SCAN the home network → nothing that is switched on reads GONE (dev.14, two tries).
 - [x] Phone Wi-Fi off, SCAN → "1 REMEMBERED ADDRESS NOT ANSWERING"; SCAN again → the address is not listed. (The GONE row itself was not looked at.)
+
+Third pass, 2026-11-12 night (dev.17) — every file read again; checked by the smoke test, the engine rigs and a unit run:
+- [ ] SITES: a site with devices on .2, .20 and .100 lists them in that order.
+- [ ] PING running: + GATEWAY adds the gateway as a new row without stopping.
+- [ ] SCAN → COPY → CSV with a device whose name starts with `=` → the cell starts with an apostrophe.
 
 Still to be seen on real gear:
 - [ ] A card holding only 169.254.x.x, REACH adds an address, DHCP tab → settings fill in from that address, link reads LINK UP (dev.15; rig test `t_dhcp10` only).
