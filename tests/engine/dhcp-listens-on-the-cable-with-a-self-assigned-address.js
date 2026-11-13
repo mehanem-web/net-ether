@@ -51,6 +51,28 @@ const rogue = () => sentToWindow.filter(x => x[0] === 'dhcp-rogue').map(x => x[1
   await handlers['dhcp-set-preview'](null, { adapterName: 'Ethernet 2', adapterIp: '10.90.44.250', subnet: '255.255.255.0', rangeStart: '10.90.44.100', rangeEnd: '10.90.44.200', gateway: '', dns: '', lease: 300 });
   await wait(100);
   if (binds.includes('0.0.0.0') || binds[binds.length - 1] !== '169.254.122.136') problems.push('while Windows is still adding the new address the socket should stay on the cable; binds were: ' + binds.join(' → '));
+  // dev.30 on the bench: for about three seconds neither address could be bound. The engine may sit
+  // on every card then, but must not list what it hears there.
+  notYet.add('169.254.122.136'); binds.length = 0;
+  await handlers['dhcp-set-preview'](null, { adapterName: 'Ethernet 2', adapterIp: '10.90.44.250', subnet: '255.255.255.0', rangeStart: '10.90.44.110', rangeEnd: '10.90.44.200', gateway: '', dns: '', lease: 300 });
+  await wait(100);
+  const before = sentToWindow.length;
+  const stray = '5f:44:40:43:50:5f';
+  const disc = Buffer.from(request(stray, '0.0.0.0')); disc[242] = 1;      // a DISCOVER from an office Wi-Fi client
+  sockRef.emit('message', disc, { address: '0.0.0.0', port: 68 });
+  await wait(700);
+  const listed = sentToWindow.slice(before).some(x => JSON.stringify(x[1] || '').toLowerCase().includes(stray));
+  if (listed) problems.push('a device heard while no address of the card could be bound was listed as on this cable');
+  // Windows is done: the address binds, and a device on the cable is heard again
+  notYet.clear(); binds.length = 0;
+  await handlers['dhcp-set-preview'](null, { adapterName: 'Ethernet 2', adapterIp: '10.90.44.250', subnet: '255.255.255.0', rangeStart: '10.90.44.120', rangeEnd: '10.90.44.200', gateway: '', dns: '', lease: 300 });
+  await wait(100);
+  if (binds[binds.length - 1] !== '10.90.44.250') problems.push('once the address is ready the socket should move to it; binds were: ' + binds.join(' → '));
+  const cam = '00:07:5f:95:aa:ee', mark = sentToWindow.length;
+  const d2 = Buffer.from(request(cam, '0.0.0.0')); d2[242] = 1;
+  sockRef.emit('message', d2, { address: '0.0.0.0', port: 68 });
+  await wait(700);
+  if (!sentToWindow.slice(mark).some(x => JSON.stringify(x[1] || '').toLowerCase().includes(cam))) problems.push('after the address is ready a camera on the cable should be listed again');
   if (problems.length) { console.log(problems.join('\n')); process.exit(1); }
   console.log('listen: bound to the cable\'s self-assigned address; only the cable card\'s lease counts as another server'); process.exit(0);
 })();

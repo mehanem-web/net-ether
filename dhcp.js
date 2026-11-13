@@ -597,7 +597,15 @@ module.exports = function initDhcp(deps) {
     const alt = card && (card.ips || []).find(x => x.ip !== addr && isValidIp(x.ip));
     return alt ? alt.ip : '0.0.0.0';
   }
-  function openSock(addr, isFallback) {
+  // dev.31: …and when no address of the card can be bound for the moment (REACH re-plumbs the
+  // self-assigned one too, so for about three seconds neither could — bench 2026-11-13, dev.30),
+  // the socket still opens on every card but the engine turns a deaf ear until the card's address
+  // is ready: whatever arrives in those seconds cannot be told apart from another card's traffic,
+  // and a device on the cable asks again. Capped, so a card that never becomes bindable falls back
+  // to hearing every card as before.
+  const WAIT_FOR_ADDR_MS = 20000;
+  let waitSince = 0, deaf = false;
+  function openSock(addr, isFallback, waiting) {
     return new Promise((resolve, reject) => {
       const s = dgram.createSocket({ type: 'udp4', reuseAddr: true });
       let bound = false;
@@ -611,12 +619,17 @@ module.exports = function initDhcp(deps) {
           // dev.30: stay on the cable while waiting. Falling back to every card for those few seconds
           // let an office Wi-Fi client slip into the list right after REACH (bench 2026-11-13).
           const fb = isFallback ? '0.0.0.0' : fallbackAddr(addr);
-          if (bindFailNoted !== addr) {
+          const notYet = err.code === 'EADDRNOTAVAIL';
+          if (notYet && !waitSince) waitSince = Date.now();
+          if (bindFailNoted !== addr && !isFallback) {
             bindFailNoted = addr;
-            if (err.code === 'EADDRNOTAVAIL') log(`Windows is still putting ${addr} on the card — ${fb === '0.0.0.0' ? 'hearing every card' : 'staying on ' + fb} until it is ready`);
+            if (notYet) log(`Windows is still putting ${addr} on the card — ${fb === '0.0.0.0' ? 'waiting a few seconds for it' : 'staying on ' + fb + ' until it is ready'}`);
             else log(`Could not listen on ${addr} alone (${err.code || err.message}) — listening on ${fb === '0.0.0.0' ? 'every card' : fb} instead`, 'warn');
+          } else if (isFallback && notYet && bindFailNoted !== 'wait:' + addr) {
+            bindFailNoted = 'wait:' + addr;
+            log(`${addr} is not ready either — waiting a few seconds for the card`);
           }
-          openSock(fb, true).then(resolve, reject);
+          openSock(fb, true, notYet || !!waiting).then(resolve, reject);
         }
         else { log('DHCP socket error: ' + err.message, 'err'); reject(err); }
       });
@@ -624,9 +637,11 @@ module.exports = function initDhcp(deps) {
       s.bind(67, addr, () => {
         bound = true;
         try { s.setBroadcast(true); } catch {}
-        if (sockAddr !== addr) log(addr === '0.0.0.0' ? 'Hearing DHCP on every connected card — no laptop address on the cable yet' : `Hearing DHCP on ${addr} only — this cable${isApipa(addr) ? ' (the card\'s self-assigned address)' : ''}`);
+        // dev.31: on every card only because the card's address is not bindable yet → deaf, and quiet about it
+        deaf = addr === '0.0.0.0' && !!waiting && !!waitSince && Date.now() - waitSince < WAIT_FOR_ADDR_MS;
+        if (sockAddr !== addr && !deaf) log(addr === '0.0.0.0' ? 'Hearing DHCP on every connected card — no laptop address on the cable yet' : `Hearing DHCP on ${addr} only — this cable${isApipa(addr) ? ' (the card\'s self-assigned address)' : ''}`);
         sockAddr = addr;
-        if (addr !== '0.0.0.0' && !isFallback) bindFailNoted = null;   // dev.30: a fallback bind is not the wanted one — keep the note said once
+        if (addr !== '0.0.0.0' && !isFallback) { bindFailNoted = null; waitSince = 0; }   // dev.30: a fallback bind is not the wanted one — keep the note said once
         resolve(s);
       });
     });
@@ -688,6 +703,10 @@ module.exports = function initDhcp(deps) {
 
   // ── Message handler ────────────────────────────────────────────────────────
   async function handleDhcpMessage(msg, rinfo) {
+    if (deaf) {   // dev.31: see openSock
+      if (Date.now() - waitSince < WAIT_FOR_ADDR_MS) return;
+      deaf = false; log('Hearing DHCP on every connected card — Windows has not made the card\'s address available', 'warn');
+    }
     if (msg.length < 240) return;
     if (!(msg[236] === 99 && msg[237] === 130 && msg[238] === 83 && msg[239] === 99)) return;
     const xidHex = msg.slice(4, 8).toString('hex');
