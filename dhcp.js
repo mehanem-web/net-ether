@@ -560,13 +560,34 @@ module.exports = function initDhcp(deps) {
   // laptop's address on the chosen card, Windows hands the socket only what arrives on that
   // card. With no address on the cable yet there is nothing to bind to, so it listens on
   // everything as before (that is how a device is heard before SET LAPTOP IP).
+  //
+  // 7.4.0-dev.29: "no address on the cable yet" was taken to include a self-assigned 169.254.x.x —
+  // the usual state of the card on a bench before SET LAPTOP IP. So that is exactly when the engine
+  // heard every card: office Wi-Fi clients were listed as ASKING devices on the cable, and the
+  // laptop's own Wi-Fi lease raised "OTHER DHCP SERVER ON WIRE" on a bench with no server (bench
+  // 2026-11-13). A self-assigned address is an address: the socket binds to whatever the chosen
+  // card holds, and listens on every card only when that card has no address at all.
   let sockAddr = null;
+  let chosenCard = '';            // the card picked in step ①, known even while the form does not validate
+  const cableCard = () => (serveCfg && serveCfg.adapterName) || (previewCfg && previewCfg.adapterName) || chosenCard || '';
   function wantBindAddr() {
     const cfg = serveCfg || previewCfg;
     const ip = cfg && cfg.adapterIp;
-    if (!ip || !isValidIp(ip) || isApipa(ip)) return '0.0.0.0';
-    const live = lightAdapters().some(a => (a.ips || []).some(x => x.ip === ip));
-    return live ? ip : '0.0.0.0';
+    const cards = lightAdapters();
+    if (ip && isValidIp(ip) && !isApipa(ip) && cards.some(a => (a.ips || []).some(x => x.ip === ip))) return ip;
+    const name = cableCard();
+    const card = name ? cards.find(a => a.name === name) : null;
+    const own = card && (card.ips || [])[0];
+    return own && isValidIp(own.ip) ? own.ip : '0.0.0.0';
+  }
+  // the MACs of the chosen card (ETHER's list writes them with dashes, Node with colons)
+  function cableCardMacs() {
+    const name = cableCard(), out = new Set();
+    if (!name) return out;
+    const k = knownAdapters.find(a => a.name === name);
+    if (k && k.mac) out.add(String(k.mac).toLowerCase().replace(/-/g, ':'));
+    for (const x of (os.networkInterfaces()[name] || [])) if (x.mac && x.mac !== '00:00:00:00:00:00') out.add(x.mac.toLowerCase());
+    return out;
   }
   function openSock(addr) {
     return new Promise((resolve, reject) => {
@@ -592,7 +613,7 @@ module.exports = function initDhcp(deps) {
       s.bind(67, addr, () => {
         bound = true;
         try { s.setBroadcast(true); } catch {}
-        if (sockAddr !== addr) log(addr === '0.0.0.0' ? 'Hearing DHCP on every connected card — no laptop address on the cable yet' : `Hearing DHCP on ${addr} only — this cable`);
+        if (sockAddr !== addr) log(addr === '0.0.0.0' ? 'Hearing DHCP on every connected card — no laptop address on the cable yet' : `Hearing DHCP on ${addr} only — this cable${isApipa(addr) ? ' (the card\'s self-assigned address)' : ''}`);
         sockAddr = addr;
         if (addr !== '0.0.0.0') bindFailNoted = null;
         resolve(s);
@@ -704,6 +725,10 @@ module.exports = function initDhcp(deps) {
     // The laptop's own DHCP client broadcasts land here too. Keep the rogue-server
     // signal from its REQUESTs (that's real information) but never list ourselves.
     if (localAdapterMacs().has(mac)) {
+      // dev.29: …and only when it is the card on the cable that is leasing. Heard on every card, the
+      // Wi-Fi renewing its office lease is not a server on this wire.
+      const cm = cableCardMacs();
+      if (cm.size && !cm.has(mac)) return;
       if (serverIdent && !localAdapterIps().has(serverIdent) && !foreignServers[serverIdent]) {
         foreignServers[serverIdent] = Date.now();
         log(`OTHER DHCP SERVER on the wire — this laptop is leasing from ${serverIdent}`, 'warn');
@@ -1326,6 +1351,7 @@ module.exports = function initDhcp(deps) {
   ipcMain.handle('dhcp-set-preview', async (_e, opts) => {
     const v = validateCfg(opts);
     previewCfg = v.ok ? buildEngineCfg(opts) : null;
+    chosenCard = sanitizeAdapter(opts && opts.adapterName) || '';   // dev.29: known even when the rest does not validate
     rebind();
     emitDevices();
     return v;
