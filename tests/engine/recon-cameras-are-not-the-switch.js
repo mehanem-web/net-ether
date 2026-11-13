@@ -96,6 +96,9 @@ async function listen(list) { feed = asTshark(list); const ev = await D.reconLis
   const a2 = D.reconVerdicts(ev, { selfIps: [], selfName: '' }).find(v => v.tag === 'ADDRESS');
   check(a2 && /^10\.0\.30\.250/.test(a2.title) && a2.action.gateway === '10.0.30.254', 'access port: gateway on the suggested network, got: ' + (a2 && a2.title + ' gw ' + a2.action.gateway));
 
+  // the same host under two spellings is one name
+  const nm = D.reconVerdicts(Object.assign({}, ev, { names: ['oss', 'ORION-30008', 'OSS', 'ORION-30008.oss', 'EHQVMAPP04'] }), { selfIps: [], selfName: '' }).find(v => v.tag === 'NAMES');
+  check(nm && nm.title === 'oss, ORION-30008, EHQVMAPP04', 'NAMES lists each host once, got: ' + (nm && nm.title));
   // no lease heard: a gateway at .1 is a guess and the card says so
   feed = asTshark([ipFrom('10.0.60.1'), ipFrom('10.0.60.12')]);
   ev = await D.reconListen({ tshark: 'tshark', npf: 'X', durationS: 1 });

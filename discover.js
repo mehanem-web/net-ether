@@ -784,7 +784,10 @@ module.exports = function initDiscover(deps) {
     // dev.27: …and neither does the laptop's own name (it announces itself like any Windows PC)
     let selfName = ''; try { selfName = String(opts.selfName != null ? opts.selfName : require('os').hostname()).split('.')[0].toLowerCase(); } catch {}
     const names = (ev.names || []).filter(n => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(n) && !/^[0-9a-f]{24,}$/i.test(n)
-      && !(selfName && String(n).split('.')[0].toLowerCase() === selfName));
+      && !(selfName && String(n).split('.')[0].toLowerCase() === selfName))
+      // dev.32: one host, one name — NetBIOS says ORION-30008, mDNS says orion-30008.oss (trunk listen
+      // 2026-11-13: "oss, ORION-30008, OSS, ORION-30008.oss"). First form heard wins.
+      .filter((n, i, all) => all.findIndex(m => String(m).split('.')[0].toLowerCase() === String(n).split('.')[0].toLowerCase()) === i);
     if (names.length) V.push({ kind: 'info', tag: 'NAMES', title: names.slice(0, 8).join(', ') + (names.length > 8 ? ` +${names.length - 8}` : ''), detail: 'NetBIOS / mDNS names heard' });
     // ntp
     if ((ev.ntp || []).length) V.push({ kind: 'info', tag: 'NTP', title: ev.ntp.join(', '), detail: 'time server(s) clients are asking' });
