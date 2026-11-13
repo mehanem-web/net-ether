@@ -1982,7 +1982,7 @@ ipcMain.handle('recon-start', async (e, { adapter, durationS, silent }) => {
   if (dhcpSuspended) { try { await DHCP.resume(); } catch {} }
   const sw = ev.lldp || ev.cdp;
   diagAdd({ kind: ev.err ? 'error' : 'app', tag: 'recon', ok: !ev.err,
-    note: ev.err ? `${safe}: ${ev.err}` : `${safe}: ${ev.packets} pkt in ${Math.round(ev.ms / 1000)}s · switch ${sw ? (sw.sysName || '?') + '/' + (sw.port || '?') : 'none'} · neighbours ${(ev.lldpNb || []).length + (ev.cdpNb ? 1 : 0)} · 802.1X ${ev.eapol.count ? 'yes' : 'no'} · dhcp ${ev.dhcp.servers.join(',') || 'none'} · ${Object.keys(ev.ipCount).length} hosts` });
+    note: ev.err ? `${safe}: ${ev.err}` : `${safe}: ${ev.packets} pkt in ${Math.round(ev.ms / 1000)}s · switch ${sw ? (sw.sysName || '?') + '/' + (sw.port || '?') : 'none'} · neighbours ${(ev.lldpNb || []).length + (ev.cdpNbs || []).length} · 802.1X ${ev.eapol.count ? 'yes' : 'no'} · dhcp ${ev.dhcp.servers.join(',') || 'none'} · ${Object.keys(ev.ipCount).length} hosts` });
   const verdicts = DISCOVER.reconVerdicts(ev, { silent: !!silent });
   return { ok: !ev.err, evidence: ev, verdicts, err: ev.err };
 });

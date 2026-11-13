@@ -1,6 +1,6 @@
 {
   "name": "net-ether",
-  "version": "7.4.0-dev.23",
+  "version": "7.4.0-dev.24",
   "description": "NET//ETHER — always-on-top desktop network manager and DHCP server for field technicians",
   "main": "main.js",
   "author": {

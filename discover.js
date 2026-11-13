@@ -425,7 +425,7 @@ module.exports = function initDiscover(deps) {
   function emptyEvidence() {
     return {
       packets: 0, ms: 0, err: null,
-      lldp: null, cdp: null, cdpNb: null, lldpNb: [],
+      lldp: null, cdp: null, cdpNb: null, cdpNbs: [], lldpNb: [],
       eapol: { count: 0, from: new Set() },
       stp:   { count: 0, root: null, bridge: null, vlans: new Set(), proto: null },
       vlanTags: new Set(),
@@ -438,7 +438,7 @@ module.exports = function initDiscover(deps) {
   function serializeEvidence(ev) {
     const arr = x => (x instanceof Set ? [...x] : x);
     return {
-      packets: ev.packets, ms: ev.ms, err: ev.err, lldp: ev.lldp, cdp: ev.cdp, cdpNb: ev.cdpNb || null, lldpNb: ev.lldpNb || [],
+      packets: ev.packets, ms: ev.ms, err: ev.err, lldp: ev.lldp, cdp: ev.cdp, cdpNb: ev.cdpNb || null, cdpNbs: ev.cdpNbs || [], lldpNb: ev.lldpNb || [],
       eapol: { count: ev.eapol.count, from: arr(ev.eapol.from) },
       stp: { count: ev.stp.count, root: ev.stp.root, bridge: ev.stp.bridge, vlans: arr(ev.stp.vlans), proto: ev.stp.proto },
       vlanTags: arr(ev.vlanTags), arpSeen: ev.arpSeen, arpAsked: arr(ev.arpAsked),
@@ -490,8 +490,14 @@ module.exports = function initDiscover(deps) {
           // one sender at a time (two senders used to be blended into one card); the switch goes in
           // ev.cdp, a phone or other end device announcing itself in ev.cdpNb
           const c = Object.fromEntries(Object.entries(p.cdp).filter(([, v]) => v));
-          const slot = cdpIsSwitch(c) ? 'cdp' : 'cdpNb';
-          if (!ev[slot] || (ev[slot].sysName || '') === (c.sysName || '')) ev[slot] = Object.assign(ev[slot] || {}, c);
+          if (cdpIsSwitch(c)) {
+            if (!ev.cdp || (ev.cdp.sysName || '') === (c.sysName || '')) ev.cdp = Object.assign(ev.cdp || {}, c);
+          } else {
+            // 7.4.0-dev.24: every neighbour is kept (only the first used to be); ev.cdpNb stays the first
+            const had = ev.cdpNbs.find(x => (x.sysName || '') === (c.sysName || ''));
+            if (had) Object.assign(had, c); else if (ev.cdpNbs.length < 32) ev.cdpNbs.push(c);
+            ev.cdpNb = ev.cdpNbs[0];
+          }
         }
         if (/\beapol\b/.test(proto)) { ev.eapol.count++; if (o.ethSrc) ev.eapol.from.add(o.ethSrc); }
         if (/\bstp\b/.test(proto)) {
@@ -644,7 +650,7 @@ module.exports = function initDiscover(deps) {
       V.push({ kind: 'ok', tag: 'SWITCH', title: `${name} · port ${port}${vlan ? ' · VLAN ' + vlan : ''}`,
         detail: [proto, sw.portDesc && sw.portDesc !== port ? sw.portDesc : '', (ev.cdp && ev.cdp.platform) || '', sw.mgmtIp ? 'mgmt ' + sw.mgmtIp : ''].filter(Boolean).join(' · ') });
     } else if (ev.cdpNb || (ev.lldpNb || []).length) {
-      const many = (ev.lldpNb || []).length + (ev.cdpNb ? 1 : 0) > 1;
+      const many = (ev.lldpNb || []).length + Math.max((ev.cdpNbs || []).length, ev.cdpNb ? 1 : 0) > 1;
       V.push({ kind: 'quiet', tag: 'SWITCH', title: 'The switch is not announcing itself', detail: `LLDP/CDP is off on this port, or the switch does not speak it — the announcement${many ? 's' : ''} heard ${many ? 'are from other devices' : 'is from another device'} (below)` });
     } else {
       V.push({ kind: 'quiet', tag: 'SWITCH', title: 'No LLDP/CDP announcement', detail: secs < 60 ? `${secs} s so far — CDP needs up to 60 s` : 'LLDP/CDP is off on this port, or it is not a managed switch' });
@@ -657,8 +663,8 @@ module.exports = function initDiscover(deps) {
       const macName = m => { let v = ''; try { v = m ? (lookupVendor(m) || '') : ''; } catch {} return m ? (v && !/^unknown$/i.test(v) ? `${v} ${m}` : m) : ''; };
       const nbs = (ev.lldpNb || []).map(l => ({ name: real(l.sysName) || macName(l.chassis || l.src) || '?', key: real(l.sysName).toLowerCase(), ip: l.mgmtIp || '',
         what: lldpKind(l), via: 'LLDP', extra: real(l.sysDesc) && !real(l.sysName) ? real(l.sysDesc) : '', port: real(l.portDesc) || '' }));
-      if (ev.cdpNb) {
-        const c = ev.cdpNb, same = nbs.find(n => n.key && n.key === String(c.sysName || '').trim().toLowerCase());
+      for (const c of ((ev.cdpNbs || []).length ? ev.cdpNbs : ev.cdpNb ? [ev.cdpNb] : [])) {
+        const same = nbs.find(n => n.key && n.key === String(c.sysName || '').trim().toLowerCase());
         if (same) same.via = 'LLDP+CDP';
         else nbs.push({ name: c.sysName || '?', key: '', ip: '', what: cdpKind(c), via: 'CDP', extra: c.platform || '', port: c.port || '' });
       }
@@ -709,14 +715,18 @@ module.exports = function initDiscover(deps) {
     // still on the card it showed up as "also: 10.99.99.x (1)"). Its address still counts as taken
     // for the free-address pick below.
     const selfIps = new Set(opts.selfIps || localIps());
-    const ips = Object.keys(ev.ipCount || {}).filter(ip => !selfIps.has(ip));
+    // 7.4.0-dev.24: on a trunk port every tagged frame is captured, replies from the internet
+    // included, and each public /24 was listed as a subnet on the port (150 of them on an office
+    // trunk). A host counts when its address is a private or self-assigned one, or it was seen in ARP.
+    const localish = ip => /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/.test(ip) || Object.prototype.hasOwnProperty.call(ev.arpSeen || {}, ip);
+    const ips = Object.keys(ev.ipCount || {}).filter(ip => !selfIps.has(ip) && localish(ip));
     const by24 = {};
     ips.forEach(ip => { const k = ip.split('.').slice(0, 3).join('.'); (by24[k] ||= []).push(ip); });
     const nets = Object.entries(by24).sort((a, b) => b[1].length - a[1].length);
     if (nets.length) {
       const [top, hosts] = nets[0];
       V.push({ kind: 'ok', tag: 'HOSTS', title: `${hosts.length} host${hosts.length !== 1 ? 's' : ''} talking on ${top}.x`,
-        detail: nets.slice(1).length ? 'also: ' + nets.slice(1).map(([k, h]) => `${k}.x (${h.length})`).join(', ') : 'one subnet heard' });
+        detail: nets.slice(1).length ? 'also: ' + nets.slice(1, 6).map(([k, h]) => `${k}.x (${h.length})`).join(', ') + (nets.length > 6 ? ` and ${nets.length - 6} more subnet${nets.length - 6 !== 1 ? 's' : ''}` : '') : 'one subnet heard' });
       // free-address suggestion in the dominant subnet
       const seen = new Set([...hosts, ...selfIps, ...(ev.arpAsked || []).filter(ip => ip.startsWith(top + '.'))]);
       // 7.4.0-dev.3: an address clients are sent to (DHCP server, gateway, DNS, time server) is in use even if it never spoke

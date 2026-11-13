@@ -42,6 +42,21 @@ async function listen(list) { feed = asTshark(list); const ev = await D.reconLis
   sw = V.find(v => v.tag === 'SWITCH');
   check(sw && sw.kind === 'ok' && /BENCH-SW-1/.test(sw.title) && !V.some(v => v.tag === 'NEIGHBOUR'), 'switch alone: one SWITCH card and no NEIGHBOUR');
 
+  // office trunk port, 2026-11-13: two cameras announce over CDP only (one names itself router + host),
+  // and tagged traffic brings replies from the internet into the capture
+  const cdpCam = (name, caps) => ({ 'frame.protocols': 'eth:llc:cdp', 'eth.src': '00:09:18:00:00:01', 'cdp.deviceid': name, 'cdp.portid': 'eth0', 'cdp.platform': 'Linux', 'cdp.capabilities': caps });
+  const ipFrom = ip => ({ 'frame.protocols': 'eth:ethertype:vlan:ethertype:ip:tcp', 'ip.src': ip });
+  const remote = []; for (let i = 0; i < 40; i++) remote.push(ipFrom(`52.${96 + i}.57.10`));
+  const local = ['10.0.30.11', '10.0.30.12', '10.0.30.13', '10.0.20.5', '10.0.60.1', '192.168.1.100', '10.0.190.2', '10.73.241.9', '10.0.40.7', '10.0.50.7'].map(ipFrom);
+  V = await listen([cdpCam('EHQ 1st Floor S', '0x00000011'), cdpCam('axis-b8a44f7c96ef', '0x00000010')].concat(remote, local));
+  sw = V.find(v => v.tag === 'SWITCH'); nb = V.filter(v => v.tag === 'NEIGHBOUR');
+  const hosts = V.find(v => v.tag === 'HOSTS');
+  check(sw && sw.kind === 'quiet', 'trunk: a camera announcing router + host over CDP is not the switch, got: ' + (sw && sw.title));
+  check(nb.length === 1 && /^2 devices/.test(nb[0].title) && /EHQ 1st Floor S/.test(nb[0].detail) && /axis-b8a44f7c96ef/.test(nb[0].detail), 'trunk: both CDP neighbours listed, got: ' + (nb[0] && nb[0].title + ' — ' + nb[0].detail));
+  check(hosts && /^3 hosts talking on 10\.0\.30\.x/.test(hosts.title), 'trunk: HOSTS title, got: ' + (hosts && hosts.title));
+  check(hosts && !/52\./.test(hosts.detail), 'trunk: internet addresses are not subnets on this port: ' + (hosts && hosts.detail));
+  check(hosts && (hosts.detail.match(/\.x \(/g) || []).length === 5 && /and 2 more subnets/.test(hosts.detail), 'trunk: the subnet list is cut at five, got: ' + (hosts && hosts.detail));
+
   if (problems.length) { console.log(problems.join('\n')); process.exit(1); }
   console.log('RECON: cameras announcing through an unmanaged switch are neighbours, not the switch'); process.exit(0);
 })();
