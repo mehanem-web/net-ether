@@ -242,7 +242,7 @@ NET-ETHER/
 
 ## CHANGELOG
 
-### v7.4.0 (unreleased — in test as 7.4.0-dev.24)
+### v7.4.0 (unreleased — in test as 7.4.0-dev.25)
 A full read of the code looking for bugs, then fixes tested on real hardware — including two fake test rigs (below) so DHCP and RECON can be proven at home without cameras or a managed switch. Nothing about how you use the app changes; things that were quietly wrong are now right.
 - **DHCP: two devices asking at once got the same address.** The ping-before-offer check takes a moment, and a second device asking inside that moment was offered the same address. Each address is now held for the device it is being checked for. Four fake devices 20 ms apart: four different addresses.
 - **DHCP: the pool has to be on the card's own network.** A wider MASK typed in the form let a pool through that the laptop could not reach, and the answers went to a broadcast address that is not on the cable (rows sat on OFFERED). Now refused, naming the card's real mask; answers always use the card's own mask. Masks with no room for devices and pools with no usable address are refused; the gateway's address is never handed out.
@@ -291,6 +291,7 @@ A full read of the code looking for bugs, then fixes tested on real hardware —
 - **Guide 7.2 and the RECON label (dev.22).** The guide's pictures are retaken from 7.4 and it gains GONE rows, the NEIGHBOUR card, RELEASE ALL and the no-cable messages. Taking the NEIGHBOUR picture showed the word running into the card's title (the label column was narrower than the word); the column is wider.
 - **RECON: cameras are not the switch (dev.23, bench 2026-11-13).** On a small unmanaged switch with cameras on it, every camera's LLDP announcement was folded into one SWITCH card ("Not set · port 00:07:5f:95:aa:ee · Linux · mgmt 10.90.44.27": a Bosch's MAC, a Hanwha's CDP and an Avigilon's address). An LLDP sender is now the switch only if it says it is network gear; a sender that says "station only" is a neighbour, senders are kept apart, and the NEIGHBOUR card lists them (name or maker and MAC, with the address each one announces). The CDP rule is tighter too: a Hanwha camera announces router + host and no longer counts as a switch. A device that speaks both protocols is listed once.
 - **RECON on a trunk port (dev.24, bench 2026-11-13).** HOSTS listed every internet /24 that a reply came from as a subnet on the port (about 150 on an office trunk, where all tagged traffic is captured): a host now counts when its address is private or self-assigned or it was seen in ARP, and the list stops at five subnets. Every CDP neighbour is kept, not just the first.
+- **RECON: an access point is not the switch either (dev.25, bench 2026-11-13).** On an office trunk one of seven SonicWall access points was shown as the switch: they announce over CDP as router + switch + host. A CDP sender with the host bit is a neighbour. And since a port has one switch, two or more senders that look like network gear in the same protocol are all treated as neighbours — the switch is passing them along.
 - Not in 7.4, planned for 7.5: fewer program launches per action, and a rework of how RECON presents what it heard (see ROADMAP.md).
 
 ### v7.3.1 (2026-11-02)

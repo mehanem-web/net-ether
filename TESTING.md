@@ -34,7 +34,7 @@ Result 2026-11-12: 35 of 35 on the home PC (Windows) and on Linux (32 of 32 on 2
 It proves the screen works — not that Windows applied anything. When the app's window↔main
 calls change, the sim in `tests/smoke/sim/` has to learn the new call.
 
-### v7.4.0 — audit fixes (dev builds `7.4.0-dev.1` … `dev.24`; signed drafts up to dev.12)
+### v7.4.0 — audit fixes (dev builds `7.4.0-dev.1` … `dev.25`; signed drafts up to dev.12)
 **Result 2026-11-11 (home PC `dev.bat` + work laptop signed portable, cabled straight to each other):**
 every fix below was seen working except the three marked *work*. Details and evidence per fix:
 `claude/AUDIT-7.4-status.md` in the project. dev.4 – dev.6 (the second pass, 2026-11-11 night) are in

@@ -396,7 +396,18 @@ module.exports = function initDiscover(deps) {
     if (!Number.isFinite(n)) return true;
     // 7.4.0-dev.23: a bridge or switch bit makes it a switch; "router" alone does too, but not next to
     // the host bit — a Hanwha camera announces 0x11 (router + host) and was shown as the switch
-    return (n & 0x0E) !== 0 || ((n & 0x01) !== 0 && (n & 0x10) === 0);
+    // dev.25: the host bit settles it. SonicWall access points announce 0x19 (router + switch + host)
+    // and one of seven was shown as the switch on an office trunk; a switch does not call itself a host.
+    if (n & 0x10) return false;
+    return (n & 0x0F) !== 0;
+  }
+  // 7.4.0-dev.25: a switch that speaks a protocol keeps other senders' frames of that protocol to
+  // itself, so a port has at most one such neighbour. Two or more senders that look like network gear
+  // in one protocol means the switch here is passing them along and none of them is it.
+  function settleSwitch(ev, all, slot, nbs, same) {
+    if (all.length === 1) { ev[slot] = all[0]; return; }
+    ev[slot] = null;
+    for (const c of all) if (!nbs.some(x => same(x, c))) { if (nbs.length < 32) nbs.push(c); }
   }
   // 7.4.0-dev.23: the same question for LLDP. Cameras announce themselves over LLDP and a small
   // unmanaged switch passes that along; every sender used to be folded into one "switch".
@@ -425,7 +436,7 @@ module.exports = function initDiscover(deps) {
   function emptyEvidence() {
     return {
       packets: 0, ms: 0, err: null,
-      lldp: null, cdp: null, cdpNb: null, cdpNbs: [], lldpNb: [],
+      lldp: null, cdp: null, cdpNb: null, cdpNbs: [], lldpNb: [], cdpSw: [], lldpSw: [],
       eapol: { count: 0, from: new Set() },
       stp:   { count: 0, root: null, bridge: null, vlans: new Set(), proto: null },
       vlanTags: new Set(),
@@ -480,7 +491,9 @@ module.exports = function initDiscover(deps) {
           const l = Object.fromEntries(Object.entries(p.lldp).filter(([, v]) => v));
           if (o.ethSrc) l.src = o.ethSrc;
           if (lldpIsSwitch(l)) {
-            if (!ev.lldp || lldpId(ev.lldp) === lldpId(l)) ev.lldp = Object.assign(ev.lldp || {}, l);
+            const had = ev.lldpSw.find(x => lldpId(x) === lldpId(l));
+            if (had) Object.assign(had, l); else if (ev.lldpSw.length < 32) ev.lldpSw.push(l);
+            settleSwitch(ev, ev.lldpSw, 'lldp', ev.lldpNb, (a, b) => lldpId(a) === lldpId(b));
           } else {
             const had = ev.lldpNb.find(x => lldpId(x) === lldpId(l));
             if (had) Object.assign(had, l); else if (ev.lldpNb.length < 32) ev.lldpNb.push(l);
@@ -491,7 +504,10 @@ module.exports = function initDiscover(deps) {
           // ev.cdp, a phone or other end device announcing itself in ev.cdpNb
           const c = Object.fromEntries(Object.entries(p.cdp).filter(([, v]) => v));
           if (cdpIsSwitch(c)) {
-            if (!ev.cdp || (ev.cdp.sysName || '') === (c.sysName || '')) ev.cdp = Object.assign(ev.cdp || {}, c);
+            const had = ev.cdpSw.find(x => (x.sysName || '') === (c.sysName || ''));
+            if (had) Object.assign(had, c); else if (ev.cdpSw.length < 32) ev.cdpSw.push(c);
+            settleSwitch(ev, ev.cdpSw, 'cdp', ev.cdpNbs, (a, b) => (a.sysName || '') === (b.sysName || ''));
+            ev.cdpNb = ev.cdpNbs[0] || null;
           } else {
             // 7.4.0-dev.24: every neighbour is kept (only the first used to be); ev.cdpNb stays the first
             const had = ev.cdpNbs.find(x => (x.sysName || '') === (c.sysName || ''));
