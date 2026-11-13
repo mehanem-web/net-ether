@@ -7051,7 +7051,6 @@ function monHandleStart() {
 
 // ── QUICK FILL ─────────────────────────────────────────────
 function monFillGateway() {
-  if (monState === 'running') return;
   const gw = document.getElementById('gateway')?.value.trim();
   if (!gw) { monSetStatus('NO GATEWAY SET — CHECK IP TAB', 'warn'); return; }
   const slot = monHosts.findIndex(h => !h);
@@ -7059,11 +7058,11 @@ function monFillGateway() {
   else if (monHosts.length < MON_MAX_HOSTS) { monHosts.push(gw); }
   else { monSetStatus('MAX TARGETS REACHED', 'warn'); return; }
   monRenderHostEditor();
+  if (monState !== 'stopped') monSyncRows();   // 7.4.0-dev.17: targets can change while PING runs — these two buttons were still switched off then
   monSetStatus('GATEWAY ADDED: ' + gw, 'ok');
 }
 
 function monFillCurrentIp() {
-  if (monState === 'running') return;
   const ip = document.getElementById('ip')?.value.trim();
   if (!ip) { monSetStatus('NO IP SET — CHECK IP TAB', 'warn'); return; }
   const slot = monHosts.findIndex(h => !h);
@@ -7071,6 +7070,7 @@ function monFillCurrentIp() {
   else if (monHosts.length < MON_MAX_HOSTS) { monHosts.push(ip); }
   else { monSetStatus('MAX TARGETS REACHED', 'warn'); return; }
   monRenderHostEditor();
+  if (monState !== 'stopped') monSyncRows();
   monSetStatus('IP ADDED: ' + ip, 'ok');
 }
 
@@ -8208,11 +8208,28 @@ function enrichScanResult(ip, mac, vendor) {
 
 // ── SITE LIBRARY ───────────────────────────────────────────
 
+// 7.4.0-dev.17: the scan library gets the same shaping the SITES database got in dev.4. It is
+// keyed by subnet and every entry holds a device list — an entry from a damaged or imported file
+// with no list stopped SCAN from starting on that subnet and SAVE SITE from saving, and a key
+// that is not a subnet later became a site id.
+function scanCleanLibrary(db) {
+  const out = {};
+  if (!db || typeof db !== 'object' || Array.isArray(db)) return out;
+  for (const [key, site] of Object.entries(db)) {
+    if (!/^\d{1,3}(\.\d{1,3}){2}$/.test(key) || !site || typeof site !== 'object' || Array.isArray(site)) continue;
+    site.devices = (Array.isArray(site.devices) ? site.devices : [])
+      .filter(d => d && typeof d === 'object' && !Array.isArray(d) && typeof d.ip === 'string' && d.ip)
+      .map(d => { if (d.mac != null && typeof d.mac !== 'string') d.mac = String(d.mac); return d; });
+    if (typeof site.name !== 'string') site.name = key;
+    out[key] = site;
+  }
+  return out;
+}
 async function loadSitesDb() {
   if (!window.hud) return;
   try {
     const data = await hud.sitesLoad();
-    allSites = data && typeof data === 'object' ? data : {};
+    allSites = scanCleanLibrary(data);
   } catch { allSites = {}; }
   renderSiteLibrary();
 }
@@ -8648,7 +8665,7 @@ async function importSites() {
     scanPopulateSitePicker();
     if (r.scanLibrary && typeof r.scanLibrary === 'object' && Object.keys(r.scanLibrary).length) {
       let added = 0;
-      Object.entries(r.scanLibrary).forEach(([k, v]) => { if (!allSites[k] && v && typeof v === 'object') { allSites[k] = v; added++; } });
+      Object.entries(scanCleanLibrary(r.scanLibrary)).forEach(([k, v]) => { if (!allSites[k]) { allSites[k] = v; added++; } });   // 7.4.0-dev.17: shaped first
       if (added) { await persistSites(); if (typeof renderSiteLibrary === 'function') renderSiteLibrary(); }
     }
     intelSetListStatus(mode === 'replace'
@@ -8732,8 +8749,9 @@ function updateScanRowPorts(host, ports) {
   updateScanRowPortsInner(host, ports);
   // a device that answered a port but not the ping: show the time it took to connect
   if (r0 && Array.isArray(ports)) {
-    const msEl = r0.querySelector('.scan-result-ms'), best = ports.filter(p => p.open && p.ms > 0).sort((a, b) => a.ms - b.ms)[0];
-    if (msEl && best && /^ARP$/i.test(msEl.textContent.trim())) { msEl.textContent = best.ms + 'ms'; msEl.title = 'Time to connect on port ' + best.port + ' — it did not answer the ping'; }
+    const msEl = r0.querySelector('.scan-result-ms'), best = ports.filter(p => p.open).sort((a, b) => (a.ms || 0) - (b.ms || 0))[0];
+    // 7.4.0-dev.17: a connect that took under a millisecond reads 0 — it was skipped, so on a fast LAN the column stayed "ARP". Shown as 1 ms, like a sub-millisecond ping.
+    if (msEl && best && /^ARP$/i.test(msEl.textContent.trim())) { msEl.textContent = Math.max(1, best.ms || 0) + 'ms'; msEl.title = 'Time to connect on port ' + best.port + ' — it did not answer the ping'; }
   }
   if (!document.querySelector('#scan-results .port-badge.probing')) scanProbesSettled();
 }
