@@ -2086,6 +2086,10 @@ async function addAliasCoreUnlocked(safeAdapter, ip, subnet, tag = 'alias_add') 
   if (!st) return { ok: false, err: 'Could not read the card\'s settings (Windows was slow to answer) — try again in a moment', converted: false };
   // rc.5: no cable — the card's static is only saved; an extra address can't be confirmed on it
   if (st.savedOnly) return { ok: false, err: `No cable on ${safeAdapter} — plug it in first (its ${st.ip} is saved and comes up with link; extra addresses go on after that)`, converted: false };
+  // 7.4.0-dev.19: …and the same when netsh reports the card as plain static (the home PC's Realtek
+  // does): no live address at all on a static card means no cable. The add used to run, exit 0,
+  // and then fail its own check five seconds later ("not seen on the card").
+  if (!st.dhcp && !adapterIpv4s(safeAdapter).length) return { ok: false, err: `No cable on ${safeAdapter} — plug it in first (extra addresses go on once there is link)`, converted: false };
   let cmd = `netsh interface ip add address "${safeAdapter}" ${ip} ${subnet}`;
   let converted = false;
   if (st.dhcp) {
@@ -4004,6 +4008,14 @@ async function applyNetworkConfig({ adapter, ip, subnet, gateway, dns, tag, keep
 // Is `ip` configured on the card? os.networkInterfaces (free) → netsh → saved settings (cards
 // with no cable), polled 3× 1.5 s. Every read survives its own timeout. Returns where it was
 // seen, or null.
+// 7.4.0-dev.19: is `ip` one of the card's own addresses in this netsh block? It used to be a plain
+// text search, so 192.168.0.2 was "found" inside the gateway 192.168.0.254 and an APPLY on a card
+// with no cable was reported as active on the card (home PC, 2026-11-12). Whole address, and only
+// on an "IP Address:" line.
+function blockHasIp(block, ip) {
+  if (!block || !ip) return false;
+  return new RegExp('IP Address:\\s+' + String(ip).replace(/\./g, '\\.') + '(?![\\d.])', 'i').test(block);
+}
 async function verifyStaticIp(safeAdapter, ip, firstWaitMs = 1500) {
   for (let attempt = 0; attempt < 3; attempt++) {
     // v7.3.1 (APPLY): the first look comes sooner — os.networkInterfaces is free, and a
@@ -4012,7 +4024,7 @@ async function verifyStaticIp(safeAdapter, ip, firstWaitMs = 1500) {
     if (adapterIpv4s(safeAdapter).includes(ip)) return 'live';
     const cfg = await execAsync('netsh interface ip show config', { timeout: 12000 }).catch(() => '');
     const block = findAdapterBlock(cfg.split(/\r?\n(?=Configuration for interface)/i), safeAdapter);
-    if (block && block.includes(ip)) return 'netsh';
+    if (blockHasIp(block, ip)) return 'netsh';
     // rc.5: no link → the address isn't live; Windows' saved settings say whether it'll come up
     // on it. (The registry's IPAddress value used here before can be a leftover from an older
     // static, so it could pass a change that didn't happen.)
