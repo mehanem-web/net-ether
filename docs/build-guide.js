@@ -346,7 +346,7 @@ const children = [
   ], 'Cards fill in as the network talks.'),
   ...shotSide('recon-neighbour', [
     [B('The switch is not announcing itself'), T(' — it has that turned off, or it is not a managed switch.', { size: 21 })],
-    [B('NEIGHBOUR'), T(' — something else on the same network announcing itself, usually an IP phone. Useful to know, but it is not your switch and its port is not your port.', { size: 21 })],
+    [B('NEIGHBOUR'), T(' — something else on the same network announcing itself: an IP phone, cameras, access points. Several are listed together. Useful to know, but none is your switch and its port is not your port.', { size: 21 })],
   ], 'A port where only a desk phone announces.', 3.0),
   ...whats('VLAN and 802.1X', 'A VLAN is a separate network running over the same switch — cameras on one, offices on another. The port decides which one you land on.',
     '802.1X is a lock on the port: the switch asks for credentials before letting a device on. A camera without a certificate on such a port gets nowhere, which is worth knowing before you spend an hour on it.'),
@@ -470,7 +470,7 @@ const children = [
   table([
     ['Card', 'What it tells you'],
     ['SWITCH', 'Switch name, port and VLAN (LLDP every 30 s, CDP every 60 s). "No announcement" is an answer, not an error: not a managed switch, or it\'s turned off.'],
-    ['NEIGHBOUR', 'Another device announcing itself on this network (an IP phone, usually), not your switch. Seen where the switch itself says nothing and passes the announcements along.'],
+    ['NEIGHBOUR', 'Other devices announcing themselves on this network (IP phones, cameras, access points), not your switch. Seen where the switch itself says nothing and passes the announcements along. Cameras are listed with the address they announce.'],
     ['802.1X', 'Whether the switch asked for a login.'],
     ['STP / TRUNK', 'Spanning tree running (don\'t hang an unmanaged switch off it); several VLANs means a trunk port.'],
     ['DHCP', 'Who answered, with gateway, mask and DNS. "DHCP in use — server not heard" = devices are renewing leases, so there is a server, it just did not speak while you listened. "Clients asking — no answer heard" = dead DHCP server.'],

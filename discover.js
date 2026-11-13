@@ -722,7 +722,7 @@ module.exports = function initDiscover(deps) {
       V.push({ kind: 'ok', tag: 'DHCP', title: `DHCP server${srv.length !== 1 ? 's' : ''} ${srv.join(', ')}`, detail: `${traffic}${ev.dhcp.routers.length ? ' · gateway ' + ev.dhcp.routers.join(', ') : ''}${ev.dhcp.masks.length ? ' · mask ' + ev.dhcp.masks[0] : ''}${ev.dhcp.dns.length ? ' · DNS ' + ev.dhcp.dns.join(', ') : ''}` });
     }
     else if (ev.dhcp.requests) { const n = ev.dhcp.requests; V.push({ kind: 'ok', tag: 'DHCP', title: 'DHCP in use — server not heard', detail: `${n} lease request${n !== 1 ? 's' : ''} from clients; the server answers them directly, so its address doesn't reach this port` }); }
-    else if (ev.dhcp.discovers) V.push({ kind: 'warn', tag: 'DHCP', title: 'Clients asking — no answer heard', detail: `${ev.dhcp.discovers} DISCOVER${ev.dhcp.discovers !== 1 ? 's' : ''} heard and no client went on to take a lease — static site, or the server is down` });
+    else if (ev.dhcp.discovers) V.push({ kind: 'warn', tag: 'DHCP', title: 'Clients asking — no answer heard', detail: `${ev.dhcp.discovers} DISCOVER${ev.dhcp.discovers !== 1 ? 's' : ''} heard and no client went on to take a lease — no DHCP server here, the server is down, or the asker never finishes (a monitoring probe asks and walks away)` });   // dev.26: wording — seen on an office network whose server was fine
     else if (silent) V.push({ kind: 'quiet', tag: 'DHCP', title: 'No DHCP heard — SILENT', detail: `nothing asked, so nothing answered; another client's renewal would show here. A STANDARD listen asks for a lease and finds the server` });
     else V.push({ kind: 'quiet', tag: 'DHCP', title: 'No DHCP traffic', detail: `${secs} s — static site, or quiet` });
 
@@ -783,7 +783,25 @@ module.exports = function initDiscover(deps) {
     const myIps = new Set(ifaceIps);
     const socks = [];
     let proc = null, timer = null, pushT = null, stopped = false;
-    const isNoise = ip => !isValidIp(ip) || ip === '0.0.0.0' || ip.startsWith('224.') || ip.startsWith('239.') || ip === '255.255.255.255' || myIps.has(ip);
+    // 7.4.0-dev.26: this laptop is not a device on the cable. Only the watched card's own addresses
+    // were left out, so with the Wi-Fi on a network the cable can hear (same office LAN, or a trunk
+    // port) the laptop's Wi-Fi address was listed as a SITTING device with a REACH button (bench
+    // 2026-11-13). Every address and MAC of every card counts as "me"; re-read every few seconds
+    // because cards come and go.
+    let mine = { at: 0, ips: new Set(), macs: new Set() };
+    const me = () => {
+      if (Date.now() - mine.at > 4000) {
+        const ips = new Set(ifaceIps), macs = new Set();
+        try { for (const list of Object.values(require('os').networkInterfaces())) for (const x of list || []) {
+          if (x.family === 'IPv4' && !x.internal) ips.add(x.address);
+          if (x.mac && x.mac !== '00:00:00:00:00:00') macs.add(x.mac.toLowerCase());
+        } } catch {}
+        mine = { at: Date.now(), ips, macs };
+      }
+      return mine;
+    };
+    const isMyMac = m => !!m && me().macs.has(String(m).toLowerCase().replace(/-/g, ':'));
+    const isNoise = ip => !isValidIp(ip) || ip === '0.0.0.0' || ip.startsWith('224.') || ip.startsWith('239.') || ip === '255.255.255.255' || myIps.has(ip) || me().ips.has(ip);
     const recFor = ip => (seen[ip] ||= { ip, mac: '', name: '', model: '', hostname: '', services: [], sources: [], firstSeen: Date.now(), lastSeen: Date.now() });
     const touch = (r, src) => { r.lastSeen = Date.now(); if (!r.sources.includes(src)) r.sources.push(src); schedule(); };
     function schedule() {
@@ -795,7 +813,7 @@ module.exports = function initDiscover(deps) {
       // 7.4.0-dev.17: forget what has been silent for five minutes — on a big flat network the
       // table of everything ever heard only grew for as long as the DHCP tab stayed open
       for (const k of Object.keys(seen)) if (seen[k].lastSeen < cut) delete seen[k];
-      return Object.values(seen).filter(r => r.lastSeen >= cut).map(r => ({
+      return Object.values(seen).filter(r => r.lastSeen >= cut && !me().ips.has(r.ip) && !isMyMac(r.mac)).map(r => ({
         ...r, services: r.services.slice(0, 8), sources: r.sources.slice(),
         vendor: r.mac ? (lookupVendor(r.mac) || '') : '', linkLocal: /^169\.254\./.test(r.ip),
       })).sort((a, b) => b.lastSeen - a.lastSeen).slice(0, 200);
@@ -872,6 +890,7 @@ module.exports = function initDiscover(deps) {
           while ((i = out.indexOf('\n')) >= 0) {
             const [eth, arpIp, arpMac, sysName, mgmtIp, sysDesc] = out.slice(0, i).replace(/\r$/, '').split('|');
             out = out.slice(i + 1);
+            if (isMyMac(arpMac) || isMyMac(eth)) continue;   // dev.26: our own card talking
             if (arpIp && !isNoise(arpIp)) { const r = recFor(arpIp); if (arpMac) r.mac = arpMac.toLowerCase(); touch(r, 'arp'); }
             if (mgmtIp && !isNoise(mgmtIp)) {
               const r = recFor(mgmtIp);

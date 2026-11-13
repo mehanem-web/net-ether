@@ -1996,6 +1996,21 @@ ipcMain.handle('recon-verdicts', (e, ev, opts) => (DISCOVER && ev && typeof ev =
 // in temp-aliases.json, and removes it on quit or on request. A crash leaves
 // the file behind; the next elevated launch cleans up and logs it.
 const TEMP_ALIAS_FILE = path.join(app.getPath('userData'), 'temp-aliases.json');
+// 7.4.0-dev.26: when a 2nd address goes on a DHCP card that has only a self-assigned 169.254.x.x
+// address, the card is made static on that address first (see addAliasCoreUnlocked). Nobody chose
+// it, but it then looked like a 2nd address the tech had added and every later APPLY put it back
+// (bench 2026-11-13: 169.254.122.136 carried through two APPLYs). The address is noted here per
+// card so the next APPLY can leave it behind. A 169.254 address the tech adds on purpose is not
+// in this file and is kept like any other.
+const FROZEN_SELF_FILE = path.join(app.getPath('userData'), 'frozen-selfassigned.json');
+function readFrozenSelf() { const j = readJsonSafe(FROZEN_SELF_FILE, {}); return j && typeof j === 'object' && !Array.isArray(j) ? j : {}; }
+function setFrozenSelf(adapter, ip) {
+  try {
+    const j = readFrozenSelf(), k = String(adapter || '').toLowerCase();
+    if (ip) j[k] = ip; else delete j[k];
+    if (Object.keys(j).length) writeJsonAtomic(FROZEN_SELF_FILE, j); else if (fs.existsSync(FROZEN_SELF_FILE)) fs.unlinkSync(FROZEN_SELF_FILE);
+  } catch {}
+}
 function readTempAliases() { const j = readJsonSafe(TEMP_ALIAS_FILE, []); return Array.isArray(j) ? j : []; }
 function writeTempAliases(list) { try { if (list.length) writeJsonAtomic(TEMP_ALIAS_FILE, list); else if (fs.existsSync(TEMP_ALIAS_FILE)) fs.unlinkSync(TEMP_ALIAS_FILE); } catch {} }
 
@@ -2101,6 +2116,7 @@ async function addAliasCoreUnlocked(safeAdapter, ip, subnet, tag = 'alias_add') 
     if (dns[0]) cmd += `; netsh interface ip set dns "${safeAdapter}" static ${dns[0]} validate=no`;
     if (dns[1]) cmd += `; netsh interface ip add dns "${safeAdapter}" ${dns[1]} index=2 validate=no`;
     converted = true;
+    if (/^169\.254\./.test(st.ip)) setFrozenSelf(safeAdapter, st.ip);   // dev.26: self-assigned, kept only to carry the 2nd address
   }
   const result = await runElevated(cmd, { tag, timeoutMs: 25000 });
   if (!result.ok) {
@@ -2268,7 +2284,11 @@ async function clearTempAliases(reason) {
     if (!where.present) { retry.set(id, { ...t, tries: (t.tries || 0) + 1, absent: true }); continue; }
     // "gone" needs proof: os.networkInterfaces() lists a card's addresses only while it has link
     const aliasGone = () => { const ips = adapterIpv4s(safe); return ips.length > 0 && !ips.includes(t.ip); };
-    if (aliasGone() && !t.converted) { done.add(id); removed++; continue; }   // already gone
+    // dev.26: already gone is already gone, converted or not. An APPLY or → DHCP since the REACH
+    // replaced the card's addresses; the delete then failed with "Element not found" and was logged
+    // as a failed step on quit (bench 2026-11-13). The card is left as the tech set it — which is
+    // what happened before too, because the chain stopped at the failed delete.
+    if (aliasGone()) { done.add(id); removed++; continue; }
     // The alias add converted a DHCP adapter to static — we were the only reason, so hand it back.
     // One chain: drop the alias, then DHCP for address and DNS.
     const cmd = t.converted
@@ -3961,8 +3981,11 @@ async function applyNetworkConfig({ adapter, ip, subnet, gateway, dns, tag, keep
   // v7.3.1: `set address` replaces EVERY address on the card — so the 2nd/3rd network addresses
   // the renderer lists are added straight back in the same elevated run. Validated here; one
   // equal to the new main is dropped (it just became the main).
+  // dev.26: …and so is the self-assigned address a 2nd-address add froze on the card (APPLY only;
+  // REVERT and RESTORE put back exactly what the card had).
+  const frozenSelf = opTag === 'apply' ? (readFrozenSelf()[safeAdapter.toLowerCase()] || '') : '';
   const keepList = (Array.isArray(keep) ? keep : []).slice(0, 8)
-    .filter(k => k && isValidIp(k.ip) && isValidSubnet(k.subnet) && k.ip !== ip);
+    .filter(k => k && isValidIp(k.ip) && isValidSubnet(k.subnet) && k.ip !== ip && k.ip !== frozenSelf);
   const cmdLines = [
     addrCmd,
     dns && dns.trim() ? `netsh interface ip set dns "${safeAdapter}" static ${dns.trim()} validate=no` : null,
@@ -3978,6 +4001,7 @@ async function applyNetworkConfig({ adapter, ip, subnet, gateway, dns, tag, keep
   // v7.3.1: Windows' duplicate verdict is read alongside the read-back, not after it
   const dadP = opTag === 'apply' ? dadVerdict(ip, 3000).catch(() => null) : Promise.resolve(null);
   const seen = await verifyStaticIp(safeAdapter, ip, 400);
+  if (seen && frozenSelf) setFrozenSelf(safeAdapter, null);   // dev.26: left behind — forget it
   // v7.3.1: Windows ARP-probes a new address the moment it lands on the card (duplicate
   // address detection) — the only check that sees the NEW subnet. Read its verdict; a
   // REVERT/RESTORE puts back what the card had, so it isn't second-guessed.
@@ -4044,6 +4068,7 @@ async function applyDhcpConfig({ adapter, tag }) {
   const opTag = ['revert', 'restore', 'leftover_restore'].includes(tag) ? tag : 'dhcp';
   const safeAdapter = sanitizeAdapter(adapter);
   if (!safeAdapter) return { ok: false, err: 'Invalid adapter name' };
+  setFrozenSelf(safeAdapter, null);   // dev.26: back on DHCP — nothing frozen on this card any more
   return withAdapterLock(safeAdapter, async () => {
   // v7.3.0: address and DNS run separately. On a card that's already DHCP, netsh's
   // "DHCP is already enabled" exits 1 — that stopped the chain before DNS was reset and
