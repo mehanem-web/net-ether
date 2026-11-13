@@ -70,6 +70,32 @@ async function listen(list) { feed = asTshark(list); const ev = await D.reconLis
   sw = V.find(v => v.tag === 'SWITCH');
   check(sw && sw.kind === 'ok' && /CORE-SW-2/.test(sw.title), 'one CDP switch and a phone: the switch keeps the card, got: ' + (sw && sw.title));
 
+  // trunk port: suggest an address on the untagged network, with a gateway that belongs to it,
+  // and leave the laptop's own name out of NAMES (values from the 10:34 listen, 2026-11-13)
+  const tagged = (ip, vlan) => ({ 'frame.protocols': 'eth:ethertype:vlan:ethertype:ip:udp', 'vlan.id': String(vlan), 'ip.src': ip });
+  const ack = (router, vlan) => Object.assign({ 'frame.protocols': 'eth:ethertype:ip:udp:dhcp', 'ip.src': '10.0.60.1', 'dhcp.option.dhcp': '5', 'dhcp.option.dhcp_server_id': '10.0.60.1',
+    'dhcp.option.router': router, 'dhcp.option.subnet_mask': '255.255.255.0' }, vlan ? { 'vlan.id': String(vlan), 'frame.protocols': 'eth:ethertype:vlan:ethertype:ip:udp:dhcp' } : {});
+  const nbName = n => ({ 'frame.protocols': 'eth:ethertype:ip:udp:nbns', 'ip.src': '10.0.60.90', 'nbns.name': n + '<00>', 'nbns.flags.opcode': '5', 'nbns.flags.response': '0' });
+  const trunkFrames = [];
+  for (let i = 1; i <= 12; i++) trunkFrames.push(tagged('10.0.30.' + i, 30));
+  for (let i = 1; i <= 5; i++) trunkFrames.push(tagged('10.0.20.' + i, 20));
+  for (let i = 11; i <= 14; i++) trunkFrames.push(ipFrom('10.0.60.' + i));
+  trunkFrames.push(ack('10.0.60.254', 0), ack('10.0.30.254', 30), nbName('BENCH-LAPTOP'), nbName('ORION-30008'));
+  feed = asTshark(trunkFrames);
+  let ev = await D.reconListen({ tshark: 'tshark', npf: 'X', durationS: 1 });
+  V = D.reconVerdicts(ev, { selfIps: ['10.0.60.90'], selfName: 'bench-laptop' });
+  const addr = V.find(v => v.tag === 'ADDRESS'), names = V.find(v => v.tag === 'NAMES'), h2 = V.find(v => v.tag === 'HOSTS');
+  check(V.some(v => v.tag === 'TRUNK'), 'trunk fixture: a TRUNK card is expected');
+  check(h2 && /^12 hosts talking on 10\.0\.30\.x/.test(h2.title), 'trunk: HOSTS still names the busiest network, got: ' + (h2 && h2.title));
+  check(addr && /^10\.0\.60\.250 looks free/.test(addr.title), 'trunk: the suggested address is on the untagged network, got: ' + (addr && addr.title));
+  check(addr && addr.action && addr.action.gateway === '10.0.60.254', 'trunk: the gateway belongs to the suggested network, got: ' + (addr && addr.action && addr.action.gateway));
+  check(names && /ORION-30008/.test(names.title) && !/BENCH-LAPTOP/i.test(names.title), 'the laptop\'s own name is not in NAMES, got: ' + (names && names.title));
+  // one network, two routers named: the gateway offered must be the one on that network
+  feed = asTshark([ipFrom('10.0.30.11'), ipFrom('10.0.30.12'), ack('10.0.60.254', 0), ack('10.0.30.254', 0)]);
+  ev = await D.reconListen({ tshark: 'tshark', npf: 'X', durationS: 1 });
+  const a2 = D.reconVerdicts(ev, { selfIps: [], selfName: '' }).find(v => v.tag === 'ADDRESS');
+  check(a2 && /^10\.0\.30\.250/.test(a2.title) && a2.action.gateway === '10.0.30.254', 'access port: gateway on the suggested network, got: ' + (a2 && a2.title + ' gw ' + a2.action.gateway));
+
   if (problems.length) { console.log(problems.join('\n')); process.exit(1); }
   console.log('RECON: cameras announcing through an unmanaged switch are neighbours, not the switch'); process.exit(0);
 })();

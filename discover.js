@@ -441,7 +441,7 @@ module.exports = function initDiscover(deps) {
       stp:   { count: 0, root: null, bridge: null, vlans: new Set(), proto: null },
       vlanTags: new Set(),
       arpSeen: {}, arpAsked: new Set(),
-      ipCount: {}, macs: new Set(),
+      ipCount: {}, ipUntagged: new Set(), macs: new Set(),
       dhcp: { servers: new Set(), offers: 0, acks: 0, discovers: 0, requests: 0, routers: new Set(), masks: new Set(), dns: new Set() },
       names: new Set(), ntp: new Set(),
     };
@@ -453,7 +453,7 @@ module.exports = function initDiscover(deps) {
       eapol: { count: ev.eapol.count, from: arr(ev.eapol.from) },
       stp: { count: ev.stp.count, root: ev.stp.root, bridge: ev.stp.bridge, vlans: arr(ev.stp.vlans), proto: ev.stp.proto },
       vlanTags: arr(ev.vlanTags), arpSeen: ev.arpSeen, arpAsked: arr(ev.arpAsked),
-      ipCount: ev.ipCount, macs: arr(ev.macs),
+      ipCount: ev.ipCount, ipUntagged: arr(ev.ipUntagged || []), macs: arr(ev.macs),
       dhcp: { servers: arr(ev.dhcp.servers), offers: ev.dhcp.offers, acks: ev.dhcp.acks, discovers: ev.dhcp.discovers, requests: ev.dhcp.requests, routers: arr(ev.dhcp.routers), masks: arr(ev.dhcp.masks), dns: arr(ev.dhcp.dns) },
       names: arr(ev.names), ntp: arr(ev.ntp),
     };
@@ -526,9 +526,9 @@ module.exports = function initDiscover(deps) {
         if (o.vlanId) ev.vlanTags.add(o.vlanId);
         if (o.ethSrc) ev.macs.add(o.ethSrc);
         if (/\barp\b/.test(proto)) {
-          if (ipOk(o.arpSrcIp || '')) { ev.arpSeen[o.arpSrcIp] = o.arpSrcMac || ev.arpSeen[o.arpSrcIp] || ''; bump(ev.ipCount, o.arpSrcIp); }
+          if (ipOk(o.arpSrcIp || '')) { ev.arpSeen[o.arpSrcIp] = o.arpSrcMac || ev.arpSeen[o.arpSrcIp] || ''; bump(ev.ipCount, o.arpSrcIp); if (!o.vlanId) ev.ipUntagged.add(o.arpSrcIp); }
           if (ipOk(o.arpDstIp || '') && o.arpOp === '1') ev.arpAsked.add(o.arpDstIp);
-        } else if (ipOk(o.ipSrc || '')) bump(ev.ipCount, o.ipSrc);
+        } else if (ipOk(o.ipSrc || '')) { bump(ev.ipCount, o.ipSrc); if (!o.vlanId) ev.ipUntagged.add(o.ipSrc); }   // dev.27: which hosts were heard without a VLAN tag
         if (/\bdhcp\b/.test(proto)) {
           const t = o.dhcpType;
           if (t === '1') ev.dhcp.discovers++;
@@ -744,23 +744,43 @@ module.exports = function initDiscover(deps) {
       V.push({ kind: 'ok', tag: 'HOSTS', title: `${hosts.length} host${hosts.length !== 1 ? 's' : ''} talking on ${top}.x`,
         detail: nets.slice(1).length ? 'also: ' + nets.slice(1, 6).map(([k, h]) => `${k}.x (${h.length})`).join(', ') + (nets.length > 6 ? ` and ${nets.length - 6} more subnet${nets.length - 6 !== 1 ? 's' : ''}` : '') : 'one subnet heard' });
       // free-address suggestion in the dominant subnet
-      const seen = new Set([...hosts, ...selfIps, ...(ev.arpAsked || []).filter(ip => ip.startsWith(top + '.'))]);
+      // 7.4.0-dev.27: on a trunk port the busiest network can be a tagged VLAN, and a laptop plugged in
+      // untagged does not land there. With more than one VLAN on the port, suggest from the network
+      // heard without a tag (bench 2026-11-13: 10.0.30.250 was offered on a port whose untagged
+      // network is 10.0.60.x).
+      const trunk = tags.length > 1 || pv.length > 1;
+      let aTop = top, onUntagged = false;
+      if (trunk) {
+        const un = new Set(ev.ipUntagged || []), cnt = {};
+        ips.filter(ip => un.has(ip)).forEach(ip => { const k = ip.split('.').slice(0, 3).join('.'); cnt[k] = (cnt[k] || 0) + 1; });
+        const best = Object.entries(cnt).sort((a, b) => b[1] - a[1])[0];
+        if (best) { aTop = best[0]; onUntagged = true; }
+      }
+      const aHosts = by24[aTop] || [];
+      const seen = new Set([...aHosts, ...selfIps, ...(ev.arpAsked || []).filter(ip => ip.startsWith(aTop + '.'))]);
       // 7.4.0-dev.3: an address clients are sent to (DHCP server, gateway, DNS, time server) is in use even if it never spoke
       for (const ip of [...(ev.dhcp.servers || []), ...(ev.dhcp.routers || []), ...(ev.dhcp.dns || []), ...(ev.ntp || [])]) seen.add(ip);
       const mask = ev.dhcp.masks && ev.dhcp.masks[0] && /^255\.255\.255\./.test(ev.dhcp.masks[0]) ? ev.dhcp.masks[0] : '255.255.255.0';
       let pick = null;
       for (const last of [250, 249, 248, 247, 246, 245, 244, 243, 242, 241, 240, 239, 238, 237, 236, 235, 234, 233, 232, 231, 230, 229, 228, 227, 226, 225, 224, 223, 222, 221, 220]) {
-        const ip = `${top}.${last}`; if (!seen.has(ip)) { pick = ip; break; }
+        const ip = `${aTop}.${last}`; if (!seen.has(ip)) { pick = ip; break; }
       }
-      const gw = (ev.dhcp.routers && ev.dhcp.routers[0]) || (seen.has(top + '.1') ? top + '.1' : '');
-      if (pick) V.push({ kind: 'info', tag: 'ADDRESS', title: `${pick} looks free`, detail: `nobody used or asked for it in ${secs} s · mask ${mask}${gw ? ' · gateway ' + gw : ''} — APPLY still runs the duplicate check`, action: { ip: pick, subnet: mask, gateway: gw } });
+      // dev.27: the gateway has to be on the suggested network. The first router any lease named was
+      // used; with two networks heard that put 10.0.60.254 next to a 10.0.30.x address, and TAKE
+      // would have applied it.
+      const mN = toNum(mask), sameNet = ip => ((toNum(ip) & mN) >>> 0) === ((toNum(aTop + '.0') & mN) >>> 0);
+      const gw = (ev.dhcp.routers || []).find(r => /^\d+(\.\d+){3}$/.test(r) && sameNet(r)) || (seen.has(aTop + '.1') ? aTop + '.1' : '');
+      if (pick) V.push({ kind: 'info', tag: 'ADDRESS', title: `${pick} looks free`, detail: `nobody used or asked for it in ${secs} s · mask ${mask}${gw ? ' · gateway ' + gw : ''}${trunk ? (onUntagged ? ' · on the untagged network of this trunk' : ' · trunk port: this may be a tagged VLAN you will not land on') : ''} — APPLY still runs the duplicate check`, action: { ip: pick, subnet: mask, gateway: gw } });
     } else {
       V.push({ kind: 'quiet', tag: 'HOSTS', title: 'Nothing talking', detail: `${secs} s — empty port, wrong VLAN, or a very quiet segment` });
     }
 
     // names
     // 7.4.0-dev.12: a random ID a device advertises as its name (e6d35e13-a907-ea7a-44d0-734d6af04c7c) tells a tech nothing
-    const names = (ev.names || []).filter(n => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(n) && !/^[0-9a-f]{24,}$/i.test(n));
+    // dev.27: …and neither does the laptop's own name (it announces itself like any Windows PC)
+    let selfName = ''; try { selfName = String(opts.selfName != null ? opts.selfName : require('os').hostname()).split('.')[0].toLowerCase(); } catch {}
+    const names = (ev.names || []).filter(n => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(n) && !/^[0-9a-f]{24,}$/i.test(n)
+      && !(selfName && String(n).split('.')[0].toLowerCase() === selfName));
     if (names.length) V.push({ kind: 'info', tag: 'NAMES', title: names.slice(0, 8).join(', ') + (names.length > 8 ? ` +${names.length - 8}` : ''), detail: 'NetBIOS / mDNS names heard' });
     // ntp
     if ((ev.ntp || []).length) V.push({ kind: 'info', tag: 'NTP', title: ev.ntp.join(', '), detail: 'time server(s) clients are asking' });
