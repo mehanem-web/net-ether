@@ -1,4 +1,4 @@
-// NET//ETHER User Guide — v7.4.0 (document version 7.1, the visual guide)
+// NET//ETHER User Guide — v7.4.0 (document version 7.2, the visual guide)
 // node build-guide.js → NET-ETHER-Guide.docx ; then soffice → PDF
 // Screenshots in docs/img come from the tutorial film rig (shots.js + annotate.py in the pipeline zip).
 const fs = require('fs');
@@ -104,7 +104,7 @@ const children = [
   new Paragraph({ spacing: { after: 80 }, children: [T('Field Network Management Tool', { size: 32, color: GREY })] }),
   new Paragraph({ spacing: { after: 400 }, children: [T('The visual guide', { size: 28, color: GREY })] }),
   new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 400 }, children: [img('cover', 3.0)] }),
-  P('Application version 7.4.0 · Document version 7.1', { run: { color: GREY } }),
+  P('Application version 7.4.0 · Document version 7.2', { run: { color: GREY } }),
   P('Broman Enterprises, SSP Division', { run: { color: GREY } }),
   P('© 2026 Broman Enterprises. All rights reserved.', { run: { color: GREY, size: 18 } }),
 
@@ -304,6 +304,11 @@ const children = [
   ], 'SCAN tab after a sweep.'),
   bullet('Each row: IP · MAC · name · maker · open ports, with OPEN, RDP or SSH buttons where they apply. Your own laptop is marked SELF.'),
   bullet('COPY ▾ puts the list on the clipboard as a spreadsheet or a table for the ticket.'),
+  ...shotSide('scan-gone', [
+    [B('GONE'), T(' — Windows still remembers this address from earlier, but nothing answers there now. Unplugged or powered off. Greyed out, and not counted or saved.', { size: 21 })],
+    [B('The status line'), T(' says how many of those there were.', { size: 21 })],
+  ], 'A camera that was unplugged an hour ago.', 3.4),
+  bullet('A device that says nothing on the first try gets one more look a couple of seconds later, so a slow starter still gets its OPEN button.'),
   ...whats('a subnet, and "/24"', 'A network\'s block of addresses. "10.20.30.x /24" means the 254 addresses 10.20.30.1 to 10.20.30.254 — everything that shares the first three numbers. The mask 255.255.255.0 says the same thing the long way.'),
 
   // G
@@ -339,6 +344,10 @@ const children = [
     [B('ADDRESS'), T(' — a free-looking address you could take.', { size: 21 })],
     [B('TAKE'), T(' fills the IP tab with it. Nothing changes until you press APPLY there.', { size: 21 })],
   ], 'Cards fill in as the network talks.'),
+  ...shotSide('recon-neighbour', [
+    [B('The switch is not announcing itself'), T(' — it has that turned off, or it is not a managed switch.', { size: 21 })],
+    [B('NEIGHBOUR'), T(' — something else on the same network announcing itself, usually an IP phone. Useful to know, but it is not your switch and its port is not your port.', { size: 21 })],
+  ], 'A port where only a desk phone announces.', 3.0),
   ...whats('VLAN and 802.1X', 'A VLAN is a separate network running over the same switch — cameras on one, offices on another. The port decides which one you land on.',
     '802.1X is a lock on the port: the switch asks for credentials before letting a device on. A camera without a certificate on such a port gets nowhere, which is worth knowing before you spend an hour on it.'),
 
@@ -411,12 +420,15 @@ const children = [
     ['SERVE EVERYONE…', 'Answers every device. Asks first, checks for another DHCP server, warns if the laptop is also on another network.'],
     ['SCAN WIRE · SELF-TEST', 'Look for other DHCP servers (6 s). Check card, port, firewall and policy in plain words.'],
     ['Status chip', 'OFF / LISTENING / SERVING N / SERVING EVERYONE — also the on/off switch. OFF releases the port and removes the firewall rule.'],
+    ['RELEASE ALL', 'Forgets every lease in the list. Devices keep the address they have and show up again when they next ask.'],
     ['CSV · LOG', 'Copy the lease table. The two-line log strip opens with ▸ LOG and turns amber if a warning lands while it\'s closed.'],
   ], [2600, TEXT_W - 2600]),
   gap(),
   bullet('Before giving an address the server pings it; anything that answers is skipped.'),
   bullet('It never interferes with another server\'s devices. A device that comes back gets the same address for up to an hour.'),
   bullet('Serving stops by itself after 30 idle minutes (changeable in ADVANCED).'),
+  bullet('It hears only the cable you picked in ①, so nothing on Wi-Fi shows up in the list. The card and the address settings are locked while it serves; stop serving to change them.'),
+  bullet('No cable in the card? SERVE waits for one: plug the device in first.'),
   note([T('Every serve, firewall change and address step goes into DIAGNOSTICS. IT can switch the server off with the '), C('DisableDhcpServer'), T(' policy.')]),
 
   // PING
@@ -433,6 +445,7 @@ const children = [
   bullet([B('SCAN SUBNET'), T(' sweeps a /24, checks fourteen common ports on everything that answers (web, RTSP, RDP, SSH, and the Hikvision, Dahua, Bosch and Genetec ports), then finds names.')]),
   bullet([B('DISCOVER'), T(' asks the cable instead (ONVIF, SSDP, mDNS — three seconds). It finds cameras on other networks and on 169.254, because the question goes out to everyone and the answer comes back on the same cable.')]),
   bullet('Rows found by discovery have a violet frame; ◎ N DISCOVERY shows only those. REACH appears on 169.254 rows.'),
+  bullet('A row reading GONE is an address Windows remembers from earlier that no longer answers. It is left out of the count, SAVE SITE and the comparison with a saved site.'),
   bullet('Makers come from a built-in list of 57,000 manufacturer codes. ONLINE VENDOR LOOKUP asks macvendors.com about misses (IT can force it off).'),
   bullet('Loading a saved site and scanning compares against it; the amber chip lists what\'s new, missing or moved.'),
 
@@ -457,6 +470,7 @@ const children = [
   table([
     ['Card', 'What it tells you'],
     ['SWITCH', 'Switch name, port and VLAN (LLDP every 30 s, CDP every 60 s). "No announcement" is an answer, not an error: not a managed switch, or it\'s turned off.'],
+    ['NEIGHBOUR', 'Another device announcing itself on this network (an IP phone, usually), not your switch. Seen where the switch itself says nothing and passes the announcements along.'],
     ['802.1X', 'Whether the switch asked for a login.'],
     ['STP / TRUNK', 'Spanning tree running (don\'t hang an unmanaged switch off it); several VLANs means a trunk port.'],
     ['DHCP', 'Who answered, with gateway, mask and DNS. "DHCP in use — server not heard" = devices are renewing leases, so there is a server, it just did not speak while you listened. "Clients asking — no answer heard" = dead DHCP server.'],
@@ -505,12 +519,15 @@ const children = [
     ['✓ APPLIED — 192.168.0.2 IS ACTIVE ON ETHERNET', 'Done, and checked with Windows.', 'Nothing. Carry on.'],
     ['✓ SAVED · NO CABLE', 'The address is set; there\'s no link yet.', 'Plug the cable in.'],
     ['✕ 192.168.0.2 IS ALREADY TAKEN BY … (BOSCH)', 'Something else has that address.', 'Pick another, or press APPLY again within 15 s to use it anyway.'],
+    ['SCAN COMPLETE — 10 HOSTS FOUND — 1 REMEMBERED ADDRESS NOT ANSWERING', 'One row is an address Windows remembered; nothing is there now (GONE).', 'Nothing, unless that device should be on.'],
     ['STATIC — TYPE THE ADDRESS, THEN APPLY', 'You picked STATIC with an empty form.', 'Type the address.'],
     ['ERROR: INVALID SUBNET MASK', 'The mask isn\'t valid.', 'Usually 255.255.255.0.'],
     ['WARNING: GATEWAY … IS OUTSIDE SUBNET', 'The gateway isn\'t on the same network as the address.', 'Clear it (CLEAR IT) or fix it.'],
     ['CANCELLED — UAC PROMPT DISMISSED', 'Windows asked for administrator rights and it was declined.', 'Try again and accept.'],
     ['LISTENING — NOTHING IS SERVED UNTIL YOU SAY SO', 'DHCP tab is hearing requests only.', 'SERVE a row.'],
     ['THIS CARD HAS NO ADDRESS — SET A LAPTOP IP IN STEP 2', 'The laptop can\'t serve from nothing.', 'SET LAPTOP IP…'],
+    ['NO CABLE ON ETHERNET — PLUG … IN FIRST', 'SERVE, or adding a 2nd address: the card has no link yet.', 'Plug the cable in, then press it again.'],
+    ['FORGOT 4 LEASES — DEVICES KEEP THEIR ADDRESS…', 'RELEASE ALL cleared the list. Nothing changed on the devices.', 'Nothing. They reappear when they next ask.'],
     ['✓ 192.168.0.101 WENT STATIC — … IS DONE', 'The camera keeps its address itself now.', 'Next camera.'],
     ['⏻ AUTO-STOPPED AFTER 30 MIN IDLE', 'Serving stopped by itself.', 'SERVE again if you need it.'],
     ['NOTHING HEARD ON A REAL SUBNET IN 10 S', 'HEAR THE WIRE found no devices talking.', 'Check the cable; try DISCOVER, or the DHCP tab.'],

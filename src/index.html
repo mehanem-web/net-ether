@@ -2685,7 +2685,7 @@ html, body {
 #recon-btn.listening { border-color: var(--amber); color: var(--amber); background: rgba(255,204,0,0.08); }
 .recon-cards { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
 .recon-card {
-  display: grid; grid-template-columns: 62px 1fr auto; gap: 4px 10px; align-items: center;
+  display: grid; grid-template-columns: 78px 1fr auto;   /* 7.4.0-dev.22: 62px was narrower than the word NEIGHBOUR, which ran into the title */ gap: 4px 10px; align-items: center;
   padding: 7px 10px; border-radius: var(--radius); background: rgba(0,0,0,0.45);
   border: 1px solid rgba(var(--ar),var(--ag),var(--ab),0.18); border-left-width: 3px;
   animation: slide-in 0.15s ease-out;
